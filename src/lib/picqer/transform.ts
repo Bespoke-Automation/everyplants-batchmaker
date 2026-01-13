@@ -57,6 +57,14 @@ function hasExcludedTag(tagTitles: string[]): boolean {
 }
 
 /**
+ * Normalize leverdag to consistent capitalization (e.g., "donderdag" -> "Donderdag")
+ */
+function normalizeLeverdag(leverdag: string | null): string {
+  if (!leverdag) return 'Geen leverdag'
+  return leverdag.charAt(0).toUpperCase() + leverdag.slice(1).toLowerCase()
+}
+
+/**
  * Check if order is fully part of a batch (no eligible picklist available)
  * Returns false if there's at least one picklist with status 'new' that's not in a batch
  */
@@ -114,7 +122,7 @@ export function transformOrder(order: PicqerOrder): TransformedOrder {
     tagTitles,
     tags,
     bezorgland: order.deliverycountry || 'NL',
-    leverdag: getOrderfieldValue(order, ORDERFIELD_IDS.LEVERDAG) || 'Geen leverdag',
+    leverdag: normalizeLeverdag(getOrderfieldValue(order, ORDERFIELD_IDS.LEVERDAG)),
     picklistId: picklist?.picklistid || '-',
     invoiceName: order.invoicename || order.deliveryname || '-',
     orderId: order.orderid,
