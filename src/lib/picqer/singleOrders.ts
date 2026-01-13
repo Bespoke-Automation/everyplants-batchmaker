@@ -61,6 +61,11 @@ export function analyzeSingleOrder(products: PicqerOrderProduct[]): SingleOrderA
   let excludedProductCount = 0
 
   for (const product of products) {
+    // Skip parts of virtual compositions (they're already counted via parent)
+    if (product.partof_idorder_product !== null) {
+      continue
+    }
+
     if (isExcludedProduct(product.productcode)) {
       excludedProductCount += product.amount
       continue
