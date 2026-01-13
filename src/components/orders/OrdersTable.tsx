@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback } from 'react'
-import { RefreshCw, Plus, Truck } from 'lucide-react'
+import { RefreshCw, Download, Truck } from 'lucide-react'
 import { TransformedOrder } from '@/types/order'
 
 interface OrdersTableProps {
@@ -85,6 +85,37 @@ export default function OrdersTable({ orders, isLoading, onRefresh, total }: Ord
     document.addEventListener('mousemove', handleMouseMove)
     document.addEventListener('mouseup', handleMouseUp)
   }, [columnWidths])
+
+  const exportToCSV = useCallback(() => {
+    const headers = COLUMNS.map(col => col.label)
+
+    const rows = orders.map(order => {
+      return COLUMNS.map(col => {
+        const value = col.key === 'tagTitles'
+          ? order.tags.map(t => t.title).join(', ')
+          : order[col.key as keyof TransformedOrder]
+
+        // Escape quotes and wrap in quotes if contains comma, quote, or newline
+        const stringValue = value === null || value === undefined ? '' : String(value)
+        if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+          return `"${stringValue.replace(/"/g, '""')}"`
+        }
+        return stringValue
+      }).join(',')
+    })
+
+    const csv = [headers.join(','), ...rows].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `orders-export-${new Date().toISOString().split('T')[0]}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }, [orders])
 
   const renderCell = (order: TransformedOrder, columnKey: string) => {
     switch (columnKey) {
@@ -175,8 +206,11 @@ export default function OrdersTable({ orders, isLoading, onRefresh, total }: Ord
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
           </button>
           <div className="h-4 w-px bg-border mx-2"></div>
-          <button className="text-sm font-medium text-primary hover:underline flex items-center gap-1">
-            <Plus className="w-4 h-4" /> Export CSV
+          <button
+            onClick={exportToCSV}
+            className="text-sm font-medium text-primary hover:underline flex items-center gap-1"
+          >
+            <Download className="w-4 h-4" /> Export CSV
           </button>
         </div>
       </div>
