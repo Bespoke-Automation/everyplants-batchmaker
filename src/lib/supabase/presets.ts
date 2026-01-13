@@ -10,7 +10,7 @@ export async function getPresets(type: PresetType): Promise<Preset[]> {
   const { data, error } = await supabase
     .schema('batchmaker')
     .from(getTableName(type))
-    .select('id, naam, retailer, tags, bezorgland, leverdag, pps, postal_region')
+    .select('id, naam, retailer, tags, bezorgland, leverdag, pps, postal_regions')
     .order('created_at', { ascending: true })
 
   if (error) {
@@ -35,9 +35,9 @@ export async function createPreset(
       bezorgland: preset.bezorgland,
       leverdag: preset.leverdag,
       pps: preset.pps,
-      postal_region: preset.postal_region,
+      postal_regions: preset.postal_regions || [],
     })
-    .select('id, naam, retailer, tags, bezorgland, leverdag, pps, postal_region')
+    .select('id, naam, retailer, tags, bezorgland, leverdag, pps, postal_regions')
     .single()
 
   if (error) {
@@ -63,10 +63,10 @@ export async function updatePreset(
       ...(preset.bezorgland !== undefined && { bezorgland: preset.bezorgland }),
       ...(preset.leverdag !== undefined && { leverdag: preset.leverdag }),
       ...(preset.pps !== undefined && { pps: preset.pps }),
-      ...(preset.postal_region !== undefined && { postal_region: preset.postal_region }),
+      ...(preset.postal_regions !== undefined && { postal_regions: preset.postal_regions }),
     })
     .eq('id', id)
-    .select('id, naam, retailer, tags, bezorgland, leverdag, pps, postal_region')
+    .select('id, naam, retailer, tags, bezorgland, leverdag, pps, postal_regions')
     .single()
 
   if (error) {

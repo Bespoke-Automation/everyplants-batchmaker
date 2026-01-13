@@ -194,7 +194,7 @@ export default function FilterPanel({
         bezorgland: filters.countries,
         leverdag: filters.leverdagen,
         pps: filters.pps === 'ja',
-        postal_region: filters.postalRegion || null,
+        postal_regions: filters.postalRegions || [],
       }
       await onCreatePreset(preset)
       setIsPresetDialogOpen(false)
@@ -280,19 +280,15 @@ export default function FilterPanel({
             <label className="text-xs font-bold text-muted-foreground uppercase mb-1 block">
               Regio
             </label>
-            <select
-              value={filters.postalRegion || ''}
-              onChange={(e) => onFilterChange('postalRegion', e.target.value || undefined)}
-              className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
+            <MultiSelectDropdown
+              label="Regio"
+              options={postalRegions.map(r => r.region_id)}
+              selected={filters.postalRegions || []}
+              onChange={(selected) => onFilterChange('postalRegions', selected.length ? selected : undefined)}
               disabled={isLoading}
-            >
-              <option value="">Alle regio&apos;s</option>
-              {postalRegions.map(region => (
-                <option key={region.id} value={region.region_id}>
-                  {region.name}
-                </option>
-              ))}
-            </select>
+              placeholder="Alle regio's"
+              displayNames={Object.fromEntries(postalRegions.map(r => [r.region_id, r.name]))}
+            />
           </div>
 
           {/* Leverdag Dropdown & Label */}

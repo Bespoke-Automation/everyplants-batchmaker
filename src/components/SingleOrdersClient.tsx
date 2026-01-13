@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { History } from 'lucide-react'
 import { useSingleOrders } from '@/hooks/useSingleOrders'
@@ -13,12 +13,12 @@ import PresetsPanel from '@/components/presets/PresetsPanel'
 import GroupedOrdersTable from '@/components/single-orders/GroupedOrdersTable'
 import Footer from '@/components/layout/Footer'
 import CreateShipmentsDialog from '@/components/ui/CreateShipmentsDialog'
+import ProcessingIndicator from '@/components/ui/ProcessingIndicator'
 
 interface BatchResult {
   success: boolean
   message: string
   batchId?: string
-  combinedPdfUrl?: string
   validationErrors?: string[]
 }
 
@@ -33,8 +33,19 @@ export default function SingleOrdersClient() {
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false)
   const [isCreatingBatch, setIsCreatingBatch] = useState(false)
   const [batchResult, setBatchResult] = useState<BatchResult | null>(null)
+  const [newlyCreatedBatch, setNewlyCreatedBatch] = useState<{ batchId: string; totalOrders: number } | null>(null)
 
   const totalSelectedOrders = selectedGroups.reduce((sum, g) => sum + g.totalCount, 0)
+
+  // Auto-dismiss success notification after 5 seconds
+  useEffect(() => {
+    if (batchResult?.success) {
+      const timeout = setTimeout(() => {
+        setBatchResult(null)
+      }, 5000)
+      return () => clearTimeout(timeout)
+    }
+  }, [batchResult])
 
   // Handler to open confirmation dialog (refresh data first)
   const handleCreateBatchClick = async () => {
@@ -96,20 +107,30 @@ export default function SingleOrdersClient() {
       const result = await response.json()
 
       if (result.success) {
-        const message = result.status === 'completed'
-          ? `Batch ${result.batchId} aangemaakt met ${result.successfulShipments} shipments`
-          : `Batch ${result.batchId} gedeeltelijk aangemaakt: ${result.successfulShipments} succesvol, ${result.failedShipments} gefaald`
-
-        setBatchResult({
-          success: true,
-          message,
+        // Batch created successfully - close dialog immediately
+        // Tell ProcessingIndicator about this batch immediately (bypass DB read replica lag)
+        setNewlyCreatedBatch({
           batchId: result.batchId,
-          combinedPdfUrl: result.combinedPdfUrl,
+          totalOrders: result.totalOrders || totalSelectedOrders,
         })
 
-        // Clear selection and refresh orders
-        setSelectedGroups([])
+        // Shipments are processing in background via ProcessingIndicator
+        setBatchResult({
+          success: true,
+          message: `Batch ${result.batchId} aangemaakt! Shipments worden verwerkt...`,
+          batchId: result.batchId,
+        })
+        setIsConfirmDialogOpen(false)
+        setIsCreatingBatch(false)
+
+        // Clear the newly created batch after 30 seconds (DB should have caught up by then)
+        setTimeout(() => {
+          setNewlyCreatedBatch(prev => prev?.batchId === result.batchId ? null : prev)
+        }, 30000)
+
+        // Refresh orders and clear selection
         await refetch()
+        setSelectedGroups([])
       } else {
         // Handle validation errors specifically
         const message = result.validationErrors
@@ -121,13 +142,14 @@ export default function SingleOrdersClient() {
           message,
           validationErrors: result.validationErrors,
         })
+        setIsCreatingBatch(false)
+        setIsConfirmDialogOpen(false)
       }
     } catch (err) {
       setBatchResult({
         success: false,
         message: err instanceof Error ? err.message : 'Er is een onbekende fout opgetreden',
       })
-    } finally {
       setIsCreatingBatch(false)
       setIsConfirmDialogOpen(false)
     }
@@ -175,16 +197,6 @@ export default function SingleOrdersClient() {
             <div className="flex items-center justify-between">
               <div className="flex flex-col gap-1">
                 <span className="font-medium">{batchResult.message}</span>
-                {batchResult.combinedPdfUrl && (
-                  <a
-                    href={batchResult.combinedPdfUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm underline hover:no-underline"
-                  >
-                    Download labels PDF
-                  </a>
-                )}
                 {batchResult.validationErrors && batchResult.validationErrors.length > 0 && (
                   <div className="mt-2 text-sm">
                     <details>
@@ -255,6 +267,9 @@ export default function SingleOrdersClient() {
         firstPicklistId={selectedGroups[0]?.orders[0]?.idPicklist ?? null}
         isLoading={isCreatingBatch}
       />
+
+      {/* Processing indicator for background batch processing */}
+      <ProcessingIndicator newlyCreatedBatch={newlyCreatedBatch} />
     </>
   )
 }

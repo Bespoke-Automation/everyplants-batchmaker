@@ -1,17 +1,12 @@
 import { NextResponse } from 'next/server'
-import { createShipment, getShipmentLabel, createPicklistBatch, fetchPicklist } from '@/lib/picqer/client'
-import { addPlantNameToLabel, sortAndCombineLabels, ProcessedLabel, getCarrierFromProviderName } from '@/lib/pdf/labelEditor'
+import { createPicklistBatch, fetchPicklist } from '@/lib/picqer/client'
 import {
   createShipmentLabel,
-  updateShipmentLabel,
   createSingleOrderBatch,
   updateSingleOrderBatch,
-  uploadPdfToStorage,
 } from '@/lib/supabase/shipmentLabels'
-import { PicqerPicklistWithProducts } from '@/lib/picqer/types'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 300 // 5 minutes max for processing many shipments
 
 interface OrderInGroup {
   id: number
@@ -34,12 +29,6 @@ interface BatchRequestBody {
   idPackaging?: number | null  // Packaging to use for all shipments
 }
 
-interface BatchError {
-  orderId: number
-  orderReference: string
-  error: string
-}
-
 interface ValidatedPicklist {
   picklistId: number
   warehouseId: number
@@ -58,24 +47,52 @@ function generateBatchId(): string {
 }
 
 /**
+ * Trigger internal API route to process shipments asynchronously
+ * Fire and forget - logs errors but doesn't block
+ */
+function triggerShipmentProcessing(batchId: string): void {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  const processUrl = `${baseUrl}/api/single-orders/batch/${batchId}/process`
+
+  // Fire and forget - log errors but don't block
+  fetch(processUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  })
+    .then(response => {
+      if (!response.ok) {
+        console.error(`[${batchId}] Process endpoint returned ${response.status}`)
+      }
+    })
+    .catch(error => {
+      console.error(`[${batchId}] Failed to trigger processing:`, error)
+    })
+
+  console.log(`[${batchId}] Triggered async shipment processing`)
+}
+
+/**
  * POST /api/single-orders/batch
  *
- * Creates shipments and labels for selected single order groups.
+ * Creates Picqer batch and queues shipments for async processing.
  *
- * New Flow (v2):
+ * Flow (v3 - Async):
  * 1. Pre-validate all picklists (fetch status and warehouse)
  * 2. Group picklists by warehouse
  * 3. Create Picqer batch for each warehouse group (fail all if any fails)
- * 4. Create shipments for each order's picklist via Picqer API
- * 5. Fetch shipping labels from Picqer
- * 6. Edit labels to include plant name
- * 7. Combine into single PDF sorted by product → retailer
- * 8. Save to Supabase storage
- * 9. Trigger n8n webhook
+ * 4. Create shipment_labels records with status 'queued'
+ * 5. Trigger Edge Function for async shipment processing
+ * 6. Return immediately with batchId
+ *
+ * The Edge Function then:
+ * - Creates shipments in Picqer
+ * - Fetches and edits labels
+ * - Combines labels into single PDF
+ * - Triggers webhook
  */
 export async function POST(request: Request) {
   const batchId = generateBatchId()
-  console.log(`[${batchId}] Starting single order batch creation...`)
+  console.log(`[${batchId}] Starting single order batch creation (async mode)...`)
 
   try {
     const body: BatchRequestBody = await request.json()
@@ -179,7 +196,7 @@ export async function POST(request: Request) {
       Array.from(warehouseGroups.entries()).map(([wh, pls]) => `WH${wh}: ${pls.length} picklists`).join(', ')
     )
 
-    // Create batch record in Supabase
+    // Create batch record in Supabase with processing_shipments status
     await createSingleOrderBatch(batchId, totalOrders)
 
     // ========================================
@@ -214,214 +231,55 @@ export async function POST(request: Request) {
       }
     }
 
-    // Store first batch ID for backward compatibility (or all if needed)
-    const picqerBatchId = picqerBatchIds[0]
     console.log(`[${batchId}] All Picqer batches created successfully: ${picqerBatchIds.join(', ')}`)
 
     // ========================================
-    // STEP 4-6: Process shipments and labels
+    // STEP 4: Create shipment_labels records with 'queued' status
     // ========================================
-    const errors: BatchError[] = []
-    const processedLabels: ProcessedLabel[] = []
-    let successfulShipments = 0
-    let failedShipments = 0
+    console.log(`[${batchId}] Step 4: Creating ${validatedPicklists.length} shipment label records...`)
 
     for (const vp of validatedPicklists) {
       const { order, productGroup } = vp
 
-      try {
-        // Create shipment label record
-        const labelRecord = await createShipmentLabel({
-          batch_id: batchId,
-          picklist_id: order.idPicklist,
-          order_id: order.id,
-          order_reference: order.reference,
-          retailer: order.retailerName,
-          plant_name: productGroup.productName,
-          plant_product_code: productGroup.productCode,
-        })
-
-        // Step 4: Create shipment in Picqer
-        // Use override shipping provider if provided, otherwise fall back to order's provider
-        const shippingProviderId = idShippingProvider ?? order.idShippingProvider ?? undefined
-        console.log(`[${batchId}] Creating shipment for order ${order.reference} (picklist ${order.idPicklist}, shipping: ${shippingProviderId}, packaging: ${idPackaging ?? 'none'})...`)
-        const shipmentResult = await createShipment(order.idPicklist, shippingProviderId, idPackaging)
-
-        if (!shipmentResult.success || !shipmentResult.shipment) {
-          throw new Error(shipmentResult.error || 'Failed to create shipment')
-        }
-
-        await updateShipmentLabel(labelRecord.id, {
-          shipment_id: shipmentResult.shipment.idshipment,
-          tracking_code: shipmentResult.shipment.trackingcode,
-          original_label_url: shipmentResult.shipment.labelurl,
-          status: 'shipment_created',
-        })
-
-        // Step 5: Fetch shipping label using the URL from the shipment response
-        const labelUrl = shipmentResult.shipment.labelurl_pdf || shipmentResult.shipment.labelurl
-        console.log(`[${batchId}] Fetching label for shipment ${shipmentResult.shipment.idshipment}...`)
-        const labelResult = await getShipmentLabel(shipmentResult.shipment.idshipment, labelUrl)
-
-        if (!labelResult.success || !labelResult.labelData) {
-          throw new Error(labelResult.error || 'Failed to fetch label')
-        }
-
-        await updateShipmentLabel(labelRecord.id, {
-          status: 'label_fetched',
-        })
-
-        // Step 6: Edit label to add plant name
-        // Detect carrier from shipment profile name for optimal positioning
-        const carrier = getCarrierFromProviderName(shipmentResult.shipment.profile_name)
-        console.log(`[${batchId}] Adding plant name "${productGroup.productName}" to label (carrier: ${carrier})...`)
-        const editedLabel = await addPlantNameToLabel(
-          labelResult.labelData,
-          productGroup.productName,
-          { carrier }
-        )
-
-        await updateShipmentLabel(labelRecord.id, {
-          status: 'label_edited',
-        })
-
-        // Add to processed labels for combining
-        processedLabels.push({
-          success: true,
-          pdfBuffer: editedLabel,
-          orderId: order.id,
-          orderReference: order.reference,
-          plantName: productGroup.productName,
-          retailer: order.retailerName,
-        })
-
-        await updateShipmentLabel(labelRecord.id, {
-          status: 'completed',
-        })
-
-        successfulShipments++
-        console.log(`[${batchId}] Successfully processed order ${order.reference}`)
-
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-        console.error(`[${batchId}] Error processing order ${order.reference}:`, errorMessage)
-
-        errors.push({
-          orderId: order.id,
-          orderReference: order.reference,
-          error: errorMessage,
-        })
-
-        failedShipments++
-
-        // Add failed label to tracking
-        processedLabels.push({
-          success: false,
-          orderId: order.id,
-          orderReference: order.reference,
-          plantName: productGroup.productName,
-          retailer: order.retailerName,
-          error: errorMessage,
-        })
-      }
+      await createShipmentLabel({
+        batch_id: batchId,
+        picklist_id: order.idPicklist,
+        order_id: order.id,
+        order_reference: order.reference,
+        retailer: order.retailerName,
+        plant_name: productGroup.productName,
+        plant_product_code: productGroup.productCode,
+      })
     }
 
-    // ========================================
-    // STEP 7: Combine all labels into single PDF
-    // ========================================
-    let combinedPdfUrl: string | undefined
-
-    if (processedLabels.filter(l => l.success).length > 0) {
-      try {
-        console.log(`[${batchId}] Step 7: Combining ${successfulShipments} labels into single PDF...`)
-        const { combinedPdf, sortOrder } = await sortAndCombineLabels(processedLabels)
-        console.log(`[${batchId}] Combined PDF created, sort order:`, sortOrder.slice(0, 5), '...')
-
-        // Step 8: Upload to Supabase storage
-        combinedPdfUrl = await uploadPdfToStorage(
-          batchId,
-          `combined-labels-${batchId}.pdf`,
-          combinedPdf
-        )
-        console.log(`[${batchId}] Combined PDF uploaded: ${combinedPdfUrl}`)
-      } catch (error) {
-        console.error(`[${batchId}] Error combining PDFs:`, error)
-        // Continue without combined PDF - individual labels are still tracked
-      }
-    }
-
-    // Determine final status
-    let status: 'completed' | 'partial' | 'failed'
-    if (failedShipments === 0) {
-      status = 'completed'
-    } else if (successfulShipments > 0) {
-      status = 'partial'
-    } else {
-      status = 'failed'
-    }
-
-    // Update batch record
+    // Update batch record with Picqer batch IDs and shipping config
     await updateSingleOrderBatch(batchId, {
-      successful_shipments: successfulShipments,
-      failed_shipments: failedShipments,
-      combined_pdf_path: combinedPdfUrl,
-      picqer_batch_id: picqerBatchId,
-      status,
+      picqer_batch_id: picqerBatchIds[0],
+      picqer_batch_ids: picqerBatchIds,
+      shipping_provider_id: idShippingProvider ?? null,
+      packaging_id: idPackaging ?? null,
+      status: 'processing_shipments',
     })
 
+    console.log(`[${batchId}] Batch record updated, all shipment labels queued`)
+
     // ========================================
-    // STEP 9: Trigger n8n webhook (if configured)
+    // STEP 5: Trigger processing (fire and forget)
     // ========================================
-    let webhookTriggered = false
-    const webhookUrl = process.env.N8N_SINGLE_ORDER_WEBHOOK_URL
+    triggerShipmentProcessing(batchId)
 
-    if (webhookUrl && successfulShipments > 0) {
-      try {
-        console.log(`[${batchId}] Step 9: Triggering n8n webhook...`)
-        const webhookResponse = await fetch(webhookUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            batchId,
-            picqerBatchIds,
-            totalOrders,
-            successfulShipments,
-            failedShipments,
-            combinedPdfUrl,
-            productGroups: productGroups.map(g => ({
-              productName: g.productName,
-              productCode: g.productCode,
-              orderCount: g.orders.length,
-            })),
-            warehouseCount: warehouseGroups.size,
-            timestamp: new Date().toISOString(),
-          }),
-        })
+    console.log(`[${batchId}] Batch creation complete, returning immediately while shipments process in background`)
 
-        webhookTriggered = webhookResponse.ok
-        console.log(`[${batchId}] Webhook response: ${webhookResponse.status}`)
-
-        await updateSingleOrderBatch(batchId, { webhook_triggered: webhookTriggered })
-      } catch (error) {
-        console.error(`[${batchId}] Webhook error:`, error)
-      }
-    }
-
-    console.log(`[${batchId}] Batch creation complete: ${successfulShipments} successful, ${failedShipments} failed`)
-
+    // Return immediately - shipments will be processed asynchronously
     return NextResponse.json({
-      success: status !== 'failed',
+      success: true,
       batchId,
-      picqerBatchId,
+      picqerBatchId: picqerBatchIds[0],
       picqerBatchIds,
       totalOrders,
-      successfulShipments,
-      failedShipments,
-      combinedPdfUrl,
-      webhookTriggered,
       warehouseCount: warehouseGroups.size,
-      errors: errors.length > 0 ? errors : undefined,
-      status,
+      status: 'processing_shipments',
+      message: 'Batch created. Shipments are being processed in the background.',
     })
 
   } catch (error) {

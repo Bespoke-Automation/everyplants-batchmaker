@@ -532,3 +532,45 @@ export async function getShipmentLabel(shipmentId: number, labelUrl?: string): P
     }
   }
 }
+
+/**
+ * Close a picklist manually
+ * Picklists are normally closed automatically when a shipment is created and all products are picked,
+ * but this method ensures explicit closure for reliability.
+ */
+export async function closePicklist(picklistId: number): Promise<{ success: boolean; error?: string }> {
+  console.log(`Closing picklist ${picklistId}...`)
+
+  try {
+    const response = await rateLimitedFetch(
+      `${PICQER_BASE_URL}/picklists/${picklistId}/close`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+          'User-Agent': 'EveryPlants-Batchmaker/2.0',
+          'Content-Type': 'application/json',
+        },
+      }
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error(`Picqer API error closing picklist ${picklistId}:`, response.status, errorText)
+      return {
+        success: false,
+        error: `Failed to close picklist: ${response.status} - ${errorText}`,
+      }
+    }
+
+    console.log(`Picklist ${picklistId} closed successfully`)
+    return { success: true }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    console.error(`Error closing picklist ${picklistId}:`, errorMessage)
+    return {
+      success: false,
+      error: errorMessage,
+    }
+  }
+}

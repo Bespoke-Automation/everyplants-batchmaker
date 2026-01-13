@@ -4,7 +4,7 @@ export interface FilterState {
   countries: string[]
   leverdagen: string[]
   pps: 'ja' | 'nee'
-  postalRegion?: string  // ID of selected postal region
+  postalRegions?: string[]  // IDs of selected postal regions
 }
 
 // All retailers selected by default (matching Retool behavior)

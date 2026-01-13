@@ -9,6 +9,7 @@ export interface BatchPreset {
   bezorgland: string[]
   leverdag: string[]
   pps: boolean
+  postal_regions: string[]
   created_at: string
   updated_at: string
 }
@@ -21,6 +22,7 @@ export interface SingleOrderPreset {
   bezorgland: string[]
   leverdag: string[]
   pps: boolean
+  postal_regions: string[]
   created_at: string
   updated_at: string
 }

@@ -1,4 +1,4 @@
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import { PDFDocument, StandardFonts, rgb, PDFFont } from 'pdf-lib'
 
 /**
  * Carrier type for label positioning
@@ -12,7 +12,10 @@ export type CarrierType = 'postnl' | 'dpd' | 'unknown'
 const POSTNL_POSITION = {
   xPercent: 0.55,
   yPercent: 0.45,
-  fontSize: 10,    // Smaller font for PostNL
+  fontSize: 10,
+  maxWidthPercent: 0.40,  // Avoid barcode on left
+  maxLines: 2,
+  lineHeight: 1.2,
 }
 
 /**
@@ -22,7 +25,10 @@ const POSTNL_POSITION = {
 const DPD_POSITION = {
   xPercent: 0.02,  // Left side, aligned with Ref1 area
   yPercent: 0.58,  // Below Ref1 line, in white space before routing barcode
-  fontSize: 8,     // Smaller font for DPD
+  fontSize: 8,
+  maxWidthPercent: 0.45,  // Stop before QR code area on right
+  maxLines: 2,
+  lineHeight: 1.2,
 }
 
 interface LabelEditOptions {
@@ -30,6 +36,76 @@ interface LabelEditOptions {
   yPercent?: number
   fontSize?: number
   carrier?: CarrierType
+}
+
+/**
+ * Wrap text to fit within a maximum width
+ * @param text - The text to wrap
+ * @param font - The PDF font to use for width calculation
+ * @param fontSize - The font size
+ * @param maxWidth - Maximum width in points
+ * @returns Array of lines
+ */
+function wrapText(
+  text: string,
+  font: PDFFont,
+  fontSize: number,
+  maxWidth: number
+): string[] {
+  const words = text.split(' ')
+  const lines: string[] = []
+  let currentLine = ''
+
+  for (const word of words) {
+    const testLine = currentLine ? `${currentLine} ${word}` : word
+    const width = font.widthOfTextAtSize(testLine, fontSize)
+
+    if (width <= maxWidth) {
+      currentLine = testLine
+    } else {
+      if (currentLine) lines.push(currentLine)
+      // If a single word is too long, we still need to add it
+      currentLine = word
+    }
+  }
+
+  if (currentLine) lines.push(currentLine)
+  return lines
+}
+
+/**
+ * Truncate lines to fit within max lines, adding ellipsis if needed
+ * @param lines - Array of text lines
+ * @param maxLines - Maximum number of lines allowed
+ * @param font - The PDF font to use for width calculation
+ * @param fontSize - The font size
+ * @param maxWidth - Maximum width in points
+ * @returns Truncated array of lines
+ */
+function truncateLines(
+  lines: string[],
+  maxLines: number,
+  font: PDFFont,
+  fontSize: number,
+  maxWidth: number
+): string[] {
+  if (lines.length <= maxLines) return lines
+
+  const result = lines.slice(0, maxLines)
+  const lastLineIndex = maxLines - 1
+  let lastLine = result[lastLineIndex]
+  const ellipsis = '...'
+
+  // Truncate last line to fit with ellipsis
+  while (
+    font.widthOfTextAtSize(lastLine + ellipsis, fontSize) > maxWidth &&
+    lastLine.length > 0
+  ) {
+    lastLine = lastLine.slice(0, -1).trim()
+  }
+
+  result[lastLineIndex] = lastLine + ellipsis
+  return result
 }
 
 /**
@@ -73,19 +149,51 @@ async function detectCarrierFromPdf(pdfDoc: PDFDocument): Promise<CarrierType> {
 }
 
 /**
- * Determine carrier type from shipment provider name
+ * Determine carrier type from shipment provider name or carrier key
  */
 export function getCarrierFromProviderName(providerName: string | undefined): CarrierType {
   if (!providerName) return 'unknown'
 
   const normalized = providerName.toLowerCase()
 
+  // Check for DPD variants
   if (normalized.includes('dpd')) {
     return 'dpd'
   }
 
-  if (normalized.includes('postnl') || normalized.includes('post nl')) {
+  // Check for PostNL variants
+  if (normalized.includes('postnl') || normalized.includes('post nl') || normalized.includes('post-nl')) {
     return 'postnl'
+  }
+
+  return 'unknown'
+}
+
+/**
+ * Determine carrier type from multiple shipment fields
+ * Checks all available fields for carrier identification
+ */
+export function detectCarrierFromShipment(shipment: {
+  provider?: string
+  providername?: string
+  profile_name?: string
+  carrier_key?: string
+}): CarrierType {
+  // Try each field in order of reliability
+  const fieldsToCheck = [
+    shipment.carrier_key,
+    shipment.profile_name,
+    shipment.providername,
+    shipment.provider,
+  ]
+
+  for (const field of fieldsToCheck) {
+    if (field) {
+      const carrier = getCarrierFromProviderName(field)
+      if (carrier !== 'unknown') {
+        return carrier
+      }
+    }
   }
 
   return 'unknown'
@@ -137,21 +245,34 @@ export async function addPlantNameToLabel(
   const xPercent = options.xPercent ?? position.xPercent
   const yPercent = options.yPercent ?? position.yPercent
   const fontSize = options.fontSize ?? position.fontSize
+  const maxWidthPercent = position.maxWidthPercent
+  const maxLines = position.maxLines
+  const lineHeight = position.lineHeight
 
   // Embed a standard font (Helvetica Bold for visibility)
   const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
 
-  // Calculate position
+  // Calculate position and max width
   const x = width * xPercent
   const y = height * (1 - yPercent) // PDF coordinates start from bottom
+  const maxWidth = width * maxWidthPercent
 
-  // Draw the plant name
-  firstPage.drawText(plantName, {
-    x,
-    y,
-    size: fontSize,
-    font,
-    color: rgb(0, 0, 0), // Black text
+  // Wrap text to fit within max width
+  let lines = wrapText(plantName, font, fontSize, maxWidth)
+
+  // Truncate if too many lines
+  lines = truncateLines(lines, maxLines, font, fontSize, maxWidth)
+
+  // Draw each line with appropriate y-offset
+  const lineSpacing = fontSize * lineHeight
+  lines.forEach((line, index) => {
+    firstPage.drawText(line, {
+      x,
+      y: y - index * lineSpacing,
+      size: fontSize,
+      font,
+      color: rgb(0, 0, 0), // Black text
+    })
   })
 
   // Save and return the modified PDF

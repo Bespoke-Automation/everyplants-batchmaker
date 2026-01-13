@@ -131,10 +131,14 @@ export default function PresetsPanel({ presets, onApplyPreset, onDeletePreset, i
           </span>
         )
       case 'regio':
-        if (!preset.postal_region) return null
-        const region = postalRegions.find(r => r.region_id === preset.postal_region)
+        if (!preset.postal_regions?.length) return null
+        const regionNames = preset.postal_regions
+          .map(regionId => {
+            const region = postalRegions.find(r => r.region_id === regionId)
+            return region?.name || regionId
+          })
         return (
-          <span className="text-muted-foreground">{region?.name || preset.postal_region}</span>
+          <span className="text-muted-foreground">{`{${regionNames.join(', ')}}`}</span>
         )
       case 'pps':
         return preset.pps ? <CheckCircle2 className="w-4 h-4 text-primary" /> : null

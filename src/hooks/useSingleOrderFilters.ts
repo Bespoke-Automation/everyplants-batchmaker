@@ -65,10 +65,13 @@ function orderMatchesFilters(
     }
   }
 
-  // Postal region filter
-  if (filters.postalRegion) {
-    const region = postalRegions.find(r => r.region_id === filters.postalRegion)
-    if (region && !matchesPostalRegion(order.bezorgland, order.deliveryPostalCode, region)) {
+  // Postal region filter (matches if order is in ANY of the selected regions)
+  if (filters.postalRegions?.length) {
+    const matchesAnyRegion = filters.postalRegions.some(regionId => {
+      const region = postalRegions.find(r => r.region_id === regionId)
+      return region && matchesPostalRegion(order.bezorgland, order.deliveryPostalCode, region)
+    })
+    if (!matchesAnyRegion) {
       return false
     }
   }
@@ -127,7 +130,7 @@ export function useSingleOrderFilters(groups: ProductGroup[], postalRegions: Pos
       countries: preset.bezorgland,
       leverdagen: preset.leverdag,
       pps: preset.pps ? 'ja' : 'nee',
-      postalRegion: preset.postal_region || undefined,
+      postalRegions: preset.postal_regions?.length ? preset.postal_regions : undefined,
     })
   }, [])
 

@@ -6,5 +6,5 @@ export interface Preset {
   bezorgland: string[]
   leverdag: string[]
   pps: boolean
-  postal_region?: string | null
+  postal_regions?: string[]
 }
