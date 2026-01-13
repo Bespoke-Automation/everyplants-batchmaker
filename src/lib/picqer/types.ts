@@ -111,12 +111,34 @@ export interface PicqerProduct {
 // Product tag to exclude from plant count (non-plant items like flyers, boxes)
 export const EXCLUDED_PRODUCT_TAG = 'Overig'
 
+// Packaging types
+export interface PicqerPackaging {
+  idpackaging: number
+  name: string
+  barcode: string | null
+  length: number | null
+  width: number | null
+  height: number | null
+  use_in_auto_advice: boolean
+  active: boolean
+}
+
+// Shipping method types
+export interface ShippingMethod {
+  idshippingprovider_profile: number
+  name: string
+  carrier: string
+}
+
 // Shipment types
 export interface PicqerShipment {
   idshipment: number
   idpicklist: number
   provider: string
   providername: string
+  public_providername?: string
+  profile_name?: string
+  carrier_key?: string
   labelurl?: string
   labelurl_pdf?: string
   labelurl_zpl?: string | null

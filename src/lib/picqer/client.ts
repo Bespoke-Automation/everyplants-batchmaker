@@ -1,4 +1,4 @@
-import { PicqerOrder, PicqerPicklistWithProducts, PicqerProduct, PicqerShipment, CreateShipmentResult, GetLabelResult } from './types'
+import { PicqerOrder, PicqerPicklistWithProducts, PicqerProduct, PicqerShipment, CreateShipmentResult, GetLabelResult, PicqerPackaging, ShippingMethod } from './types'
 
 const PICQER_SUBDOMAIN = process.env.PICQER_SUBDOMAIN!
 const PICQER_API_KEY = process.env.PICQER_API_KEY!
@@ -270,12 +270,37 @@ export async function createPicklistBatch(picklistIds: number[]): Promise<Create
 }
 
 /**
- * Shipping method available for a picklist
+ * Get all active packagings from Picqer
  */
-export interface ShippingMethod {
-  idshippingprovider_profile: number
-  name: string
-  carrier: string
+export async function getPackagings(): Promise<PicqerPackaging[]> {
+  console.log('Fetching packagings from Picqer...')
+
+  try {
+    const response = await rateLimitedFetch(
+      `${PICQER_BASE_URL}/packagings`,
+      {
+        method: 'GET',
+        headers: {
+          'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+          'User-Agent': 'EveryPlants-Batchmaker/2.0',
+          'Content-Type': 'application/json',
+        },
+      }
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('Picqer API error fetching packagings:', response.status, errorText)
+      return []
+    }
+
+    const packagings: PicqerPackaging[] = await response.json()
+    console.log(`Found ${packagings.length} packagings:`, packagings.map(p => p.name).join(', '))
+    return packagings
+  } catch (error) {
+    console.error('Error fetching packagings:', error)
+    return []
+  }
 }
 
 /**
@@ -316,10 +341,14 @@ export async function getPicklistShippingMethods(picklistId: number): Promise<Sh
  * Create a shipment for a picklist
  * This triggers the carrier to generate a shipping label
  * Fetches picklist details to get shipping provider and weight
+ * @param picklistId - The picklist ID to create a shipment for
+ * @param shippingProviderId - Optional shipping provider profile ID to override the picklist's default
+ * @param packagingId - Optional packaging ID to specify the packaging used for this shipment
  */
 export async function createShipment(
   picklistId: number,
-  shippingProviderId?: number
+  shippingProviderId?: number,
+  packagingId?: number | null
 ): Promise<CreateShipmentResult> {
   console.log(`Creating shipment for picklist ${picklistId}...`)
 
@@ -363,6 +392,11 @@ export async function createShipment(
     // Add weight if available
     if (picklist.weight) {
       body.weight = picklist.weight
+    }
+
+    // Add packaging if provided
+    if (packagingId) {
+      body.idpackaging = packagingId
     }
 
     console.log(`Shipment request body:`, JSON.stringify(body))

@@ -30,6 +30,8 @@ interface ProductGroupInput {
 
 interface BatchRequestBody {
   productGroups: ProductGroupInput[]
+  idShippingProvider?: number  // Override shipping provider for all orders
+  idPackaging?: number | null  // Packaging to use for all shipments
 }
 
 interface BatchError {
@@ -77,7 +79,7 @@ export async function POST(request: Request) {
 
   try {
     const body: BatchRequestBody = await request.json()
-    const { productGroups } = body
+    const { productGroups, idShippingProvider, idPackaging } = body
 
     if (!productGroups || productGroups.length === 0) {
       return NextResponse.json(
@@ -240,8 +242,10 @@ export async function POST(request: Request) {
         })
 
         // Step 4: Create shipment in Picqer
-        console.log(`[${batchId}] Creating shipment for order ${order.reference} (picklist ${order.idPicklist})...`)
-        const shipmentResult = await createShipment(order.idPicklist, order.idShippingProvider ?? undefined)
+        // Use override shipping provider if provided, otherwise fall back to order's provider
+        const shippingProviderId = idShippingProvider ?? order.idShippingProvider ?? undefined
+        console.log(`[${batchId}] Creating shipment for order ${order.reference} (picklist ${order.idPicklist}, shipping: ${shippingProviderId}, packaging: ${idPackaging ?? 'none'})...`)
+        const shipmentResult = await createShipment(order.idPicklist, shippingProviderId, idPackaging)
 
         if (!shipmentResult.success || !shipmentResult.shipment) {
           throw new Error(shipmentResult.error || 'Failed to create shipment')
@@ -268,8 +272,8 @@ export async function POST(request: Request) {
         })
 
         // Step 6: Edit label to add plant name
-        // Detect carrier from shipment provider name for optimal positioning
-        const carrier = getCarrierFromProviderName(shipmentResult.shipment.providername)
+        // Detect carrier from shipment profile name for optimal positioning
+        const carrier = getCarrierFromProviderName(shipmentResult.shipment.profile_name)
         console.log(`[${batchId}] Adding plant name "${productGroup.productName}" to label (carrier: ${carrier})...`)
         const editedLabel = await addPlantNameToLabel(
           labelResult.labelData,

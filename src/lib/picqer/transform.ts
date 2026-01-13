@@ -133,7 +133,8 @@ export function transformOrder(order: PicqerOrder): TransformedOrder {
     picklistStatus: picklist?.status ?? null,
     isPartOfBatch: isPartOfBatch(order),
     deliveryPostalCode: order.deliveryzipcode ?? null,
-    idShippingProvider: order.idshippingprovider_profile ?? null,
+    // Get shipping provider from picklist (preferred) or fall back to order level
+    idShippingProvider: picklist?.idshippingprovider_profile ?? order.idshippingprovider_profile ?? null,
   }
 }
 

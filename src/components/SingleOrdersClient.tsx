@@ -12,7 +12,7 @@ import FilterPanel from '@/components/filters/FilterPanel'
 import PresetsPanel from '@/components/presets/PresetsPanel'
 import GroupedOrdersTable from '@/components/single-orders/GroupedOrdersTable'
 import Footer from '@/components/layout/Footer'
-import ConfirmDialog from '@/components/ui/ConfirmDialog'
+import CreateShipmentsDialog from '@/components/ui/CreateShipmentsDialog'
 
 interface BatchResult {
   success: boolean
@@ -53,7 +53,7 @@ export default function SingleOrdersClient() {
   }
 
   // Handler for actual batch creation
-  const handleConfirmBatch = async () => {
+  const handleConfirmBatch = async (shippingProviderId: number, packagingId: number | null) => {
     setIsCreatingBatch(true)
 
     try {
@@ -86,7 +86,11 @@ export default function SingleOrdersClient() {
       const response = await fetch('/api/single-orders/batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productGroups: productGroupsPayload }),
+        body: JSON.stringify({
+          productGroups: productGroupsPayload,
+          idShippingProvider: shippingProviderId,
+          idPackaging: packagingId,
+        }),
       })
 
       const result = await response.json()
@@ -240,15 +244,15 @@ export default function SingleOrdersClient() {
 
       <Footer fetchedAt={fetchedAt} />
 
-      {/* Batch confirmation dialog */}
-      <ConfirmDialog
+      {/* Create shipments dialog */}
+      <CreateShipmentsDialog
         open={isConfirmDialogOpen}
         onClose={() => setIsConfirmDialogOpen(false)}
         onConfirm={handleConfirmBatch}
-        title="Shipments aanmaken"
-        message={`${totalSelectedOrders} orders worden verwerkt uit ${selectedGroups.length} productgroep(en). Voor elke order wordt een shipment aangemaakt in Picqer en het label wordt voorzien van de plantnaam. Weet je zeker dat je door wilt gaan?`}
-        confirmText="Shipments aanmaken"
-        cancelText="Annuleren"
+        totalOrders={totalSelectedOrders}
+        totalGroups={selectedGroups.length}
+        defaultShippingProviderId={selectedGroups[0]?.orders[0]?.idShippingProvider ?? null}
+        firstPicklistId={selectedGroups[0]?.orders[0]?.idPicklist ?? null}
         isLoading={isCreatingBatch}
       />
     </>

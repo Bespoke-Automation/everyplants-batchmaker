@@ -12,18 +12,17 @@ export type CarrierType = 'postnl' | 'dpd' | 'unknown'
 const POSTNL_POSITION = {
   xPercent: 0.55,
   yPercent: 0.45,
-  fontSize: 14,
+  fontSize: 10,    // Smaller font for PostNL
 }
 
 /**
  * Position configuration for plant name on DPD label
- * In the "Info" field area on the left side, next to "Info" text
- * DPD label has: address at top-left, then Contact/Info/Consignment below
+ * Left side, in white space below Ref1 row
  */
 const DPD_POSITION = {
-  xPercent: 0.15,  // After "Info" text label (which is around 5-10%)
-  yPercent: 0.495, // In the Info row (around 48-52% from top)
-  fontSize: 11,
+  xPercent: 0.02,  // Left side, aligned with Ref1 area
+  yPercent: 0.58,  // Below Ref1 line, in white space before routing barcode
+  fontSize: 8,     // Smaller font for DPD
 }
 
 interface LabelEditOptions {
