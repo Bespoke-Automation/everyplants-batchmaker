@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, Fragment, useMemo } from 'react'
-import { RefreshCw, Package, ChevronDown, ChevronRight } from 'lucide-react'
+import { useState, Fragment, useMemo, useCallback } from 'react'
+import { RefreshCw, Package, ChevronDown, ChevronRight, Download } from 'lucide-react'
 import { ProductGroup } from '@/types/singleOrder'
 import { useTableSearch } from '@/hooks/useTableSearch'
 import TableSearch from '@/components/ui/TableSearch'
@@ -81,6 +81,51 @@ export default function GroupedOrdersTable({
 
   const totalSelectedOrders = selectedGroups.reduce((sum, g) => sum + g.totalCount, 0)
 
+  const exportToCSV = useCallback(() => {
+    const headers = ['Product Code', 'Product Name', 'Reference', 'Retailer', 'Retailer Order Number', 'Country', 'Delivery Day', 'Picklist ID', 'Invoice Name', 'Order ID', 'ID Order', 'Plantnummer', 'ID Shipping']
+
+    // Flatten all groups into individual order rows
+    const rows = groups.flatMap(group =>
+      group.orders.map(order => {
+        const values = [
+          group.productCode,
+          group.productName,
+          order.reference,
+          order.retailerName,
+          order.retailerOrderNumber,
+          order.bezorgland,
+          order.leverdag,
+          order.picklistId,
+          order.invoiceName,
+          order.orderId,
+          order.idOrder,
+          order.plantnummer,
+          order.idShipping,
+        ]
+
+        return values.map(value => {
+          const stringValue = value === null || value === undefined ? '' : String(value)
+          if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+            return `"${stringValue.replace(/"/g, '""')}"`
+          }
+          return stringValue
+        }).join(',')
+      })
+    )
+
+    const csv = [headers.join(','), ...rows].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `single-orders-export-${new Date().toISOString().split('T')[0]}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }, [groups])
+
   return (
     <div className="bg-card border border-border rounded-lg shadow-sm overflow-hidden flex flex-col">
       <div className="p-4 border-b border-border flex items-center justify-between bg-muted/5">
@@ -102,6 +147,12 @@ export default function GroupedOrdersTable({
             placeholder="Zoek producten..."
             isSearching={isSearching}
           />
+          <button
+            onClick={exportToCSV}
+            className="text-sm font-medium text-primary hover:underline flex items-center gap-1"
+          >
+            <Download className="w-4 h-4" /> Export CSV
+          </button>
           <button
             onClick={onRefresh}
             disabled={isLoading}
