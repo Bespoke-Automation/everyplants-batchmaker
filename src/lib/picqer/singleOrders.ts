@@ -11,51 +11,27 @@ export interface SingleOrderAnalysis {
   excludedProductCount: number
 }
 
-// Productcode prefixes for non-plant items (boxes, flyers, etc.)
-// These are excluded when counting plants for single orders
-const EXCLUDED_PRODUCTCODE_PREFIXES = [
-  '55_',      // Boxes (tupe, fold, euro, surprise boxes)
-  '333017',   // Plantura boxes and inlays
-]
-
-// Full productcodes to exclude (items that don't match prefix patterns)
-const EXCLUDED_PRODUCTCODES = new Set([
-  '1',        // Flyer Green Bubble
-])
-
-/**
- * Check if a product should be excluded from plant count based on productcode
- */
-function isExcludedProduct(productcode: string): boolean {
-  const upperCode = productcode.toUpperCase()
-
-  // Check exact matches
-  if (EXCLUDED_PRODUCTCODES.has(productcode)) {
-    return true
-  }
-
-  // Check prefixes
-  return EXCLUDED_PRODUCTCODE_PREFIXES.some(prefix =>
-    upperCode.startsWith(prefix.toUpperCase())
-  )
-}
-
 /**
  * Analyze order products to determine if it's a single order
  *
  * Rules:
  * - Must have exactly 1 plant (non-excluded product) with amount 1
- * - Products with excluded productcodes (boxes, flyers, etc.) don't count
+ * - Products with excluded productcodes (from Supabase, tagged "Overig" in Picqer) don't count
+ * - Parts of virtual compositions are skipped (only parent counts)
  *
  * Example single orders:
  * - 1x Strelitzia Nicolai ✓
- * - 1x Strelitzia + 1x Sale box (55_xxx) ✓
+ * - 1x Strelitzia + 1x Box (excluded) ✓
  *
  * Example NOT single orders:
  * - 2x Strelitzia Nicolai ✗
  * - 1x Strelitzia + 1x Philodendron ✗
+ * - 1x Strelitzia + 1x Fertilizer (not excluded) ✗
  */
-export function analyzeSingleOrder(products: PicqerOrderProduct[]): SingleOrderAnalysis {
+export function analyzeSingleOrder(
+  products: PicqerOrderProduct[],
+  excludedProductCodes: Set<string>
+): SingleOrderAnalysis {
   let plantProduct: SingleOrderAnalysis['plantProduct'] = null
   let totalPlantCount = 0
   let excludedProductCount = 0
@@ -66,7 +42,8 @@ export function analyzeSingleOrder(products: PicqerOrderProduct[]): SingleOrderA
       continue
     }
 
-    if (isExcludedProduct(product.productcode)) {
+    // Check if product is excluded (tagged "Overig" in Picqer, synced to Supabase)
+    if (excludedProductCodes.has(product.productcode)) {
       excludedProductCount += product.amount
       continue
     }
