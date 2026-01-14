@@ -20,13 +20,13 @@ const POSTNL_NL_POSITION = {
 
 /**
  * Position configuration for plant name on PostNL DE (Germany) label
- * To the right of the "EU" letters in the bottom-left corner
+ * To the right of the "EU" letters, ABOVE the barcode
  */
 const POSTNL_DE_POSITION = {
   xPercent: 0.15,  // Right of the "EU" text
-  yPercent: 0.82,  // Near bottom, aligned with "EU" row
+  yPercent: 0.70,  // Same row as "EU" text, above barcode
   fontSize: 10,
-  maxWidthPercent: 0.50,  // Space available to the right of EU
+  maxWidthPercent: 0.45,  // Stop before barcode area
   maxLines: 2,
   lineHeight: 1.2,
 }
