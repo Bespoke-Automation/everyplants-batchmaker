@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server'
-import { createPicklistBatch, fetchPicklist } from '@/lib/picqer/client'
+import { createPicklistBatch } from '@/lib/picqer/client'
 import {
   createShipmentLabel,
   createSingleOrderBatch,
   updateSingleOrderBatch,
 } from '@/lib/supabase/shipmentLabels'
+import { inngest } from '@/inngest/client'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,14 +30,6 @@ interface BatchRequestBody {
   idPackaging?: number | null  // Packaging to use for all shipments
 }
 
-interface ValidatedPicklist {
-  picklistId: number
-  warehouseId: number
-  status: string
-  order: OrderInGroup
-  productGroup: ProductGroupInput
-}
-
 /**
  * Generate a unique batch ID
  */
@@ -47,52 +40,26 @@ function generateBatchId(): string {
 }
 
 /**
- * Trigger internal API route to process shipments asynchronously
- * Fire and forget - logs errors but doesn't block
- */
-function triggerShipmentProcessing(batchId: string): void {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-  const processUrl = `${baseUrl}/api/single-orders/batch/${batchId}/process`
-
-  // Fire and forget - log errors but don't block
-  fetch(processUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-  })
-    .then(response => {
-      if (!response.ok) {
-        console.error(`[${batchId}] Process endpoint returned ${response.status}`)
-      }
-    })
-    .catch(error => {
-      console.error(`[${batchId}] Failed to trigger processing:`, error)
-    })
-
-  console.log(`[${batchId}] Triggered async shipment processing`)
-}
-
-/**
  * POST /api/single-orders/batch
  *
- * Creates Picqer batch and queues shipments for async processing.
+ * Creates Picqer batch and queues shipments for processing via Inngest.
  *
- * Flow (v3 - Async):
- * 1. Pre-validate all picklists (fetch status and warehouse)
- * 2. Group picklists by warehouse
- * 3. Create Picqer batch for each warehouse group (fail all if any fails)
- * 4. Create shipment_labels records with status 'queued'
- * 5. Trigger Edge Function for async shipment processing
- * 6. Return immediately with batchId
+ * Flow:
+ * 1. Collect all picklist IDs from request (trust frontend data)
+ * 2. Create Picqer batch with all picklists (single API call)
+ * 3. Create shipment_labels records with status 'queued'
+ * 4. Trigger Inngest function for durable background processing
+ * 5. Return immediately with batchId
  *
- * The Edge Function then:
- * - Creates shipments in Picqer
+ * Inngest then:
+ * - Creates shipments in Picqer (with retries)
  * - Fetches and edits labels
  * - Combines labels into single PDF
  * - Triggers webhook
  */
 export async function POST(request: Request) {
   const batchId = generateBatchId()
-  console.log(`[${batchId}] Starting single order batch creation (async mode)...`)
+  console.log(`[${batchId}] Starting single order batch creation...`)
 
   try {
     const body: BatchRequestBody = await request.json()
@@ -105,142 +72,55 @@ export async function POST(request: Request) {
       )
     }
 
-    // Calculate total orders
-    const totalOrders = productGroups.reduce(
-      (sum, group) => sum + group.orders.length,
-      0
-    )
-
-    console.log(`[${batchId}] Processing ${totalOrders} orders across ${productGroups.length} product groups`)
-
-    // ========================================
-    // STEP 1: Pre-validate all picklists
-    // ========================================
-    console.log(`[${batchId}] Step 1: Pre-validating ${totalOrders} picklists...`)
-
-    const validatedPicklists: ValidatedPicklist[] = []
-    const validationErrors: string[] = []
-
+    // Flatten all orders from product groups
+    const allOrders: Array<{ order: OrderInGroup; productGroup: ProductGroupInput }> = []
     for (const group of productGroups) {
       for (const order of group.orders) {
-        try {
-          const picklist = await fetchPicklist(order.idPicklist)
-
-          // Check if picklist is in 'new' status
-          if (picklist.status !== 'new') {
-            validationErrors.push(
-              `Order ${order.reference}: Picklist ${order.idPicklist} has status '${picklist.status}' (must be 'new')`
-            )
-            continue
-          }
-
-          // Check if already in a batch
-          if (picklist.idpicklist_batch !== null) {
-            validationErrors.push(
-              `Order ${order.reference}: Picklist ${order.idPicklist} is already in batch ${picklist.idpicklist_batch}`
-            )
-            continue
-          }
-
-          validatedPicklists.push({
-            picklistId: order.idPicklist,
-            warehouseId: picklist.idwarehouse,
-            status: picklist.status,
-            order,
-            productGroup: group,
-          })
-        } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : 'Unknown error'
-          validationErrors.push(
-            `Order ${order.reference}: Failed to fetch picklist ${order.idPicklist}: ${errorMsg}`
-          )
-        }
+        allOrders.push({ order, productGroup: group })
       }
     }
 
-    // If any validation errors, fail the entire operation
-    if (validationErrors.length > 0) {
-      console.error(`[${batchId}] Validation failed with ${validationErrors.length} errors:`, validationErrors)
+    const totalOrders = allOrders.length
+    console.log(`[${batchId}] Processing ${totalOrders} orders across ${productGroups.length} product groups`)
+
+    // Create batch record in Supabase
+    await createSingleOrderBatch(batchId, totalOrders)
+
+    // ========================================
+    // Create Picqer batch with all picklist IDs (single API call)
+    // Trust frontend data - if any picklist is invalid, Picqer will reject
+    // ========================================
+    const picklistIds = allOrders.map(o => o.order.idPicklist)
+    let picqerBatchIds: number[] = []
+
+    try {
+      console.log(`[${batchId}] Creating Picqer batch with ${picklistIds.length} picklists...`)
+      const picqerBatch = await createPicklistBatch(picklistIds)
+      picqerBatchIds = [picqerBatch.idpicklist_batch]
+      console.log(`[${batchId}] Picqer batch created: ${picqerBatch.idpicklist_batch} (${picqerBatch.batchid})`)
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+      console.error(`[${batchId}] Failed to create Picqer batch:`, error)
+
+      await updateSingleOrderBatch(batchId, { status: 'failed' })
+
       return NextResponse.json(
         {
           success: false,
           batchId,
-          error: 'Picklist validation failed',
-          validationErrors,
+          error: 'Failed to create Picqer batch',
+          details: errorMsg,
         },
-        { status: 400 }
+        { status: 500 }
       )
     }
 
-    if (validatedPicklists.length === 0) {
-      return NextResponse.json(
-        { error: 'No valid picklists found after validation' },
-        { status: 400 }
-      )
-    }
-
-    console.log(`[${batchId}] Validation passed: ${validatedPicklists.length} picklists valid`)
-
     // ========================================
-    // STEP 2: Group picklists by warehouse
+    // Create shipment_labels records with 'queued' status
     // ========================================
-    const warehouseGroups = new Map<number, ValidatedPicklist[]>()
+    console.log(`[${batchId}] Creating ${totalOrders} shipment label records...`)
 
-    for (const vp of validatedPicklists) {
-      const existing = warehouseGroups.get(vp.warehouseId) || []
-      existing.push(vp)
-      warehouseGroups.set(vp.warehouseId, existing)
-    }
-
-    console.log(`[${batchId}] Step 2: Grouped into ${warehouseGroups.size} warehouse(s):`,
-      Array.from(warehouseGroups.entries()).map(([wh, pls]) => `WH${wh}: ${pls.length} picklists`).join(', ')
-    )
-
-    // Create batch record in Supabase with processing_shipments status
-    await createSingleOrderBatch(batchId, totalOrders)
-
-    // ========================================
-    // STEP 3: Create Picqer batches (one per warehouse)
-    // ========================================
-    const picqerBatchIds: number[] = []
-
-    for (const [warehouseId, warehousePicklists] of warehouseGroups) {
-      const picklistIds = warehousePicklists.map(vp => vp.picklistId)
-
-      try {
-        console.log(`[${batchId}] Step 3: Creating Picqer batch for warehouse ${warehouseId} with ${picklistIds.length} picklists...`)
-        const picqerBatch = await createPicklistBatch(picklistIds)
-        picqerBatchIds.push(picqerBatch.idpicklist_batch)
-        console.log(`[${batchId}] Picqer batch created: ${picqerBatch.idpicklist_batch} (${picqerBatch.batchid}) for warehouse ${warehouseId}`)
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : 'Unknown error'
-        console.error(`[${batchId}] Failed to create Picqer batch for warehouse ${warehouseId}:`, error)
-
-        // Update batch record as failed
-        await updateSingleOrderBatch(batchId, { status: 'failed' })
-
-        return NextResponse.json(
-          {
-            success: false,
-            batchId,
-            error: `Failed to create Picqer batch for warehouse ${warehouseId}`,
-            details: errorMsg,
-          },
-          { status: 500 }
-        )
-      }
-    }
-
-    console.log(`[${batchId}] All Picqer batches created successfully: ${picqerBatchIds.join(', ')}`)
-
-    // ========================================
-    // STEP 4: Create shipment_labels records with 'queued' status
-    // ========================================
-    console.log(`[${batchId}] Step 4: Creating ${validatedPicklists.length} shipment label records...`)
-
-    for (const vp of validatedPicklists) {
-      const { order, productGroup } = vp
-
+    for (const { order, productGroup } of allOrders) {
       await createShipmentLabel({
         batch_id: batchId,
         picklist_id: order.idPicklist,
@@ -264,20 +144,21 @@ export async function POST(request: Request) {
     console.log(`[${batchId}] Batch record updated, all shipment labels queued`)
 
     // ========================================
-    // STEP 5: Trigger processing (fire and forget)
+    // Trigger Inngest function for durable background processing
     // ========================================
-    triggerShipmentProcessing(batchId)
+    await inngest.send({
+      name: 'batch/process.requested',
+      data: { batchId },
+    })
 
-    console.log(`[${batchId}] Batch creation complete, returning immediately while shipments process in background`)
+    console.log(`[${batchId}] Inngest function triggered, returning immediately`)
 
-    // Return immediately - shipments will be processed asynchronously
     return NextResponse.json({
       success: true,
       batchId,
       picqerBatchId: picqerBatchIds[0],
       picqerBatchIds,
       totalOrders,
-      warehouseCount: warehouseGroups.size,
       status: 'processing_shipments',
       message: 'Batch created. Shipments are being processed in the background.',
     })
@@ -285,7 +166,6 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error(`[${batchId}] Fatal error creating batch:`, error)
 
-    // Try to update batch status
     try {
       await updateSingleOrderBatch(batchId, { status: 'failed' })
     } catch {
