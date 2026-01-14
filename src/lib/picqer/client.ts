@@ -574,3 +574,44 @@ export async function closePicklist(picklistId: number): Promise<{ success: bool
     }
   }
 }
+
+/**
+ * Pick all products on a picklist
+ * This marks all products as picked, which is required before closing the picklist.
+ */
+export async function pickAllProducts(picklistId: number): Promise<{ success: boolean; error?: string }> {
+  console.log(`Picking all products on picklist ${picklistId}...`)
+
+  try {
+    const response = await rateLimitedFetch(
+      `${PICQER_BASE_URL}/picklists/${picklistId}/pickall`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+          'User-Agent': 'EveryPlants-Batchmaker/2.0',
+          'Content-Type': 'application/json',
+        },
+      }
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error(`Picqer API error picking all on picklist ${picklistId}:`, response.status, errorText)
+      return {
+        success: false,
+        error: `Failed to pick all: ${response.status} - ${errorText}`,
+      }
+    }
+
+    console.log(`Picklist ${picklistId} all products picked successfully`)
+    return { success: true }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    console.error(`Error picking all on picklist ${picklistId}:`, errorMessage)
+    return {
+      success: false,
+      error: errorMessage,
+    }
+  }
+}

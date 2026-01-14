@@ -10,6 +10,7 @@ import {
 import {
   createShipment,
   getShipmentLabel,
+  pickAllProducts,
   closePicklist,
 } from "@/lib/picqer/client"
 import {
@@ -183,7 +184,12 @@ async function processLabel(
       original_label_url: shipment.labelurl_pdf || shipment.labelurl || null,
     })
 
-    // Close the picklist after successful shipment
+    // Pick all products and close the picklist after successful shipment
+    const pickResult = await pickAllProducts(label.picklist_id)
+    if (!pickResult.success) {
+      console.warn(`[${batchId}] Failed to pick all on picklist ${label.picklist_id}: ${pickResult.error}`)
+    }
+
     const closeResult = await closePicklist(label.picklist_id)
     if (!closeResult.success) {
       console.warn(`[${batchId}] Failed to close picklist ${label.picklist_id}: ${closeResult.error}`)
