@@ -28,6 +28,7 @@ interface BatchRequestBody {
   productGroups: ProductGroupInput[]
   idShippingProvider?: number  // Override shipping provider for all orders
   idPackaging?: number | null  // Packaging to use for all shipments
+  name?: string  // Optional internal name for the batch
 }
 
 /**
@@ -63,7 +64,7 @@ export async function POST(request: Request) {
 
   try {
     const body: BatchRequestBody = await request.json()
-    const { productGroups, idShippingProvider, idPackaging } = body
+    const { productGroups, idShippingProvider, idPackaging, name } = body
 
     if (!productGroups || productGroups.length === 0) {
       return NextResponse.json(
@@ -136,6 +137,7 @@ export async function POST(request: Request) {
 
     // Update batch record with Picqer batch IDs and shipping config
     await updateSingleOrderBatch(batchId, {
+      name: name || null,
       picqer_batch_id: picqerBatchIds[0],
       picqer_batch_ids: picqerBatchIds,
       picqer_batch_number: picqerBatchNumber,

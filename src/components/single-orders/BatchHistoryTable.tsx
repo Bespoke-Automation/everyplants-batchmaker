@@ -97,6 +97,7 @@ export default function BatchHistoryTable({
             <thead className="bg-muted text-muted-foreground uppercase text-xs font-bold sticky top-0 z-10">
               <tr>
                 <th className="px-4 py-3 min-w-[100px]">Picqer #</th>
+                <th className="px-4 py-3 min-w-[150px]">Naam</th>
                 <th className="px-4 py-3 min-w-[180px]">Planten</th>
                 <th className="px-4 py-3 min-w-[150px]">Retailers</th>
                 <th className="px-4 py-3 min-w-[150px]">Datum</th>
@@ -122,6 +123,13 @@ export default function BatchHistoryTable({
                         <span className="font-mono text-xs bg-primary/10 text-primary px-2 py-1 rounded font-medium">
                           {batch.picqer_batch_number}
                         </span>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">-</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-4">
+                      {batch.name ? (
+                        <span className="text-sm font-medium">{batch.name}</span>
                       ) : (
                         <span className="text-muted-foreground text-xs">-</span>
                       )}

@@ -18,7 +18,7 @@ interface Packaging {
 interface CreateShipmentsDialogProps {
   open: boolean
   onClose: () => void
-  onConfirm: (shippingProviderId: number, packagingId: number | null) => Promise<void>
+  onConfirm: (shippingProviderId: number, packagingId: number | null, name?: string) => Promise<void>
   totalOrders: number
   totalGroups: number
   defaultShippingProviderId: number | null
@@ -40,6 +40,7 @@ export default function CreateShipmentsDialog({
   const [packagings, setPackagings] = useState<Packaging[]>([])
   const [selectedShippingId, setSelectedShippingId] = useState<number | null>(null)
   const [selectedPackagingId, setSelectedPackagingId] = useState<number | null>(null)
+  const [batchName, setBatchName] = useState('')
   const [isLoadingData, setIsLoadingData] = useState(false)
   const [isChangingShipping, setIsChangingShipping] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -54,6 +55,7 @@ export default function CreateShipmentsDialog({
       setIsChangingShipping(false)
       setError(null)
       setWasAutoSelected(false)
+      setBatchName('')
     }
   }, [open, firstPicklistId])
 
@@ -122,7 +124,7 @@ export default function CreateShipmentsDialog({
       setError('Selecteer een verzendprofiel')
       return
     }
-    await onConfirm(selectedShippingId, selectedPackagingId)
+    await onConfirm(selectedShippingId, selectedPackagingId, batchName.trim() || undefined)
   }
 
   return (
@@ -209,6 +211,24 @@ export default function CreateShipmentsDialog({
                     ))}
                   </select>
                   <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                </div>
+              </div>
+            </div>
+
+            {/* Batch Name Section (Optional) */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-muted-foreground w-32">
+                  Naam
+                </label>
+                <div className="flex-1">
+                  <input
+                    type="text"
+                    value={batchName}
+                    onChange={(e) => setBatchName(e.target.value)}
+                    placeholder="Optioneel - interne naam voor deze batch"
+                    className="w-full px-3 py-2 border border-border rounded-md bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  />
                 </div>
               </div>
             </div>

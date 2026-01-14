@@ -64,7 +64,7 @@ export default function SingleOrdersClient() {
   }
 
   // Handler for actual batch creation
-  const handleConfirmBatch = async (shippingProviderId: number, packagingId: number | null) => {
+  const handleConfirmBatch = async (shippingProviderId: number, packagingId: number | null, name?: string) => {
     setIsCreatingBatch(true)
 
     try {
@@ -101,6 +101,7 @@ export default function SingleOrdersClient() {
           productGroups: productGroupsPayload,
           idShippingProvider: shippingProviderId,
           idPackaging: packagingId,
+          name,
         }),
       })
 

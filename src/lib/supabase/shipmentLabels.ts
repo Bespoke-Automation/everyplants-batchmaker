@@ -25,6 +25,7 @@ export interface ShipmentLabel {
 export interface SingleOrderBatch {
   id: string
   batch_id: string
+  name: string | null
   total_orders: number
   successful_shipments: number
   failed_shipments: number
