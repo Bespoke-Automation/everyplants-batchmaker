@@ -9,13 +9,6 @@ const PICQER_BASE_URL = `https://${PICQER_SUBDOMAIN}.picqer.com/api/v1`
 const MAX_RETRIES = 5
 const INITIAL_RETRY_DELAY_MS = 2000
 
-// Simple in-memory cache for orders (shared between endpoints)
-let ordersCache: { data: PicqerOrder[] | null; timestamp: number } = {
-  data: null,
-  timestamp: 0,
-}
-const CACHE_TTL_MS = 30000 // 30 seconds cache
-
 /**
  * Sleep for a given number of milliseconds
  */
@@ -86,16 +79,9 @@ export async function fetchOrders(options: FetchOrdersOptions = {}): Promise<Pic
 
 /**
  * Fetch all processing orders with pagination (up to 3000 orders)
- * Uses in-memory cache to avoid duplicate fetches across endpoints
+ * Always fetches fresh data from Picqer API
  */
 export async function fetchAllOrders(): Promise<PicqerOrder[]> {
-  // Check cache first
-  const now = Date.now()
-  if (ordersCache.data && now - ordersCache.timestamp < CACHE_TTL_MS) {
-    console.log(`Using cached orders (${ordersCache.data.length} orders, ${Math.round((now - ordersCache.timestamp) / 1000)}s old)`)
-    return ordersCache.data
-  }
-
   const allOrders: PicqerOrder[] = []
   let offset = 0
   const limit = 100 // Picqer returns 100 per request by default
@@ -124,9 +110,6 @@ export async function fetchAllOrders(): Promise<PicqerOrder[]> {
   }
 
   console.log(`Total orders fetched: ${allOrders.length}`)
-
-  // Update cache
-  ordersCache = { data: allOrders, timestamp: Date.now() }
 
   return allOrders
 }
@@ -262,9 +245,6 @@ export async function createPicklistBatch(picklistIds: number[]): Promise<Create
 
   const result = await response.json()
   console.log(`Batch created: ${result.idpicklist_batch}`)
-
-  // Invalidate the orders cache since batch status has changed
-  ordersCache = { data: null, timestamp: 0 }
 
   return result
 }

@@ -148,12 +148,18 @@ export function transformOrder(order: PicqerOrder): TransformedOrder {
 
 /**
  * Filter orders that are eligible for batching
+ * - NOT cancelled
  * - NOT part of a batch
  * - Has picklist with status "new"
  * - No excluded tags
  */
 export function filterEligibleOrders(orders: PicqerOrder[]): PicqerOrder[] {
   return orders.filter(order => {
+    // Must be processing (safety check - API should already filter these out)
+    if (order.status !== 'processing') {
+      return false
+    }
+
     // Must NOT be part of a batch
     if (isPartOfBatch(order)) {
       return false
