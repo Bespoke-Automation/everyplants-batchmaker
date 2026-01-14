@@ -1,8 +1,10 @@
 'use client'
 
-import { useState, Fragment } from 'react'
+import { useState, Fragment, useMemo } from 'react'
 import { RefreshCw, Package, ChevronDown, ChevronRight } from 'lucide-react'
 import { ProductGroup } from '@/types/singleOrder'
+import { useTableSearch } from '@/hooks/useTableSearch'
+import TableSearch from '@/components/ui/TableSearch'
 
 interface GroupedOrdersTableProps {
   groups: ProductGroup[]
@@ -32,6 +34,18 @@ export default function GroupedOrdersTable({
 }: GroupedOrdersTableProps) {
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set())
 
+  const searchableFields = useMemo(() => [
+    'productName' as const,
+    'productCode' as const,
+    (group: ProductGroup) => Object.keys(group.retailerBreakdown).join(' '),
+    (group: ProductGroup) => group.orders.map(o => o.reference).join(' '),
+  ], [])
+
+  const { searchQuery, setSearchQuery, filteredItems: searchedGroups, clearSearch, isSearching } = useTableSearch(
+    groups,
+    searchableFields
+  )
+
   const toggleExpanded = (productId: number) => {
     const newExpanded = new Set(expandedGroups)
     if (newExpanded.has(productId)) {
@@ -52,10 +66,10 @@ export default function GroupedOrdersTable({
   }
 
   const toggleSelectAll = () => {
-    if (selectedGroups.length === groups.length) {
+    if (selectedGroups.length === searchedGroups.length) {
       onSelectionChange([])
     } else {
-      onSelectionChange([...groups])
+      onSelectionChange([...searchedGroups])
     }
   }
 
@@ -81,6 +95,13 @@ export default function GroupedOrdersTable({
           )}
         </div>
         <div className="flex items-center gap-2">
+          <TableSearch
+            value={searchQuery}
+            onChange={setSearchQuery}
+            onClear={clearSearch}
+            placeholder="Zoek producten..."
+            isSearching={isSearching}
+          />
           <button
             onClick={onRefresh}
             disabled={isLoading}
@@ -100,7 +121,7 @@ export default function GroupedOrdersTable({
               <p className="text-xs text-muted-foreground">This may take a moment as we analyze each order</p>
             </div>
           </div>
-        ) : groups.length === 0 ? (
+        ) : searchedGroups.length === 0 ? (
           <div className="flex items-center justify-center py-20">
             <div className="text-center">
               <p className="text-sm text-muted-foreground">No product groups found with 5+ single orders</p>
@@ -114,7 +135,7 @@ export default function GroupedOrdersTable({
                 <th className="px-4 py-3 w-12">
                   <input
                     type="checkbox"
-                    checked={selectedGroups.length === groups.length && groups.length > 0}
+                    checked={selectedGroups.length === searchedGroups.length && searchedGroups.length > 0}
                     onChange={toggleSelectAll}
                     className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
                   />
@@ -127,7 +148,7 @@ export default function GroupedOrdersTable({
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {groups.map((group) => (
+              {searchedGroups.map((group) => (
                 <Fragment key={group.productId}>
                   <tr
                     className={`hover:bg-muted/50 transition-colors ${isGroupSelected(group) ? 'bg-primary/5' : ''}`}
@@ -215,7 +236,7 @@ export default function GroupedOrdersTable({
       </div>
 
       <div className="p-3 border-t border-border bg-muted/20 flex items-center justify-center text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-        {isLoading ? 'Loading...' : `${groups.length} product groups | ${totalSingleOrders} total single orders`}
+        {isLoading ? 'Loading...' : `${searchedGroups.length} product groups${searchQuery ? ' (searched)' : ''} | ${totalSingleOrders} total single orders`}
       </div>
     </div>
   )

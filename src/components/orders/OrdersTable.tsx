@@ -1,8 +1,10 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useMemo } from 'react'
 import { RefreshCw, Download, Truck } from 'lucide-react'
 import { TransformedOrder } from '@/types/order'
+import { useTableSearch } from '@/hooks/useTableSearch'
+import TableSearch from '@/components/ui/TableSearch'
 
 interface OrdersTableProps {
   orders: TransformedOrder[]
@@ -38,6 +40,25 @@ export default function OrdersTable({ orders, isLoading, onRefresh, total }: Ord
     COLUMNS.reduce((acc, col) => ({ ...acc, [col.key]: col.initialWidth }), {})
   )
   const resizingRef = useRef<{ key: string; startX: number; startWidth: number } | null>(null)
+
+  const searchableFields = useMemo(() => [
+    'reference' as const,
+    'retailerName' as const,
+    'bezorgland' as const,
+    'leverdag' as const,
+    'invoiceName' as const,
+    'picklistId' as const,
+    'plantnummer' as const,
+    'retailerOrderNumber' as const,
+    'idOrder' as const,
+    'idShipping' as const,
+    (order: TransformedOrder) => order.tags.map(t => t.title).join(' '),
+  ], [])
+
+  const { searchQuery, setSearchQuery, filteredItems: searchedOrders, clearSearch, isSearching } = useTableSearch(
+    orders,
+    searchableFields
+  )
 
   const getCountryBadgeColor = (country: string) => {
     const colors: Record<string, string> = {
@@ -198,6 +219,13 @@ export default function OrdersTable({ orders, isLoading, onRefresh, total }: Ord
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <TableSearch
+            value={searchQuery}
+            onChange={setSearchQuery}
+            onClear={clearSearch}
+            placeholder="Zoek orders..."
+            isSearching={isSearching}
+          />
           <button
             onClick={onRefresh}
             disabled={isLoading}
@@ -223,7 +251,7 @@ export default function OrdersTable({ orders, isLoading, onRefresh, total }: Ord
               <p className="text-sm text-muted-foreground">Loading orders from Picqer...</p>
             </div>
           </div>
-        ) : orders.length === 0 ? (
+        ) : searchedOrders.length === 0 ? (
           <div className="flex items-center justify-center py-20">
             <p className="text-sm text-muted-foreground">No orders found matching your filters</p>
           </div>
@@ -249,7 +277,7 @@ export default function OrdersTable({ orders, isLoading, onRefresh, total }: Ord
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {orders.map((order) => (
+              {searchedOrders.map((order) => (
                 <tr key={order.id} className="hover:bg-muted/50 transition-colors">
                   {COLUMNS.map((column) => (
                     <td
@@ -268,7 +296,7 @@ export default function OrdersTable({ orders, isLoading, onRefresh, total }: Ord
       </div>
 
       <div className="p-3 border-t border-border bg-muted/20 flex items-center justify-center text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-        {isLoading ? 'Loading...' : `${orders.length} of ${total} results (filtered)`}
+        {isLoading ? 'Loading...' : `${searchedOrders.length} of ${orders.length} results${searchQuery ? ' (searched)' : ' (filtered)'}`}
       </div>
     </div>
   )

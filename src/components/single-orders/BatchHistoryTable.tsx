@@ -1,7 +1,10 @@
 'use client'
 
+import { useMemo } from 'react'
 import { RefreshCw, Download, FileText, ChevronLeft, ChevronRight } from 'lucide-react'
 import { EnrichedBatch } from '@/lib/supabase/shipmentLabels'
+import { useTableSearch } from '@/hooks/useTableSearch'
+import TableSearch from '@/components/ui/TableSearch'
 
 interface BatchHistoryTableProps {
   batches: EnrichedBatch[]
@@ -53,6 +56,19 @@ export default function BatchHistoryTable({
   totalCount,
   onPageChange,
 }: BatchHistoryTableProps) {
+  const searchableFields = useMemo(() => [
+    'picqer_batch_number' as const,
+    'name' as const,
+    'status' as const,
+    (batch: EnrichedBatch) => batch.plants.join(' '),
+    (batch: EnrichedBatch) => batch.retailers.join(' '),
+  ], [])
+
+  const { searchQuery, setSearchQuery, filteredItems: searchedBatches, clearSearch, isSearching } = useTableSearch(
+    batches,
+    searchableFields
+  )
+
   return (
     <div className="bg-card border border-border rounded-lg shadow-sm overflow-hidden flex flex-col">
       <div className="p-4 border-b border-border flex items-center justify-between bg-muted/5">
@@ -65,6 +81,13 @@ export default function BatchHistoryTable({
           </span>
         </div>
         <div className="flex items-center gap-2">
+          <TableSearch
+            value={searchQuery}
+            onChange={setSearchQuery}
+            onClear={clearSearch}
+            placeholder="Zoek batches..."
+            isSearching={isSearching}
+          />
           <button
             onClick={onRefresh}
             disabled={isLoading}
@@ -83,7 +106,7 @@ export default function BatchHistoryTable({
               <p className="text-sm text-muted-foreground">Laden...</p>
             </div>
           </div>
-        ) : batches.length === 0 ? (
+        ) : searchedBatches.length === 0 ? (
           <div className="flex items-center justify-center py-20">
             <div className="text-center">
               <p className="text-sm text-muted-foreground">Nog geen batches aangemaakt</p>
@@ -109,7 +132,7 @@ export default function BatchHistoryTable({
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {batches.map((batch) => {
+              {searchedBatches.map((batch) => {
                 const plantsDisplay = truncateList(batch.plants, 2)
                 const retailersDisplay = truncateList(batch.retailers, 2)
 
@@ -209,7 +232,7 @@ export default function BatchHistoryTable({
       {/* Pagination */}
       <div className="p-3 border-t border-border bg-muted/20 flex items-center justify-between">
         <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-          Pagina {page} van {totalPages || 1}
+          {searchQuery ? `${searchedBatches.length} van ${batches.length} (gezocht) | ` : ''}Pagina {page} van {totalPages || 1}
         </span>
         <div className="flex items-center gap-2">
           <button
