@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import {
   createShipment,
   getShipmentLabel,
+  closePicklist,
 } from '@/lib/picqer/client'
 import {
   getShipmentLabelsByBatch,
@@ -107,6 +108,13 @@ export async function POST(
           tracking_code: shipment.trackingcode || null,
           original_label_url: shipment.labelurl_pdf || shipment.labelurl || null,
         })
+
+        // Close the picklist after successful shipment
+        const closeResult = await closePicklist(label.picklist_id)
+        if (!closeResult.success) {
+          console.warn(`[${batchId}] Failed to close picklist ${label.picklist_id}: ${closeResult.error}`)
+          // Continue processing - don't fail the batch for close failures
+        }
 
         // Step 2: Fetch label PDF
         console.log(`[${batchId}] Fetching label PDF for shipment ${shipment.idshipment}...`)
