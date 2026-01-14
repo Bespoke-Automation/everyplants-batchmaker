@@ -1,10 +1,10 @@
 'use client'
 
 import { RefreshCw, Download, FileText, ChevronLeft, ChevronRight } from 'lucide-react'
-import { SingleOrderBatch } from '@/lib/supabase/shipmentLabels'
+import { EnrichedBatch } from '@/lib/supabase/shipmentLabels'
 
 interface BatchHistoryTableProps {
-  batches: SingleOrderBatch[]
+  batches: EnrichedBatch[]
   isLoading: boolean
   onRefresh: () => void
   page: number
@@ -33,6 +33,15 @@ function formatDate(dateString: string): string {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(date)
+}
+
+function truncateList(items: string[], maxDisplay: number = 2): { text: string; hasMore: boolean } {
+  if (items.length === 0) return { text: '-', hasMore: false }
+  if (items.length <= maxDisplay) return { text: items.join(', '), hasMore: false }
+  return {
+    text: items.slice(0, maxDisplay).join(', '),
+    hasMore: true,
+  }
 }
 
 export default function BatchHistoryTable({
@@ -87,68 +96,103 @@ export default function BatchHistoryTable({
           <table className="text-sm text-left w-full">
             <thead className="bg-muted text-muted-foreground uppercase text-xs font-bold sticky top-0 z-10">
               <tr>
-                <th className="px-4 py-3 min-w-[150px]">Batch ID</th>
-                <th className="px-4 py-3 min-w-[180px]">Datum</th>
+                <th className="px-4 py-3 min-w-[100px]">Picqer #</th>
+                <th className="px-4 py-3 min-w-[180px]">Planten</th>
+                <th className="px-4 py-3 min-w-[150px]">Retailers</th>
+                <th className="px-4 py-3 min-w-[150px]">Datum</th>
                 <th className="px-4 py-3 w-[100px] text-center">Status</th>
-                <th className="px-4 py-3 w-[100px] text-center">Orders</th>
-                <th className="px-4 py-3 w-[100px] text-center">Succes</th>
-                <th className="px-4 py-3 w-[100px] text-center">Mislukt</th>
-                <th className="px-4 py-3 w-[120px] text-center">PDF</th>
+                <th className="px-4 py-3 w-[80px] text-center">Orders</th>
+                <th className="px-4 py-3 w-[80px] text-center">Succes</th>
+                <th className="px-4 py-3 w-[80px] text-center">Mislukt</th>
+                <th className="px-4 py-3 w-[100px] text-center">PDF</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {batches.map((batch) => (
-                <tr
-                  key={batch.id}
-                  className="hover:bg-muted/50 transition-colors"
-                >
-                  <td className="px-4 py-4">
-                    <span className="font-mono text-xs bg-muted px-2 py-1 rounded">
-                      {batch.batch_id}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-muted-foreground">
-                    {formatDate(batch.created_at)}
-                  </td>
-                  <td className="px-4 py-4 text-center">
-                    <span
-                      className={`px-2 py-1 rounded text-xs font-semibold border ${
-                        STATUS_STYLES[batch.status] || STATUS_STYLES.processing
-                      }`}
-                    >
-                      {STATUS_LABELS[batch.status] || batch.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-center">
-                    <span className="font-medium">{batch.total_orders}</span>
-                  </td>
-                  <td className="px-4 py-4 text-center">
-                    <span className="text-green-600 font-medium">
-                      {batch.successful_shipments}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-center">
-                    <span className={batch.failed_shipments > 0 ? 'text-red-600 font-medium' : 'text-muted-foreground'}>
-                      {batch.failed_shipments}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-center">
-                    {batch.combined_pdf_path ? (
-                      <a
-                        href={batch.combined_pdf_path}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-primary/10 text-primary rounded-md hover:bg-primary/20 transition-colors text-xs font-medium"
+              {batches.map((batch) => {
+                const plantsDisplay = truncateList(batch.plants, 2)
+                const retailersDisplay = truncateList(batch.retailers, 2)
+
+                return (
+                  <tr
+                    key={batch.id}
+                    className="hover:bg-muted/50 transition-colors"
+                  >
+                    <td className="px-4 py-4">
+                      {batch.picqer_batch_number ? (
+                        <span className="font-mono text-xs bg-primary/10 text-primary px-2 py-1 rounded font-medium">
+                          {batch.picqer_batch_number}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">-</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex items-center gap-1">
+                        <span className="text-sm" title={batch.plants.join(', ')}>
+                          {plantsDisplay.text}
+                        </span>
+                        {plantsDisplay.hasMore && (
+                          <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                            +{batch.plants.length - 2}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex items-center gap-1">
+                        <span className="text-sm text-muted-foreground" title={batch.retailers.join(', ')}>
+                          {retailersDisplay.text}
+                        </span>
+                        {retailersDisplay.hasMore && (
+                          <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                            +{batch.retailers.length - 2}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-4 text-muted-foreground text-xs">
+                      {formatDate(batch.created_at)}
+                    </td>
+                    <td className="px-4 py-4 text-center">
+                      <span
+                        className={`px-2 py-1 rounded text-xs font-semibold border ${
+                          STATUS_STYLES[batch.status] || STATUS_STYLES.processing
+                        }`}
                       >
-                        <Download className="w-3 h-3" />
-                        Download
-                      </a>
-                    ) : (
-                      <span className="text-muted-foreground text-xs">-</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
+                        {STATUS_LABELS[batch.status] || batch.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 text-center">
+                      <span className="font-medium">{batch.total_orders}</span>
+                    </td>
+                    <td className="px-4 py-4 text-center">
+                      <span className="text-green-600 font-medium">
+                        {batch.successful_shipments}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 text-center">
+                      <span className={batch.failed_shipments > 0 ? 'text-red-600 font-medium' : 'text-muted-foreground'}>
+                        {batch.failed_shipments}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 text-center">
+                      {batch.combined_pdf_path ? (
+                        <a
+                          href={batch.combined_pdf_path}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-primary/10 text-primary rounded-md hover:bg-primary/20 transition-colors text-xs font-medium"
+                        >
+                          <Download className="w-3 h-3" />
+                          PDF
+                        </a>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">-</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         )}

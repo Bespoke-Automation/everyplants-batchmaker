@@ -31,6 +31,7 @@ export interface SingleOrderBatch {
   combined_pdf_path: string | null
   picqer_batch_id: number | null
   picqer_batch_ids: number[]
+  picqer_batch_number: string | null
   shipping_provider_id: number | null
   packaging_id: number | null
   status: BatchStatus
@@ -237,8 +238,13 @@ export async function getRecentBatches(limit: number = 10): Promise<SingleOrderB
   return data || []
 }
 
+export interface EnrichedBatch extends SingleOrderBatch {
+  plants: string[]
+  retailers: string[]
+}
+
 export interface BatchHistoryResult {
-  batches: SingleOrderBatch[]
+  batches: EnrichedBatch[]
   totalCount: number
   page: number
   pageSize: number
@@ -246,7 +252,7 @@ export interface BatchHistoryResult {
 }
 
 /**
- * Get paginated batch history
+ * Get paginated batch history with enriched data (plants, retailers)
  */
 export async function getBatchHistory(
   page: number = 1,
@@ -278,11 +284,59 @@ export async function getBatchHistory(
     throw error
   }
 
+  const batches = data || []
   const totalCount = count || 0
   const totalPages = Math.ceil(totalCount / pageSize)
 
+  // Enrich batches with plants and retailers from shipment_labels
+  const batchIds = batches.map(b => b.batch_id)
+
+  if (batchIds.length === 0) {
+    return {
+      batches: [],
+      totalCount,
+      page,
+      pageSize,
+      totalPages,
+    }
+  }
+
+  // Fetch all labels for these batches in one query
+  const { data: labels, error: labelsError } = await supabase
+    .schema('batchmaker')
+    .from('shipment_labels')
+    .select('batch_id, plant_name, retailer')
+    .in('batch_id', batchIds)
+
+  if (labelsError) {
+    console.error('Error fetching shipment labels for history:', labelsError)
+    // Continue without enrichment if labels fail
+  }
+
+  // Group labels by batch_id
+  const labelsByBatch = new Map<string, { plants: Set<string>; retailers: Set<string> }>()
+
+  for (const label of labels || []) {
+    if (!labelsByBatch.has(label.batch_id)) {
+      labelsByBatch.set(label.batch_id, { plants: new Set(), retailers: new Set() })
+    }
+    const entry = labelsByBatch.get(label.batch_id)!
+    if (label.plant_name) entry.plants.add(label.plant_name)
+    if (label.retailer) entry.retailers.add(label.retailer)
+  }
+
+  // Enrich batches
+  const enrichedBatches: EnrichedBatch[] = batches.map(batch => {
+    const labelData = labelsByBatch.get(batch.batch_id)
+    return {
+      ...batch,
+      plants: labelData ? Array.from(labelData.plants).sort() : [],
+      retailers: labelData ? Array.from(labelData.retailers).sort() : [],
+    }
+  })
+
   return {
-    batches: data || [],
+    batches: enrichedBatches,
     totalCount,
     page,
     pageSize,

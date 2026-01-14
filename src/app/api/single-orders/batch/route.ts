@@ -92,11 +92,13 @@ export async function POST(request: Request) {
     // ========================================
     const picklistIds = allOrders.map(o => o.order.idPicklist)
     let picqerBatchIds: number[] = []
+    let picqerBatchNumber: string | null = null
 
     try {
       console.log(`[${batchId}] Creating Picqer batch with ${picklistIds.length} picklists...`)
       const picqerBatch = await createPicklistBatch(picklistIds)
       picqerBatchIds = [picqerBatch.idpicklist_batch]
+      picqerBatchNumber = picqerBatch.batchid || null
       console.log(`[${batchId}] Picqer batch created: ${picqerBatch.idpicklist_batch} (${picqerBatch.batchid})`)
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error'
@@ -136,6 +138,7 @@ export async function POST(request: Request) {
     await updateSingleOrderBatch(batchId, {
       picqer_batch_id: picqerBatchIds[0],
       picqer_batch_ids: picqerBatchIds,
+      picqer_batch_number: picqerBatchNumber,
       shipping_provider_id: idShippingProvider ?? null,
       packaging_id: idPackaging ?? null,
       status: 'processing_shipments',
