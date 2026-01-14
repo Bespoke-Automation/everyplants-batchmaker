@@ -18,6 +18,7 @@ export interface ShipmentLabel {
   tracking_code: string | null
   status: ShipmentLabelStatus
   error_message: string | null
+  country: string | null
   created_at: string
   updated_at: string
 }
@@ -49,6 +50,7 @@ export interface CreateShipmentLabelInput {
   retailer?: string
   plant_name?: string
   plant_product_code?: string
+  country?: string
 }
 
 /**
@@ -66,6 +68,7 @@ export async function createShipmentLabel(input: CreateShipmentLabelInput): Prom
       retailer: input.retailer,
       plant_name: input.plant_name,
       plant_product_code: input.plant_product_code,
+      country: input.country || 'NL',
       status: 'queued',
     })
     .select()

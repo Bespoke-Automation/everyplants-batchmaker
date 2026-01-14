@@ -206,10 +206,11 @@ async function processLabel(
     // Edit label (add plant name)
     let editedLabelBuffer = labelResult.labelData
     if (label.plant_name) {
-      console.log(`[${batchId}] Adding plant name "${label.plant_name}" to label...`)
+      console.log(`[${batchId}] Adding plant name "${label.plant_name}" to label (country: ${label.country || 'NL'})...`)
       const carrierType = detectCarrierFromShipment(shipment)
       editedLabelBuffer = await addPlantNameToLabel(labelResult.labelData, label.plant_name, {
         carrier: carrierType,
+        country: label.country || 'NL',
       })
     }
 

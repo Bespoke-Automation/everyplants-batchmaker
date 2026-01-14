@@ -6,14 +6,27 @@ import { PDFDocument, StandardFonts, rgb, PDFFont } from 'pdf-lib'
 export type CarrierType = 'postnl' | 'dpd' | 'unknown'
 
 /**
- * Position configuration for plant name on PostNL label
+ * Position configuration for plant name on PostNL NL label
  * Middle-right area, avoiding barcode and address
  */
-const POSTNL_POSITION = {
+const POSTNL_NL_POSITION = {
   xPercent: 0.55,
   yPercent: 0.45,
   fontSize: 10,
   maxWidthPercent: 0.40,  // Avoid barcode on left
+  maxLines: 2,
+  lineHeight: 1.2,
+}
+
+/**
+ * Position configuration for plant name on PostNL DE (Germany) label
+ * To the right of the "EU" letters in the bottom-left corner
+ */
+const POSTNL_DE_POSITION = {
+  xPercent: 0.15,  // Right of the "EU" text
+  yPercent: 0.82,  // Near bottom, aligned with "EU" row
+  fontSize: 10,
+  maxWidthPercent: 0.50,  // Space available to the right of EU
   maxLines: 2,
   lineHeight: 1.2,
 }
@@ -36,6 +49,7 @@ interface LabelEditOptions {
   yPercent?: number
   fontSize?: number
   carrier?: CarrierType
+  country?: string
 }
 
 /**
@@ -230,15 +244,20 @@ export async function addPlantNameToLabel(
     carrier = await detectCarrierFromPdf(pdfDoc)
   }
 
-  // Get position based on carrier type
-  let position: typeof POSTNL_POSITION
+  // Get position based on carrier type and country
+  const country = options.country?.toUpperCase() || 'NL'
+  let position: typeof POSTNL_NL_POSITION
   if (carrier === 'dpd') {
     position = DPD_POSITION
     console.log(`Using DPD label positioning for "${plantName}"`)
+  } else if (carrier === 'postnl' && country === 'DE') {
+    // PostNL Germany labels have different layout with "EU" text
+    position = POSTNL_DE_POSITION
+    console.log(`Using PostNL DE label positioning for "${plantName}"`)
   } else {
-    // Default to PostNL positioning for unknown carriers
-    position = POSTNL_POSITION
-    console.log(`Using PostNL label positioning for "${plantName}"`)
+    // Default to PostNL NL positioning for unknown carriers or NL
+    position = POSTNL_NL_POSITION
+    console.log(`Using PostNL NL label positioning for "${plantName}"`)
   }
 
   // Use provided options or carrier-specific defaults

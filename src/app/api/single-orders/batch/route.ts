@@ -15,6 +15,7 @@ interface OrderInGroup {
   idPicklist: number
   retailerName: string
   idShippingProvider: number | null
+  country: string
 }
 
 interface ProductGroupInput {
@@ -132,6 +133,7 @@ export async function POST(request: Request) {
         retailer: order.retailerName,
         plant_name: productGroup.productName,
         plant_product_code: productGroup.productCode,
+        country: order.country,
       })
     }
 

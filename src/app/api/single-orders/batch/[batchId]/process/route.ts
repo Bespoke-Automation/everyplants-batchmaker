@@ -124,7 +124,7 @@ export async function POST(
         // Step 3: Edit label (add plant name)
         let editedLabelBuffer = labelResult.labelData
         if (label.plant_name) {
-          console.log(`[${batchId}] Adding plant name "${label.plant_name}" to label...`)
+          console.log(`[${batchId}] Adding plant name "${label.plant_name}" to label (country: ${label.country || 'NL'})...`)
           // Log all provider-related fields for debugging
           console.log(`[${batchId}] Shipment provider fields: provider="${shipment.provider}", providername="${shipment.providername}", profile_name="${shipment.profile_name}", carrier_key="${shipment.carrier_key}"`)
           const carrierType = detectCarrierFromShipment(shipment)
@@ -132,7 +132,7 @@ export async function POST(
           editedLabelBuffer = await addPlantNameToLabel(
             labelResult.labelData,
             label.plant_name,
-            { carrier: carrierType }
+            { carrier: carrierType, country: label.country || 'NL' }
           )
         }
 

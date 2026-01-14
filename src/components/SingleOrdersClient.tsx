@@ -81,6 +81,7 @@ export default function SingleOrdersClient() {
             idPicklist: order.idPicklist as number,
             retailerName: order.retailerName,
             idShippingProvider: order.idShippingProvider,
+            country: order.bezorgland,
           })),
       })).filter(group => group.orders.length > 0) // Remove empty groups
 
