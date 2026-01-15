@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     try {
       const webhookBody = {
         picklists: picklistIds,
-        filter: ppsFilter === 'ja',
+        filter: ppsFilter === 'ja' ? 'true' : 'false',
         batchid: batchId,
       }
 
