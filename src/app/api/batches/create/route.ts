@@ -42,41 +42,37 @@ export async function POST(request: Request) {
 
     console.log(`Batch created in Picqer: ${batchId}`)
 
-    // Step 2: Trigger n8n webhook
+    // Step 2: Trigger Grive webhook
     let webhookTriggered = false
-    const webhookUrl = process.env.N8N_BATCH_WEBHOOK_URL
+    const webhookUrl = 'https://everyplants.grive-dev.com/webhook/ba6eff16-76e9-48d6-bb97-20e4f02fc289'
 
-    if (webhookUrl) {
-      try {
-        const webhookBody = {
-          picklists: picklistIds,
-          filter: ppsFilter,
-          batchid: batchId,
-        }
-
-        console.log('Triggering n8n webhook:', webhookUrl)
-        console.log('Webhook body:', JSON.stringify(webhookBody))
-
-        const webhookResponse = await fetch(webhookUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(webhookBody),
-        })
-
-        if (webhookResponse.ok) {
-          webhookTriggered = true
-          console.log('n8n webhook triggered successfully')
-        } else {
-          console.error(`n8n webhook failed: ${webhookResponse.status}`)
-        }
-      } catch (webhookError) {
-        // Log error but don't fail the request - batch is already created
-        console.error('Error triggering n8n webhook:', webhookError)
+    try {
+      const webhookBody = {
+        picklists: picklistIds,
+        filter: ppsFilter,
+        batchid: batchId,
       }
-    } else {
-      console.warn('N8N_BATCH_WEBHOOK_URL not configured')
+
+      console.log('Triggering Grive webhook:', webhookUrl)
+      console.log('Webhook body:', JSON.stringify(webhookBody))
+
+      const webhookResponse = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(webhookBody),
+      })
+
+      if (webhookResponse.ok) {
+        webhookTriggered = true
+        console.log('Grive webhook triggered successfully')
+      } else {
+        console.error(`Grive webhook failed: ${webhookResponse.status}`)
+      }
+    } catch (webhookError) {
+      // Log error but don't fail the request - batch is already created
+      console.error('Error triggering Grive webhook:', webhookError)
     }
 
     return NextResponse.json<CreateBatchResponse>({
