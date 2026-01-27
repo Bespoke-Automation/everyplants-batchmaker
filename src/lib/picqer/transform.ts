@@ -1,5 +1,6 @@
 import { PicqerOrder, PicqerTag, ORDERFIELD_IDS, EXCLUDED_TAGS } from './types'
 import { TransformedOrder, OrderTag } from '@/types/order'
+import { DAYS } from '@/constants'
 
 // Retailer names that appear as tags
 const RETAILER_TAGS = [
@@ -188,6 +189,12 @@ export function extractMetadata(orders: TransformedOrder[]) {
     retailers: [...new Set(orders.map(o => o.retailerName).filter(r => r !== '-'))].sort(),
     tags: [...new Set(orders.flatMap(o => o.tagTitles))].sort(),
     countries: [...new Set(orders.map(o => o.bezorgland))].sort(),
-    leverdagen: [...new Set(orders.map(o => o.leverdag))].sort(),
+    leverdagen: [...new Set(orders.map(o => o.leverdag))].sort((a, b) => {
+      const al = a.toLowerCase()
+      const bl = b.toLowerCase()
+      const ai = DAYS.findIndex(d => d.toLowerCase() === al)
+      const bi = DAYS.findIndex(d => d.toLowerCase() === bl)
+      return (ai === -1 ? Infinity : ai) - (bi === -1 ? Infinity : bi)
+    }),
   }
 }
