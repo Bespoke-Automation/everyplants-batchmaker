@@ -23,18 +23,21 @@ export default function PortalPage() {
             </p>
           </Link>
 
-          <div className="relative border border-border rounded-lg p-6 bg-card opacity-60 cursor-not-allowed">
-            <span className="absolute top-3 right-3 text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
-              Binnenkort
+          <Link
+            href="/verpakkingsmodule"
+            className="group relative border border-border rounded-lg p-6 hover:border-primary hover:shadow-md transition-all bg-card"
+          >
+            <span className="absolute top-3 right-3 text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+              Demo
             </span>
-            <div className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center mb-4">
-              <Box className="w-6 h-6 text-muted-foreground" />
+            <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+              <Box className="w-6 h-6 text-primary" />
             </div>
             <h3 className="text-lg font-semibold">Verpakkingsmodule</h3>
             <p className="text-sm text-muted-foreground mt-1">
               Verpakkingen beheren en toewijzen
             </p>
-          </div>
+          </Link>
         </div>
       </div>
     </main>
