@@ -23,7 +23,7 @@ export default function LoginPage() {
       });
 
       if (response.ok) {
-        router.push('/batches');
+        router.push('/');
         router.refresh();
       } else {
         setError('Incorrect password');
@@ -42,7 +42,7 @@ export default function LoginPage() {
           <div className="bg-green-100 p-3 rounded-full mb-4">
             <Lock className="w-8 h-8 text-green-600" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Everyplants Batchmaker</h1>
+          <h1 className="text-2xl font-bold text-gray-900">EveryPlants</h1>
           <p className="text-gray-500 mt-2">Enter password to continue</p>
         </div>
 

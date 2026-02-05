@@ -14,7 +14,7 @@ export function middleware(request: NextRequest) {
 
   // Redirect to home if already authenticated and trying to access login
   if (isLoginPage && isAuthenticated) {
-    return NextResponse.redirect(new URL('/batches', request.url));
+    return NextResponse.redirect(new URL('/', request.url));
   }
 
   // Allow access to login page

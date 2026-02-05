@@ -13,7 +13,7 @@ function LoadingState() {
   )
 }
 
-export default function MainLayout({
+export default function BatchmakerLayout({
   children,
 }: {
   children: React.ReactNode

@@ -9,7 +9,7 @@ export type Tab = 'batches' | 'single-orders' | 'settings'
 export default function Header() {
   const pathname = usePathname()
   const router = useRouter()
-  const activeTab: Tab = pathname === '/single-orders' ? 'single-orders' : pathname === '/settings' ? 'settings' : 'batches'
+  const activeTab: Tab = pathname === '/batchmaker/single-orders' ? 'single-orders' : pathname === '/batchmaker/settings' ? 'settings' : 'batches'
 
   const handleLogout = async () => {
     await fetch('/api/auth', { method: 'DELETE' })
@@ -20,7 +20,7 @@ export default function Header() {
   return (
     <header className="h-14 border-b border-border bg-card px-4 flex items-center justify-between sticky top-0 z-50">
       <div className="flex items-center gap-6">
-        <Link href="/batches" className="flex items-center gap-2">
+        <Link href="/" className="flex items-center gap-2">
           <div className="w-8 h-8 bg-primary rounded-md flex items-center justify-center">
             <Package className="text-white w-5 h-5" />
           </div>
@@ -30,7 +30,7 @@ export default function Header() {
         </Link>
         <nav className="hidden md:flex items-center gap-4 text-sm font-medium">
           <Link
-            href="/batches"
+            href="/batchmaker/batches"
             className={`pb-1 px-1 transition-colors ${
               activeTab === 'batches'
                 ? 'text-primary border-b-2 border-primary'
@@ -40,7 +40,7 @@ export default function Header() {
             Batches
           </Link>
           <Link
-            href="/single-orders"
+            href="/batchmaker/single-orders"
             className={`pb-1 px-1 transition-colors ${
               activeTab === 'single-orders'
                 ? 'text-primary border-b-2 border-primary'
@@ -50,7 +50,7 @@ export default function Header() {
             Single Orders
           </Link>
           <Link
-            href="/settings"
+            href="/batchmaker/settings"
             className={`pb-1 px-1 transition-colors ${
               activeTab === 'settings'
                 ? 'text-primary border-b-2 border-primary'

@@ -37,7 +37,7 @@ export default function BatchHistoryClient() {
       {/* Header with back button */}
       <div className="flex items-center gap-4">
         <Link
-          href="/single-orders"
+          href="/batchmaker/single-orders"
           className="inline-flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />

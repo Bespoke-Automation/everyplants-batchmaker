@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'EveryPlants - Batchmaker',
-  description: 'Order batch management system for EveryPlants',
+  title: 'EveryPlants',
+  description: 'Internal tools portal for EveryPlants',
 }
 
 export default function RootLayout({

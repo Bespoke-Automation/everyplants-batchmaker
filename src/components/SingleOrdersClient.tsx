@@ -179,7 +179,7 @@ export default function SingleOrdersClient() {
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Single Orders</h1>
           <Link
-            href="/single-orders/history"
+            href="/batchmaker/single-orders/history"
             className="inline-flex items-center gap-2 px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors border border-border"
           >
             <History className="w-4 h-4" />
