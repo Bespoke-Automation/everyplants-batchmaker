@@ -5,6 +5,10 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 // Configure Supabase client with no-cache fetch to prevent Next.js from caching responses
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+  },
   global: {
     fetch: (url, options = {}) => {
       return fetch(url, {
