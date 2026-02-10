@@ -18,10 +18,11 @@ CREATE TABLE batchmaker.packing_sessions (
     delivery_country TEXT,
     assigned_to INTEGER NOT NULL,               -- Picqer iduser
     assigned_to_name TEXT NOT NULL,             -- Worker display name
-    status TEXT NOT NULL DEFAULT 'assigned'
-        CHECK (status IN ('assigned', 'packing', 'shipping', 'completed', 'failed')),
+    status TEXT NOT NULL DEFAULT 'claimed'
+        CHECK (status IN ('claimed', 'assigned', 'packing', 'shipping', 'completed', 'failed')),
     locked_at TIMESTAMPTZ DEFAULT NOW(),
     lock_expires_at TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '30 minutes'),
+    completed_at TIMESTAMPTZ,
     total_products INTEGER DEFAULT 0,
     total_boxes INTEGER DEFAULT 0,
     combined_pdf_path TEXT,
@@ -49,8 +50,8 @@ CREATE TABLE batchmaker.packing_session_boxes (
     tracking_code TEXT,
     label_url TEXT,                              -- Supabase Storage path
     shipping_provider_id INTEGER,
-    status TEXT NOT NULL DEFAULT 'open'
-        CHECK (status IN ('open', 'closed', 'shipping', 'shipped', 'labeled', 'error')),
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'open', 'closed', 'shipment_created', 'label_fetched', 'shipping', 'shipped', 'error')),
     error_message TEXT,
     box_index INTEGER NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
