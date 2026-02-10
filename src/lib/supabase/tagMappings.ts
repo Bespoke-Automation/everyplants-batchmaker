@@ -107,6 +107,8 @@ export async function deleteTagMapping(id: string): Promise<void> {
  * Get tag mappings for specific tag titles
  */
 export async function getTagMappingsByTags(tagTitles: string[]): Promise<TagPackagingMap[]> {
+  if (tagTitles.length === 0) return []
+
   const { data, error } = await supabase
     .schema('batchmaker')
     .from('tag_packaging_map')

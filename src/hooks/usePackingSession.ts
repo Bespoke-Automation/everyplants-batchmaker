@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { BoxShipmentStatus } from '@/types/verpakking'
 
+let tempIdCounter = 0
+
 // Session types for the hook's internal use
 interface SessionProduct {
   id: string
@@ -121,21 +123,14 @@ export function usePackingSession(sessionId: string | null) {
     return () => abortController.abort()
   }, [fetchSession, sessionId])
 
-  // Helper: revert session state on error
-  const revertOnError = useCallback((err: unknown) => {
-    if (previousSessionRef.current) {
-      setSession(previousSessionRef.current)
-    }
-    setError(err instanceof Error ? err : new Error('Operation failed'))
-  }, [])
-
   // --- Box methods ---
 
   const addBox = useCallback(
     async (packagingName: string, picqerPackagingId?: number, packagingBarcode?: string) => {
       if (!sessionId || !session) return
 
-      // Save snapshot for rollback
+      // Save snapshot for rollback (local variable is stable in this closure)
+      const snapshot = session
       previousSessionRef.current = session
 
       // Determine next box index
@@ -144,7 +139,7 @@ export function usePackingSession(sessionId: string | null) {
         : 0
 
       // Optimistically add box
-      const tempId = `temp-${Date.now()}`
+      const tempId = `temp-${Date.now()}-${++tempIdCounter}`
       const optimisticBox: SessionBox = {
         id: tempId,
         packagingName,
@@ -179,20 +174,21 @@ export function usePackingSession(sessionId: string | null) {
             boxes: prev.boxes.map((b) => (b.id === tempId ? serverBox : b)),
           }
         })
-        previousSessionRef.current = null // Clear snapshot on success
       } catch (err) {
-        revertOnError(err)
+        setSession(snapshot)
+        setError(err instanceof Error ? err : new Error('Operation failed'))
       } finally {
         setIsSaving(false)
       }
     },
-    [sessionId, session, revertOnError]
+    [sessionId, session]
   )
 
   const updateBox = useCallback(
     async (boxId: string, updates: Partial<SessionBox>) => {
       if (!sessionId || !session) return
 
+      const snapshot = session
       previousSessionRef.current = session
 
       // Optimistically update
@@ -227,18 +223,20 @@ export function usePackingSession(sessionId: string | null) {
           }
         })
       } catch (err) {
-        revertOnError(err)
+        setSession(snapshot)
+        setError(err instanceof Error ? err : new Error('Operation failed'))
       } finally {
         setIsSaving(false)
       }
     },
-    [sessionId, session, revertOnError]
+    [sessionId, session]
   )
 
   const removeBox = useCallback(
     async (boxId: string) => {
       if (!sessionId || !session) return
 
+      const snapshot = session
       previousSessionRef.current = session
 
       // Optimistically remove
@@ -262,12 +260,13 @@ export function usePackingSession(sessionId: string | null) {
           throw new Error(errorData.error || 'Failed to remove box')
         }
       } catch (err) {
-        revertOnError(err)
+        setSession(snapshot)
+        setError(err instanceof Error ? err : new Error('Operation failed'))
       } finally {
         setIsSaving(false)
       }
     },
-    [sessionId, session, revertOnError]
+    [sessionId, session]
   )
 
   // --- Product methods ---
@@ -285,10 +284,11 @@ export function usePackingSession(sessionId: string | null) {
     ) => {
       if (!sessionId || !session) return
 
+      const snapshot = session
       previousSessionRef.current = session
 
       // Optimistically add product to the correct box
-      const tempId = `temp-prod-${Date.now()}`
+      const tempId = `temp-prod-${Date.now()}-${++tempIdCounter}`
       const optimisticProduct: SessionProduct = {
         id: tempId,
         boxId,
@@ -339,18 +339,20 @@ export function usePackingSession(sessionId: string | null) {
           }
         })
       } catch (err) {
-        revertOnError(err)
+        setSession(snapshot)
+        setError(err instanceof Error ? err : new Error('Operation failed'))
       } finally {
         setIsSaving(false)
       }
     },
-    [sessionId, session, revertOnError]
+    [sessionId, session]
   )
 
   const moveProduct = useCallback(
     async (productId: string, newBoxId: string) => {
       if (!sessionId || !session) return
 
+      const snapshot = session
       previousSessionRef.current = session
 
       // Optimistically move product between boxes
@@ -387,18 +389,20 @@ export function usePackingSession(sessionId: string | null) {
           throw new Error(errorData.error || 'Failed to move product')
         }
       } catch (err) {
-        revertOnError(err)
+        setSession(snapshot)
+        setError(err instanceof Error ? err : new Error('Operation failed'))
       } finally {
         setIsSaving(false)
       }
     },
-    [sessionId, session, revertOnError]
+    [sessionId, session]
   )
 
   const removeProduct = useCallback(
     async (productId: string) => {
       if (!sessionId || !session) return
 
+      const snapshot = session
       previousSessionRef.current = session
 
       // Optimistically remove product from its box
@@ -425,12 +429,13 @@ export function usePackingSession(sessionId: string | null) {
           throw new Error(errorData.error || 'Failed to remove product')
         }
       } catch (err) {
-        revertOnError(err)
+        setSession(snapshot)
+        setError(err instanceof Error ? err : new Error('Operation failed'))
       } finally {
         setIsSaving(false)
       }
     },
-    [sessionId, session, revertOnError]
+    [sessionId, session]
   )
 
   // --- Shipping methods ---
@@ -513,6 +518,7 @@ export function usePackingSession(sessionId: string | null) {
     async (status: string) => {
       if (!sessionId || !session) return
 
+      const snapshot = session
       previousSessionRef.current = session
 
       setSession((prev) => (prev ? { ...prev, status } : prev))
@@ -529,12 +535,13 @@ export function usePackingSession(sessionId: string | null) {
           throw new Error(errorData.error || 'Failed to update session status')
         }
       } catch (err) {
-        revertOnError(err)
+        setSession(snapshot)
+        setError(err instanceof Error ? err : new Error('Operation failed'))
       } finally {
         setIsSaving(false)
       }
     },
-    [sessionId, session, revertOnError]
+    [sessionId, session]
   )
 
   const completeSession = useCallback(() => updateStatus('completed'), [updateStatus])

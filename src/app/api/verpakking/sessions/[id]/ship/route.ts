@@ -3,6 +3,7 @@ import {
   getBoxesBySession,
   getPackingSession,
   updateBox,
+  claimBoxForShipping,
 } from '@/lib/supabase/packingSessions'
 import { createShipment, getShipmentLabel } from '@/lib/picqer/client'
 import { supabase } from '@/lib/supabase/client'
@@ -74,13 +75,29 @@ export async function POST(
       )
     }
 
-    // Step 2: Get the session to get picklistId
+    // Step 2: Idempotency check - if box already has a shipment, return cached result
+    if (box.shipment_id) {
+      return NextResponse.json({
+        success: true,
+        shipmentId: box.shipment_id,
+        trackingCode: box.tracking_code || null,
+        labelUrl: box.label_url || null,
+      })
+    }
+
+    // Step 3: Atomic claim - only succeeds if box is still in 'pending' or 'open' status
+    const claimed = await claimBoxForShipping(boxId)
+    if (!claimed) {
+      return NextResponse.json(
+        { success: false, error: 'Box is already being shipped or has been shipped' },
+        { status: 409 }
+      )
+    }
+
+    // Step 4: Get the session to get picklistId
     const session = await getPackingSession(sessionId)
 
-    // Step 3: Update box status to 'shipping' in Supabase
-    await updateBox(boxId, { status: 'shipment_created' })
-
-    // Step 4: Create shipment in Picqer
+    // Step 5: Create shipment in Picqer
     const shipmentResult = await createShipment(
       session.picklist_id,
       shippingProviderId,
@@ -106,14 +123,14 @@ export async function POST(
     const shipmentId = shipment.idshipment
     const trackingCode = shipment.trackingcode || undefined
 
-    // Step 5: Fetch the shipping label
+    // Step 6: Fetch the shipping label
     let labelUrl: string | undefined
     const labelPdfUrl = shipment.labelurl_pdf || shipment.labelurl || undefined
 
     const labelResult = await getShipmentLabel(shipmentId, labelPdfUrl)
 
     if (labelResult.success && labelResult.labelData) {
-      // Step 6: Upload label to Supabase Storage
+      // Step 7: Upload label to Supabase Storage
       try {
         labelUrl = await uploadLabelToStorage(sessionId, boxId, labelResult.labelData)
       } catch (uploadError) {
@@ -127,7 +144,7 @@ export async function POST(
       labelUrl = labelPdfUrl
     }
 
-    // Step 7: Update box with shipment data
+    // Step 8: Update box with shipment data
     await updateBox(boxId, {
       shipment_id: shipmentId,
       tracking_code: trackingCode || null,

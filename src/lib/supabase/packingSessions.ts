@@ -2,8 +2,8 @@ import { supabase } from './client'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-export type PackingSessionStatus = 'claimed' | 'packing' | 'label_pending' | 'completed' | 'failed'
-export type BoxShipmentStatus = 'pending' | 'shipment_created' | 'label_fetched' | 'completed' | 'error'
+export type PackingSessionStatus = 'claimed' | 'assigned' | 'packing' | 'shipping' | 'completed' | 'failed'
+export type BoxShipmentStatus = 'pending' | 'open' | 'closed' | 'shipment_created' | 'label_fetched' | 'shipping' | 'shipped' | 'error'
 
 export interface PackingSession {
   id: string
@@ -269,6 +269,9 @@ export async function addBox(sessionId: string, input: AddBoxInput): Promise<Pac
     throw error
   }
 
+  // Refresh session lock on activity
+  await refreshSessionLock(sessionId)
+
   return data
 }
 
@@ -336,6 +339,18 @@ export async function getBoxesBySession(sessionId: string): Promise<PackingSessi
  * Assign a product to a box
  */
 export async function assignProduct(input: AssignProductInput): Promise<PackingSessionProduct> {
+  // Validate box belongs to session
+  const { data: box, error: boxError } = await supabase
+    .schema('batchmaker')
+    .from('packing_session_boxes')
+    .select('id')
+    .eq('id', input.box_id)
+    .eq('session_id', input.session_id)
+    .maybeSingle()
+
+  if (boxError) throw boxError
+  if (!box) throw new Error('Box not found or does not belong to this session')
+
   const { data, error } = await supabase
     .schema('batchmaker')
     .from('packing_session_products')
@@ -355,6 +370,9 @@ export async function assignProduct(input: AssignProductInput): Promise<PackingS
     console.error('Error assigning product:', error)
     throw error
   }
+
+  // Refresh session lock on activity
+  await refreshSessionLock(input.session_id)
 
   return data
 }
@@ -417,6 +435,31 @@ export async function getProductsBySession(sessionId: string): Promise<PackingSe
   return data || []
 }
 
+// ── Atomic shipping claim ────────────────────────────────────────────────────
+
+/**
+ * Atomically claim a box for shipping.
+ * Only succeeds if the box is still in 'pending' or 'open' status.
+ * Returns true if the claim succeeded, false if the box was already claimed/shipped.
+ */
+export async function claimBoxForShipping(boxId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .schema('batchmaker')
+    .from('packing_session_boxes')
+    .update({ status: 'shipment_created' })
+    .eq('id', boxId)
+    .in('status', ['pending', 'open'])
+    .select('id')
+    .maybeSingle()
+
+  if (error) {
+    console.error('Error claiming box for shipping:', error)
+    throw error
+  }
+
+  return !!data  // true if update succeeded (box was in valid state)
+}
+
 // ── Label operations ─────────────────────────────────────────────────────────
 
 /**
@@ -437,6 +480,27 @@ export async function updateBoxShipment(boxId: string, shipmentData: BoxShipment
   if (error) {
     console.error('Error updating box shipment:', error)
     throw error
+  }
+}
+
+// ── Lock management ─────────────────────────────────────────────────────────
+
+/**
+ * Refresh the session lock on activity (extends lock by 30 minutes)
+ */
+export async function refreshSessionLock(sessionId: string): Promise<void> {
+  const { error } = await supabase
+    .schema('batchmaker')
+    .from('packing_sessions')
+    .update({
+      locked_at: new Date().toISOString(),
+      lock_expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+    })
+    .eq('id', sessionId)
+    .in('status', ['claimed', 'packing', 'shipping'])
+
+  if (error) {
+    console.error('Error refreshing session lock:', error)
   }
 }
 

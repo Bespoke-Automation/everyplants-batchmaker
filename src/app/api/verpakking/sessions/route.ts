@@ -11,8 +11,10 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
-    const limit = searchParams.get('limit') ? parseInt(searchParams.get('limit')!, 10) : undefined
-    const offset = searchParams.get('offset') ? parseInt(searchParams.get('offset')!, 10) : undefined
+    const rawLimit = searchParams.get('limit')
+    const rawOffset = searchParams.get('offset')
+    const limit = rawLimit ? Math.min(Math.max(parseInt(rawLimit, 10) || 20, 1), 100) : undefined
+    const offset = rawOffset ? Math.max(parseInt(rawOffset, 10) || 0, 0) : undefined
 
     const result = await getSessionHistory({ limit, offset })
 
@@ -54,6 +56,25 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    if (typeof picklistId !== 'number' || !Number.isInteger(picklistId)) {
+      return NextResponse.json(
+        { error: 'picklistId must be an integer' },
+        { status: 400 }
+      )
+    }
+    if (typeof assignedTo !== 'number' || !Number.isInteger(assignedTo)) {
+      return NextResponse.json(
+        { error: 'assignedTo must be an integer' },
+        { status: 400 }
+      )
+    }
+    if (typeof assignedToName !== 'string' || assignedToName.trim().length === 0) {
+      return NextResponse.json(
+        { error: 'assignedToName must be a non-empty string' },
+        { status: 400 }
+      )
+    }
+
     // Claim the picklist in Supabase (checks for existing claims)
     const session = await claimPicklist(picklistId, assignedTo, assignedToName)
 
@@ -70,14 +91,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Assign the picklist to the worker in Picqer
+    let picqerAssignWarning: string | undefined
     try {
       await assignPicklist(picklistId, assignedTo)
     } catch (assignError) {
-      console.error('[verpakking] Failed to assign picklist in Picqer (session still created):', assignError)
-      // Session is still created, but Picqer assignment failed - log but don't fail
+      console.error('[verpakking] Failed to assign picklist in Picqer:', assignError)
+      picqerAssignWarning = 'Session created but Picqer assignment failed. Please assign manually in Picqer.'
     }
 
-    return NextResponse.json(session)
+    return NextResponse.json({ ...session, warning: picqerAssignWarning })
   } catch (error) {
     console.error('[verpakking] Error creating packing session:', error)
 

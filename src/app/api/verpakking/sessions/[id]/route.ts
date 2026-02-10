@@ -37,7 +37,18 @@ export async function PUT(
     const { id } = await params
     const body = await request.json()
 
-    const updatedSession = await updatePackingSession(id, body)
+    // Whitelist allowed update fields
+    const allowedFields: Record<string, unknown> = {}
+    if (body.status !== undefined) allowedFields.status = body.status
+    if (body.total_products !== undefined) allowedFields.total_products = body.total_products
+    if (body.total_boxes !== undefined) allowedFields.total_boxes = body.total_boxes
+    if (body.completed_at !== undefined) allowedFields.completed_at = body.completed_at
+
+    if (Object.keys(allowedFields).length === 0) {
+      return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
+    }
+
+    const updatedSession = await updatePackingSession(id, allowedFields)
 
     return NextResponse.json(updatedSession)
   } catch (error) {

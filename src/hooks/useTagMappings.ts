@@ -122,6 +122,9 @@ export function useTagMappings() {
   const removeMapping = useCallback(async (id: string) => {
     setError(null)
 
+    // Save removed item for rollback
+    const removedItem = mappings.find((m) => m.id === id)
+
     // Optimistically remove
     setMappings((prev) => prev.filter((m) => m.id !== id))
 
@@ -136,18 +139,21 @@ export function useTagMappings() {
         throw new Error(errorData.error || 'Failed to delete tag mapping')
       }
     } catch (err) {
-      // Revert: re-fetch on error
-      await fetchMappings()
+      // Restore the removed item
+      if (removedItem) {
+        setMappings((prev) => [...prev, removedItem])
+      }
       const error = err instanceof Error ? err : new Error('Unknown error')
       setError(error)
       throw error
     }
-  }, [fetchMappings])
+  }, [mappings])
 
   const refresh = useCallback(() => fetchMappings(), [fetchMappings])
 
   const getMappingsForTags = useCallback(
     (tags: string[]): TagPackagingMapping[] => {
+      if (tags.length === 0) return []
       const tagSet = new Set(tags.map((t) => t.toLowerCase()))
       return mappings
         .filter((m) => m.isActive && tagSet.has(m.tagTitle.toLowerCase()))

@@ -73,8 +73,9 @@ export function useWorker() {
           }
         }
       } catch {
-        // Invalid localStorage data, ignore
+        // Invalid localStorage data, clean up both storage and cookie
         localStorage.removeItem(STORAGE_KEY)
+        removeCookie(COOKIE_KEY)
       }
 
       setIsLoading(false)

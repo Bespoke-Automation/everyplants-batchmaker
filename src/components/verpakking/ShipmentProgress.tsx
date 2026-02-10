@@ -185,15 +185,19 @@ export default function ShipmentProgress({
 
         {/* Actions */}
         <div className="flex items-center justify-between pt-4 border-t border-border">
-          {/* Start shipping (only show if no progress yet) */}
-          {shipProgress.size === 0 && shippingProviderId && (
+          {/* Start shipping (only show if no progress yet and boxes exist) */}
+          {boxes.length === 0 && shipProgress.size === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              Geen dozen om te verzenden
+            </p>
+          ) : shipProgress.size === 0 && shippingProviderId ? (
             <button
               onClick={handleStartShipping}
               className="px-4 py-2 min-h-[48px] bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
             >
               Start verzenden
             </button>
-          )}
+          ) : null}
 
           {/* Download all labels */}
           {labelUrls.length > 0 && (
