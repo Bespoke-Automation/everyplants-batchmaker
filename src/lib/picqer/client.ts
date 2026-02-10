@@ -1,4 +1,4 @@
-import { PicqerOrder, PicqerPicklistWithProducts, PicqerProduct, PicqerShipment, CreateShipmentResult, GetLabelResult, PicqerPackaging, ShippingMethod } from './types'
+import { PicqerOrder, PicqerPicklist, PicqerPicklistWithProducts, PicqerProduct, PicqerShipment, CreateShipmentResult, GetLabelResult, PicqerPackaging, ShippingMethod, PicqerUser } from './types'
 
 const PICQER_SUBDOMAIN = process.env.PICQER_SUBDOMAIN!
 const PICQER_API_KEY = process.env.PICQER_API_KEY!
@@ -594,4 +594,179 @@ export async function pickAllProducts(picklistId: number): Promise<{ success: bo
       error: errorMessage,
     }
   }
+}
+
+/**
+ * Fetch all active users from Picqer with pagination
+ */
+export async function getUsers(): Promise<PicqerUser[]> {
+  const allUsers: PicqerUser[] = []
+  let offset = 0
+  const limit = 100
+
+  console.log('Fetching active users from Picqer...')
+
+  while (true) {
+    const params = new URLSearchParams({
+      active: 'true',
+      offset: offset.toString(),
+    })
+
+    const response = await rateLimitedFetch(`${PICQER_BASE_URL}/users?${params}`, {
+      headers: {
+        'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+        'User-Agent': 'EveryPlants-Batchmaker/2.0',
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store',
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('Picqer API error fetching users:', response.status, errorText)
+      throw new Error(`Picqer API error: ${response.status}`)
+    }
+
+    const users: PicqerUser[] = await response.json()
+    allUsers.push(...users)
+
+    console.log(`Fetched ${users.length} users (total: ${allUsers.length})`)
+
+    if (users.length < limit) {
+      break
+    }
+
+    offset += limit
+
+    // Safety limit: max 1000 users
+    if (offset >= 1000) {
+      console.log('Reached safety limit of 1000 users')
+      break
+    }
+  }
+
+  console.log(`Total active users fetched: ${allUsers.length}`)
+  return allUsers
+}
+
+/**
+ * Fetch picklists from Picqer with optional filters and pagination
+ */
+export async function getPicklists(params?: { status?: string; picklistid?: string; idpicklist_batch?: number }): Promise<PicqerPicklist[]> {
+  const allPicklists: PicqerPicklist[] = []
+  let offset = 0
+  const limit = 100
+
+  console.log('Fetching picklists from Picqer...', params)
+
+  while (true) {
+    const queryParams = new URLSearchParams({
+      offset: offset.toString(),
+    })
+
+    if (params?.status) {
+      queryParams.set('status', params.status)
+    }
+    if (params?.picklistid) {
+      queryParams.set('picklistid', params.picklistid)
+    }
+    if (params?.idpicklist_batch !== undefined) {
+      queryParams.set('idpicklist_batch', params.idpicklist_batch.toString())
+    }
+
+    const response = await rateLimitedFetch(`${PICQER_BASE_URL}/picklists?${queryParams}`, {
+      headers: {
+        'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+        'User-Agent': 'EveryPlants-Batchmaker/2.0',
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store',
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('Picqer API error fetching picklists:', response.status, errorText)
+      throw new Error(`Picqer API error: ${response.status}`)
+    }
+
+    const picklists: PicqerPicklist[] = await response.json()
+    allPicklists.push(...picklists)
+
+    console.log(`Fetched ${picklists.length} picklists (total: ${allPicklists.length})`)
+
+    if (picklists.length < limit) {
+      break
+    }
+
+    offset += limit
+
+    // Safety limit: max 3000 picklists
+    if (offset >= 3000) {
+      console.log('Reached safety limit of 3000 picklists')
+      break
+    }
+  }
+
+  console.log(`Total picklists fetched: ${allPicklists.length}`)
+  return allPicklists
+}
+
+/**
+ * Assign a picklist to a user
+ */
+export async function assignPicklist(picklistId: number, userId: number): Promise<PicqerPicklist> {
+  console.log(`Assigning picklist ${picklistId} to user ${userId}...`)
+
+  const response = await rateLimitedFetch(
+    `${PICQER_BASE_URL}/picklists/${picklistId}/assign`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+        'User-Agent': 'EveryPlants-Batchmaker/2.0',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ iduser: userId }),
+    }
+  )
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error assigning picklist ${picklistId}:`, response.status, errorText)
+    throw new Error(`Failed to assign picklist: ${response.status} - ${errorText}`)
+  }
+
+  const result = await response.json()
+  console.log(`Picklist ${picklistId} assigned to user ${userId} successfully`)
+  return result
+}
+
+/**
+ * Pick a specific product on a picklist
+ */
+export async function pickProduct(picklistId: number, productcode: string, amount: number | 'all'): Promise<PicqerPicklistWithProducts> {
+  console.log(`Picking product ${productcode} (amount: ${amount}) on picklist ${picklistId}...`)
+
+  const response = await rateLimitedFetch(
+    `${PICQER_BASE_URL}/picklists/${picklistId}/pick`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+        'User-Agent': 'EveryPlants-Batchmaker/2.0',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ product: productcode, amount }),
+    }
+  )
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error picking product on picklist ${picklistId}:`, response.status, errorText)
+    throw new Error(`Failed to pick product: ${response.status} - ${errorText}`)
+  }
+
+  const result = await response.json()
+  console.log(`Product ${productcode} picked on picklist ${picklistId} successfully`)
+  return result
 }

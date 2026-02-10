@@ -162,6 +162,19 @@ export interface GetLabelResult {
   error?: string
 }
 
+export interface PicqerUser {
+  iduser: number
+  username: string
+  firstname: string
+  lastname: string
+  emailaddress: string
+  active: boolean
+  idpacking_station: number | null
+  last_login_at: string | null
+  created_at: string
+  updated_at: string
+}
+
 // Result for batch creation with shipments
 export interface SingleOrderBatchResult {
   success: boolean

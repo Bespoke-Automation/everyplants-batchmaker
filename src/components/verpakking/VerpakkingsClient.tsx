@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -16,87 +16,215 @@ import {
 import {
   Package,
   Box,
-  Check,
   Plus,
   Truck,
-  X,
   Search,
-  MapPin,
   Tag,
-  Weight,
   ChevronRight,
   GripVertical,
+  ArrowLeft,
+  Loader2,
+  AlertCircle,
+  Send,
 } from 'lucide-react'
 import Dialog from '@/components/ui/Dialog'
-import type { Box as BoxType, PackagingType, Picklist, PicklistProduct } from '@/types/verpakking'
-import {
-  MOCK_PICKLIST,
-  MOCK_PACKAGING_TYPES,
-  MOCK_SHIPPING_PROFILES,
-  RECENTLY_USED_PACKAGING_IDS,
-} from '@/data/mockVerpakkingData'
-import ProductCard from './ProductCard'
-import BoxCard from './BoxCard'
+import { usePackingSession } from '@/hooks/usePackingSession'
+import type { PicqerPicklistWithProducts, PicqerPicklistProduct, PicqerPackaging } from '@/lib/picqer/types'
+import ProductCard, { type ProductCardItem, type BoxRef } from './ProductCard'
+import BoxCard, { type BoxCardItem, type BoxProductItem } from './BoxCard'
+import ShipmentProgress from './ShipmentProgress'
 
-export default function VerpakkingsClient() {
-  // State
-  const [picklist] = useState<Picklist>(MOCK_PICKLIST)
-  const [products, setProducts] = useState<PicklistProduct[]>(MOCK_PICKLIST.products)
-  const [boxes, setBoxes] = useState<BoxType[]>([])
-  const [activeProduct, setActiveProduct] = useState<PicklistProduct | null>(null)
+interface VerpakkingsClientProps {
+  sessionId: string
+  onBack: () => void
+  workerName: string
+}
 
-  // Modals
+export default function VerpakkingsClient({ sessionId, onBack, workerName }: VerpakkingsClientProps) {
+  // Session hook
+  const {
+    session,
+    isLoading: isSessionLoading,
+    error: sessionError,
+    isSaving,
+    shipProgress,
+    addBox,
+    updateBox,
+    removeBox,
+    assignProduct,
+    removeProduct,
+    shipAllBoxes,
+  } = usePackingSession(sessionId)
+
+  // Picklist data from Picqer
+  const [picklist, setPicklist] = useState<PicqerPicklistWithProducts | null>(null)
+  const [picklistLoading, setPicklistLoading] = useState(false)
+  const [picklistError, setPicklistError] = useState<string | null>(null)
+
+  // Packagings from Picqer
+  const [packagings, setPackagings] = useState<PicqerPackaging[]>([])
+  const [packagingsLoading, setPackagingsLoading] = useState(false)
+
+  // Local UI state
+  const [activeProduct, setActiveProduct] = useState<ProductCardItem | null>(null)
   const [showAddBoxModal, setShowAddBoxModal] = useState(false)
   const [showShipmentModal, setShowShipmentModal] = useState(false)
-  const [selectedBoxForShipment, setSelectedBoxForShipment] = useState<BoxType | null>(null)
-
-  // Search
   const [boxSearchQuery, setBoxSearchQuery] = useState('')
+  const [closedBoxes, setClosedBoxes] = useState<Set<string>>(new Set())
 
-  // Drag & drop sensors (support for mouse, touch, and keyboard)
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    }),
-    useSensor(TouchSensor, {
-      activationConstraint: {
-        delay: 200,
-        tolerance: 5,
-      },
-    }),
-    useSensor(KeyboardSensor)
-  )
+  // Fetch picklist when session loads
+  useEffect(() => {
+    if (!session?.picklistId) return
 
-  // Filtered packaging types based on search
-  const filteredPackagingTypes = useMemo(() => {
-    if (!boxSearchQuery.trim()) {
-      return MOCK_PACKAGING_TYPES
-    }
+    let cancelled = false
+    setPicklistLoading(true)
+    setPicklistError(null)
+
+    fetch(`/api/picqer/picklists/${session.picklistId}`)
+      .then((res) => {
+        if (!res.ok) throw new Error('Picklist ophalen mislukt')
+        return res.json()
+      })
+      .then((data) => {
+        if (!cancelled) {
+          setPicklist(data.picklist)
+          setPicklistLoading(false)
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setPicklistError(err.message)
+          setPicklistLoading(false)
+        }
+      })
+
+    return () => { cancelled = true }
+  }, [session?.picklistId])
+
+  // Fetch packagings once
+  useEffect(() => {
+    let cancelled = false
+    setPackagingsLoading(true)
+
+    fetch('/api/picqer/packagings')
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled) {
+          setPackagings(data.packagings ?? [])
+          setPackagingsLoading(false)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setPackagingsLoading(false)
+      })
+
+    return () => { cancelled = true }
+  }, [])
+
+  // Map picklist products to ProductCardItems
+  // Each picklist product line becomes a card item
+  // We match against session products by picqerProductId + productcode
+  const productItems: ProductCardItem[] = useMemo(() => {
+    if (!picklist?.products) return []
+
+    return picklist.products.map((pp: PicqerPicklistProduct, index: number) => {
+      // Find matching session product across all boxes
+      let assignedBoxId: string | null = null
+      let sessionProductId: string | null = null
+
+      if (session) {
+        for (const box of session.boxes) {
+          const match = box.products.find(
+            (sp) => sp.picqerProductId === pp.idproduct && sp.productcode === pp.productcode
+          )
+          if (match) {
+            assignedBoxId = box.id
+            sessionProductId = match.id
+            break
+          }
+        }
+      }
+
+      // Use a stable unique ID: the session product id if assigned, otherwise index-based
+      const id = sessionProductId ?? `picklist-${pp.idpicklist_product ?? index}-${pp.idproduct}`
+
+      return {
+        id,
+        productCode: pp.productcode,
+        name: pp.name,
+        amount: pp.amount,
+        amountPicked: pp.amount_picked,
+        weight: 0, // Picqer picklist products don't include weight
+        imageUrl: null, // Picqer picklist products don't include images
+        location: '', // Not available from picklist product data
+        assignedBoxId,
+      }
+    })
+  }, [picklist, session])
+
+  // Build BoxRef array for the ProductCard dropdown
+  const boxRefs: BoxRef[] = useMemo(() => {
+    if (!session) return []
+    return session.boxes.map((box) => ({
+      id: box.id,
+      name: box.packagingName,
+      index: box.boxIndex + 1,
+      productCount: box.products.length,
+      isClosed: closedBoxes.has(box.id),
+    }))
+  }, [session, closedBoxes])
+
+  // Build BoxCardItem array for BoxCard component
+  const boxItems: BoxCardItem[] = useMemo(() => {
+    if (!session) return []
+    return session.boxes.map((box) => ({
+      id: box.id,
+      packagingName: box.packagingName,
+      products: box.products.map((sp): BoxProductItem => ({
+        id: sp.id,
+        productCode: sp.productcode,
+        name: sp.productName,
+        weight: (sp.weightPerUnit ?? 0) * sp.amount,
+        imageUrl: null,
+      })),
+      isClosed: closedBoxes.has(box.id),
+      shipmentCreated: box.status === 'shipped',
+    }))
+  }, [session, closedBoxes])
+
+  // Filtered packagings for the add box modal
+  const activePackagings = useMemo(() => {
+    return packagings.filter((p) => p.active)
+  }, [packagings])
+
+  const filteredPackagings = useMemo(() => {
+    if (!boxSearchQuery.trim()) return activePackagings
     const query = boxSearchQuery.toLowerCase()
-    return MOCK_PACKAGING_TYPES.filter(
+    return activePackagings.filter(
       (pkg) =>
         pkg.name.toLowerCase().includes(query) ||
         pkg.barcode?.toLowerCase().includes(query)
     )
-  }, [boxSearchQuery])
-
-  // Recently used packaging types
-  const recentlyUsedPackaging = useMemo(() => {
-    return RECENTLY_USED_PACKAGING_IDS.map((id) =>
-      MOCK_PACKAGING_TYPES.find((pkg) => pkg.id === id)
-    ).filter(Boolean) as PackagingType[]
-  }, [])
+  }, [boxSearchQuery, activePackagings])
 
   // Computed values
-  const assignedProductsCount = products.filter((p) => p.assignedBoxId).length
-  const totalProductsCount = products.length
-  const totalWeight = products.reduce((sum, p) => sum + p.weight, 0)
+  const assignedProductsCount = productItems.filter((p) => p.assignedBoxId !== null).length
+  const totalProductsCount = productItems.length
+
+  // Drag & drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 200, tolerance: 5 },
+    }),
+    useSensor(KeyboardSensor)
+  )
 
   // Handlers
   const handleDragStart = (event: DragStartEvent) => {
-    const product = products.find((p) => p.id === event.active.id)
+    const product = productItems.find((p) => p.id === event.active.id)
     if (product) {
       setActiveProduct(product)
     }
@@ -105,126 +233,140 @@ export default function VerpakkingsClient() {
   const handleDragEnd = (event: DragEndEvent) => {
     setActiveProduct(null)
     const { active, over } = event
-
     if (!over) return
 
     const productId = active.id as string
     const targetId = over.id as string
 
-    // Check if dropping on a box
-    if (targetId.startsWith('box-')) {
-      assignProductToBox(productId, targetId)
+    // Check if dropping on a box (box IDs from session don't have a prefix)
+    // The droppable is identified by box.id directly
+    const targetBox = session?.boxes.find((b) => b.id === targetId)
+    if (targetBox) {
+      handleAssignProduct(productId, targetId)
     }
   }
 
-  const assignProductToBox = (productId: string, boxId: string) => {
-    setProducts((prev) =>
-      prev.map((p) =>
-        p.id === productId ? { ...p, assignedBoxId: boxId, amountPicked: p.amount } : p
+  const handleAssignProduct = useCallback(
+    async (productItemId: string, boxId: string) => {
+      // Find the picklist product data
+      const productItem = productItems.find((p) => p.id === productItemId)
+      if (!productItem || !picklist) return
+
+      // Find the original picklist product for the picqerProductId
+      // Match by productcode and name
+      const picklistProduct = picklist.products.find(
+        (pp) => pp.productcode === productItem.productCode && pp.name === productItem.name
       )
-    )
-    // Also update the box's products list
-    setBoxes((prev) =>
-      prev.map((box) => {
-        if (box.id === boxId) {
-          const product = products.find((p) => p.id === productId)
-          if (product && !box.products.find((p) => p.id === productId)) {
-            return { ...box, products: [...box.products, { ...product, assignedBoxId: boxId }] }
-          }
-        }
-        return box
+      if (!picklistProduct) return
+
+      await assignProduct(boxId, {
+        picqerProductId: picklistProduct.idproduct,
+        productcode: picklistProduct.productcode,
+        productName: picklistProduct.name,
+        amount: picklistProduct.amount,
       })
-    )
-  }
+    },
+    [productItems, picklist, assignProduct]
+  )
 
-  const handleProductClick = (product: PicklistProduct, boxId: string) => {
-    // Button-based assignment for touch/accessibility
-    assignProductToBox(product.id, boxId)
-  }
+  const handleRemoveProduct = useCallback(
+    async (sessionProductId: string) => {
+      await removeProduct(sessionProductId)
+    },
+    [removeProduct]
+  )
 
-  const removeProductFromBox = (productId: string) => {
-    setProducts((prev) =>
-      prev.map((p) =>
-        p.id === productId ? { ...p, assignedBoxId: null, amountPicked: 0 } : p
-      )
-    )
-    setBoxes((prev) =>
-      prev.map((box) => ({
-        ...box,
-        products: box.products.filter((p) => p.id !== productId),
-      }))
-    )
-  }
+  const handleAddBox = useCallback(
+    async (packaging: PicqerPackaging) => {
+      await addBox(packaging.name, packaging.idpackaging, packaging.barcode ?? undefined)
+      setShowAddBoxModal(false)
+      setBoxSearchQuery('')
+    },
+    [addBox]
+  )
 
-  const addBox = (packagingType: PackagingType) => {
-    const newBox: BoxType = {
-      id: `box-${Date.now()}`,
-      packagingType,
-      products: [],
-      isClosed: false,
-      shipmentCreated: false,
-      shipmentId: null,
-    }
-    setBoxes((prev) => [...prev, newBox])
-    setShowAddBoxModal(false)
-    setBoxSearchQuery('')
-  }
+  const handleRemoveBox = useCallback(
+    async (boxId: string) => {
+      await removeBox(boxId)
+    },
+    [removeBox]
+  )
 
-  const removeBox = (boxId: string) => {
-    // Unassign all products from this box first
-    const boxProducts = boxes.find((b) => b.id === boxId)?.products || []
-    boxProducts.forEach((p) => {
-      removeProductFromBox(p.id)
+  const handleCloseBox = useCallback((boxId: string) => {
+    setClosedBoxes((prev) => new Set(prev).add(boxId))
+    updateBox(boxId, { status: 'closed' })
+  }, [updateBox])
+
+  const handleReopenBox = useCallback((boxId: string) => {
+    setClosedBoxes((prev) => {
+      const next = new Set(prev)
+      next.delete(boxId)
+      return next
     })
-    setBoxes((prev) => prev.filter((b) => b.id !== boxId))
-  }
+    updateBox(boxId, { status: 'pending' })
+  }, [updateBox])
 
-  const closeBox = (boxId: string) => {
-    setBoxes((prev) =>
-      prev.map((box) =>
-        box.id === boxId ? { ...box, isClosed: true } : box
-      )
-    )
-  }
-
-  const reopenBox = (boxId: string) => {
-    setBoxes((prev) =>
-      prev.map((box) =>
-        box.id === boxId ? { ...box, isClosed: false } : box
-      )
-    )
-  }
-
-  const openShipmentModal = (box: BoxType) => {
-    setSelectedBoxForShipment(box)
-    setShowShipmentModal(true)
-  }
-
-  const createShipment = () => {
-    if (!selectedBoxForShipment) return
-
-    // Mark shipment as created (in real app, this would call Picqer API)
-    setBoxes((prev) =>
-      prev.map((box) =>
-        box.id === selectedBoxForShipment.id
-          ? { ...box, shipmentCreated: true, shipmentId: `SHIP-${Date.now()}` }
-          : box
-      )
-    )
-    setShowShipmentModal(false)
-    setSelectedBoxForShipment(null)
-  }
+  const handleShipAll = useCallback(
+    (shippingProviderId: number) => {
+      shipAllBoxes(shippingProviderId)
+    },
+    [shipAllBoxes]
+  )
 
   // Get box name for a product
   const getBoxName = (boxId: string | null) => {
-    if (!boxId) return null
-    const box = boxes.find((b) => b.id === boxId)
-    return box ? box.packagingType.name : null
+    if (!boxId || !session) return null
+    const box = session.boxes.find((b) => b.id === boxId)
+    return box ? box.packagingName : null
   }
 
   // Get box index for display
   const getBoxIndex = (boxId: string) => {
-    return boxes.findIndex((b) => b.id === boxId) + 1
+    if (!session) return null
+    const box = session.boxes.find((b) => b.id === boxId)
+    return box ? box.boxIndex + 1 : null
+  }
+
+  // Shipping provider ID from picklist
+  const shippingProviderId = picklist?.idshippingprovider_profile ?? null
+
+  // Loading state
+  if (isSessionLoading) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <p className="text-muted-foreground">Sessie laden...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Error state
+  if (sessionError) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <AlertCircle className="w-8 h-8 text-red-500" />
+          <p className="text-red-600 font-medium">Fout bij laden sessie</p>
+          <p className="text-sm text-muted-foreground">{sessionError.message}</p>
+          <button
+            onClick={onBack}
+            className="mt-2 px-4 py-2 min-h-[48px] text-sm text-primary hover:bg-primary/10 rounded-lg transition-colors"
+          >
+            Terug naar wachtrij
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (!session) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <p className="text-muted-foreground">Geen sessie gevonden</p>
+      </div>
+    )
   }
 
   return (
@@ -235,29 +377,54 @@ export default function VerpakkingsClient() {
       onDragEnd={handleDragEnd}
     >
       <div className="flex flex-col h-full">
-        {/* Header with picklist info */}
+        {/* Header */}
         <div className="bg-card border-b border-border px-4 py-3">
           <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-lg font-semibold">{picklist.picklistNumber}</span>
-                <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 rounded">
-                  Open
-                </span>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={onBack}
+                className="p-2 -ml-2 rounded-lg hover:bg-muted transition-colors"
+                title="Terug naar wachtrij"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-semibold">
+                    {picklist?.picklistid ?? `Picklist #${session.picklistId}`}
+                  </span>
+                  <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 rounded">
+                    {session.status === 'packing' ? 'Inpakken' : session.status}
+                  </span>
+                  {isSaving && (
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Opslaan...
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  {workerName}
+                </p>
               </div>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                Toegewezen aan Niemand
-              </p>
             </div>
-            <div className="text-right text-sm text-muted-foreground">
-              <div className="flex items-center gap-1">
-                <Package className="w-4 h-4" />
-                <span>{assignedProductsCount} / {totalProductsCount} producten toegewezen</span>
+            <div className="flex items-center gap-3">
+              <div className="text-right text-sm text-muted-foreground">
+                <div className="flex items-center gap-1">
+                  <Package className="w-4 h-4" />
+                  <span>{assignedProductsCount} / {totalProductsCount} producten toegewezen</span>
+                </div>
               </div>
-              <div className="flex items-center gap-1 mt-1">
-                <Weight className="w-4 h-4" />
-                <span>{(totalWeight / 1000).toFixed(2)} kg totaal</span>
-              </div>
+              {/* Ship All button */}
+              {session.boxes.length > 0 && (
+                <button
+                  onClick={() => setShowShipmentModal(true)}
+                  className="flex items-center gap-2 px-4 py-2 min-h-[48px] bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
+                >
+                  <Send className="w-4 h-4" />
+                  Alles verzenden
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -273,20 +440,42 @@ export default function VerpakkingsClient() {
               </h2>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-2">
-              {products.map((product) => (
-                <ProductCard
-                  key={product.id}
-                  product={product}
-                  boxName={getBoxName(product.assignedBoxId)}
-                  boxIndex={product.assignedBoxId ? getBoxIndex(product.assignedBoxId) : null}
-                  onRemoveFromBox={() => removeProductFromBox(product.id)}
-                  boxes={boxes.filter((b) => !b.isClosed)}
-                  onAssignToBox={(boxId) => handleProductClick(product, boxId)}
-                />
-              ))}
+              {picklistLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  <span className="ml-2 text-sm text-muted-foreground">Producten laden...</span>
+                </div>
+              ) : picklistError ? (
+                <div className="flex items-center justify-center py-8 text-red-500">
+                  <AlertCircle className="w-5 h-5 mr-2" />
+                  <span className="text-sm">{picklistError}</span>
+                </div>
+              ) : (
+                productItems.map((product) => (
+                  <ProductCard
+                    key={product.id}
+                    product={product}
+                    boxName={getBoxName(product.assignedBoxId)}
+                    boxIndex={product.assignedBoxId ? getBoxIndex(product.assignedBoxId) : null}
+                    onRemoveFromBox={() => {
+                      // Find the session product ID to remove
+                      if (!product.assignedBoxId || !session) return
+                      const box = session.boxes.find((b) => b.id === product.assignedBoxId)
+                      const sessionProd = box?.products.find(
+                        (sp) => sp.productcode === product.productCode && sp.productName === product.name
+                      )
+                      if (sessionProd) {
+                        handleRemoveProduct(sessionProd.id)
+                      }
+                    }}
+                    boxes={boxRefs}
+                    onAssignToBox={(boxId) => handleAssignProduct(product.id, boxId)}
+                  />
+                ))
+              )}
             </div>
             <div className="px-4 py-3 border-t border-border bg-muted/30 text-sm text-muted-foreground">
-              {totalProductsCount} producten · Gewicht {(totalWeight / 1000).toFixed(2)}kg
+              {totalProductsCount} producten · {assignedProductsCount} toegewezen
             </div>
           </div>
 
@@ -295,22 +484,25 @@ export default function VerpakkingsClient() {
             <div className="px-4 py-3 border-b border-border bg-muted/30">
               <h2 className="font-semibold flex items-center gap-2">
                 <Box className="w-4 h-4" />
-                Dozen ({boxes.length})
+                Dozen ({session.boxes.length})
               </h2>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {boxes.map((box, index) => (
-                <BoxCard
-                  key={box.id}
-                  box={box}
-                  index={index + 1}
-                  onRemoveProduct={removeProductFromBox}
-                  onCloseBox={() => closeBox(box.id)}
-                  onReopenBox={() => reopenBox(box.id)}
-                  onRemoveBox={() => removeBox(box.id)}
-                  onCreateShipment={() => openShipmentModal(box)}
-                />
-              ))}
+              {boxItems.map((box) => {
+                const sessionBox = session.boxes.find((b) => b.id === box.id)
+                return (
+                  <BoxCard
+                    key={box.id}
+                    box={box}
+                    index={sessionBox ? sessionBox.boxIndex + 1 : 1}
+                    onRemoveProduct={(productId) => handleRemoveProduct(productId)}
+                    onCloseBox={() => handleCloseBox(box.id)}
+                    onReopenBox={() => handleReopenBox(box.id)}
+                    onRemoveBox={() => handleRemoveBox(box.id)}
+                    onCreateShipment={() => setShowShipmentModal(true)}
+                  />
+                )
+              })}
 
               {/* Add box button */}
               <button
@@ -332,26 +524,29 @@ export default function VerpakkingsClient() {
             <div className="p-4">
               <h3 className="font-semibold mb-3 flex items-center gap-2">
                 <Truck className="w-4 h-4" />
-                Bezorging
+                Sessie info
               </h3>
-              <div className="space-y-1 text-sm">
-                {picklist.deliveryAddress.company && (
-                  <p className="font-medium">{picklist.deliveryAddress.company}</p>
+              <div className="space-y-2 text-sm">
+                <div>
+                  <p className="text-xs text-muted-foreground">Medewerker</p>
+                  <p className="font-medium">{workerName}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Picklist</p>
+                  <p className="font-medium">{picklist?.picklistid ?? session.picklistId}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Status</p>
+                  <p className="font-medium capitalize">{session.status}</p>
+                </div>
+                {picklist && (
+                  <>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Totaal producten</p>
+                      <p>{picklist.totalproducts} ({picklist.totalpicked} gepickt)</p>
+                    </div>
+                  </>
                 )}
-                <p>{picklist.deliveryAddress.name}</p>
-                <p>{picklist.deliveryAddress.street}</p>
-                <p>
-                  {picklist.deliveryAddress.postalCode} {picklist.deliveryAddress.city}
-                </p>
-                <p>{picklist.deliveryAddress.country}</p>
-                <button className="text-primary hover:underline text-xs mt-2">
-                  Bewerk adres
-                </button>
-              </div>
-
-              <div className="mt-4 pt-4 border-t border-border">
-                <p className="text-xs text-muted-foreground">Verzendprofiel (voorgeselecteerd)</p>
-                <p className="text-sm font-medium">{picklist.shippingProfile?.name}</p>
               </div>
 
               <div className="mt-4 pt-4 border-t border-border">
@@ -361,53 +556,22 @@ export default function VerpakkingsClient() {
                 </h4>
                 <div className="space-y-2 text-sm">
                   <div>
-                    <p className="text-xs text-muted-foreground">Bestelling</p>
-                    <p className="text-primary">{picklist.orderId}</p>
-                    <p className="text-xs text-muted-foreground">
-                      op {new Date(picklist.created).toLocaleDateString('nl-NL')}
+                    <p className="text-xs text-muted-foreground">Sessie ID</p>
+                    <p className="font-mono text-xs truncate">{session.id}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Aangemaakt</p>
+                    <p className="text-xs">
+                      {new Date(session.createdAt).toLocaleString('nl-NL')}
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Referentie</p>
-                    <p>{picklist.orderReference}</p>
+                    <p className="text-xs text-muted-foreground">Dozen</p>
+                    <p>{session.boxes.length}</p>
                   </div>
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    {picklist.tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="px-2 py-0.5 text-xs bg-muted rounded-full border border-border"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="mt-2">
-                    <p className="text-xs text-muted-foreground">Retailer Naam</p>
-                    <p>{picklist.retailerName}</p>
-                  </div>
-                  {picklist.retailerOrderNumber && (
-                    <div>
-                      <p className="text-xs text-muted-foreground">Retailer Ordernummer</p>
-                      <p>{picklist.retailerOrderNumber}</p>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-
-        {/* Comments section */}
-        <div className="border-t border-border px-4 py-3 bg-card">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-medium">
-              KL
-            </div>
-            <input
-              type="text"
-              placeholder="Plaats een interne opmerking"
-              className="flex-1 bg-muted rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-            />
           </div>
         </div>
       </div>
@@ -418,17 +582,9 @@ export default function VerpakkingsClient() {
           <div className="bg-card border border-primary shadow-lg rounded-lg p-3 opacity-90">
             <div className="flex items-center gap-3">
               <GripVertical className="w-4 h-4 text-muted-foreground" />
-              {activeProduct.imageUrl ? (
-                <img
-                  src={activeProduct.imageUrl}
-                  alt={activeProduct.name}
-                  className="w-10 h-10 rounded object-cover"
-                />
-              ) : (
-                <div className="w-10 h-10 bg-muted rounded flex items-center justify-center">
-                  <Package className="w-5 h-5 text-muted-foreground" />
-                </div>
-              )}
+              <div className="w-10 h-10 bg-muted rounded flex items-center justify-center">
+                <Package className="w-5 h-5 text-muted-foreground" />
+              </div>
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-sm truncate">{activeProduct.name}</p>
               </div>
@@ -461,145 +617,61 @@ export default function VerpakkingsClient() {
             />
           </div>
 
-          {/* Recently used */}
-          {!boxSearchQuery && (
-            <div className="mb-4">
-              <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
-                Recent gebruikt
-              </h4>
-              <div className="space-y-1">
-                {recentlyUsedPackaging.map((pkg) => (
+          {/* Packaging list */}
+          <div>
+            <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
+              {boxSearchQuery ? `Resultaten (${filteredPackagings.length})` : `Alle verpakkingen (${activePackagings.length})`}
+            </h4>
+            {packagingsLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                <span className="ml-2 text-sm text-muted-foreground">Verpakkingen laden...</span>
+              </div>
+            ) : (
+              <div className="max-h-64 overflow-y-auto space-y-1">
+                {filteredPackagings.map((pkg) => (
                   <button
-                    key={pkg.id}
-                    onClick={() => addBox(pkg)}
+                    key={pkg.idpackaging}
+                    onClick={() => handleAddBox(pkg)}
                     className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-muted transition-colors text-left"
                   >
-                    <img
-                      src={pkg.imageUrl}
-                      alt={pkg.name}
-                      className="w-10 h-10 rounded object-cover"
-                    />
+                    <div className="w-10 h-10 bg-muted rounded flex items-center justify-center flex-shrink-0">
+                      <Box className="w-5 h-5 text-muted-foreground" />
+                    </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm">{pkg.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {pkg.length} x {pkg.width} x {pkg.height} cm
-                      </p>
+                      {(pkg.length || pkg.width || pkg.height) && (
+                        <p className="text-xs text-muted-foreground">
+                          {pkg.length ?? '?'} x {pkg.width ?? '?'} x {pkg.height ?? '?'} cm
+                        </p>
+                      )}
+                      {pkg.barcode && (
+                        <p className="text-xs text-muted-foreground font-mono">{pkg.barcode}</p>
+                      )}
                     </div>
                     <ChevronRight className="w-4 h-4 text-muted-foreground" />
                   </button>
                 ))}
+                {filteredPackagings.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    Geen verpakkingen gevonden
+                  </p>
+                )}
               </div>
-            </div>
-          )}
-
-          {/* All packaging types */}
-          <div>
-            <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
-              {boxSearchQuery ? `Resultaten (${filteredPackagingTypes.length})` : 'Alle verpakkingen'}
-            </h4>
-            <div className="max-h-64 overflow-y-auto space-y-1">
-              {filteredPackagingTypes.map((pkg) => (
-                <button
-                  key={pkg.id}
-                  onClick={() => addBox(pkg)}
-                  className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-muted transition-colors text-left"
-                >
-                  <img
-                    src={pkg.imageUrl}
-                    alt={pkg.name}
-                    className="w-10 h-10 rounded object-cover"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm">{pkg.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {pkg.length} x {pkg.width} x {pkg.height} cm · max {(pkg.maxWeight / 1000).toFixed(0)}kg
-                    </p>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                </button>
-              ))}
-              {filteredPackagingTypes.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  Geen verpakkingen gevonden
-                </p>
-              )}
-            </div>
+            )}
           </div>
         </div>
       </Dialog>
 
-      {/* Shipment Modal */}
-      <Dialog
-        open={showShipmentModal}
-        onClose={() => {
-          setShowShipmentModal(false)
-          setSelectedBoxForShipment(null)
-        }}
-        title="Zending maken"
-        className="max-w-md"
-      >
-        {selectedBoxForShipment && (
-          <div className="p-4">
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm text-muted-foreground">Verzendprofiel</label>
-                <div className="flex items-center justify-between mt-1">
-                  <div>
-                    <p className="font-medium">{picklist.shippingProfile?.name}</p>
-                    <p className="text-xs text-muted-foreground">Dit profiel is voorgeselecteerd</p>
-                  </div>
-                  <button className="text-primary text-sm hover:underline">Wijzig</button>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-sm text-muted-foreground">Verpakking</label>
-                <select className="w-full mt-1 px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
-                  <option value={selectedBoxForShipment.packagingType.id}>
-                    {selectedBoxForShipment.packagingType.name}
-                  </option>
-                  <option value="">Geen</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="text-sm text-muted-foreground">Gewicht</label>
-                <div className="flex items-center gap-2 mt-1">
-                  <input
-                    type="number"
-                    defaultValue={selectedBoxForShipment.products.reduce((sum, p) => sum + p.weight, 0)}
-                    className="flex-1 px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                  <span className="text-sm text-muted-foreground">gram</span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 text-sm text-amber-600">
-                <MapPin className="w-4 h-4" />
-                <span>Geen pakstation</span>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-border">
-              <button
-                onClick={() => {
-                  setShowShipmentModal(false)
-                  setSelectedBoxForShipment(null)
-                }}
-                className="px-4 py-2 text-sm rounded-lg hover:bg-muted transition-colors"
-              >
-                Annuleren
-              </button>
-              <button
-                onClick={createShipment}
-                className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-              >
-                Zending maken
-              </button>
-            </div>
-          </div>
-        )}
-      </Dialog>
+      {/* Shipment Progress Modal */}
+      <ShipmentProgress
+        boxes={session.boxes}
+        shipProgress={shipProgress}
+        isOpen={showShipmentModal}
+        onClose={() => setShowShipmentModal(false)}
+        onShipAll={handleShipAll}
+        shippingProviderId={shippingProviderId}
+      />
     </DndContext>
   )
 }

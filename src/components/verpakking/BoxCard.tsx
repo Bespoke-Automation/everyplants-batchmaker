@@ -12,10 +12,27 @@ import {
   Weight,
   Trash2,
 } from 'lucide-react'
-import type { Box as BoxType } from '@/types/verpakking'
+
+// Lightweight product type for display within a box
+export interface BoxProductItem {
+  id: string
+  productCode: string
+  name: string
+  weight: number // grams
+  imageUrl: string | null
+}
+
+// Lightweight box type for display
+export interface BoxCardItem {
+  id: string
+  packagingName: string
+  products: BoxProductItem[]
+  isClosed: boolean
+  shipmentCreated: boolean
+}
 
 interface BoxCardProps {
-  box: BoxType
+  box: BoxCardItem
   index: number
   onRemoveProduct: (productId: string) => void
   onCloseBox: () => void
@@ -39,8 +56,6 @@ export default function BoxCard({
   })
 
   const totalWeight = box.products.reduce((sum, p) => sum + p.weight, 0)
-  const weightPercentage = Math.min((totalWeight / box.packagingType.maxWeight) * 100, 100)
-  const isOverWeight = totalWeight > box.packagingType.maxWeight
 
   return (
     <div
@@ -57,12 +72,10 @@ export default function BoxCard({
     >
       {/* Box header */}
       <div className="flex items-center gap-3 p-3 border-b border-border bg-muted/30">
-        {/* Box image */}
-        <img
-          src={box.packagingType.imageUrl}
-          alt={box.packagingType.name}
-          className="w-14 h-14 rounded object-cover flex-shrink-0"
-        />
+        {/* Box icon */}
+        <div className="w-14 h-14 bg-muted rounded flex items-center justify-center flex-shrink-0">
+          <Box className="w-7 h-7 text-muted-foreground" />
+        </div>
 
         {/* Box info */}
         <div className="flex-1 min-w-0">
@@ -80,10 +93,7 @@ export default function BoxCard({
               </span>
             ) : null}
           </div>
-          <p className="text-sm text-muted-foreground">{box.packagingType.name}</p>
-          <p className="text-xs text-muted-foreground">
-            {box.packagingType.length} x {box.packagingType.width} x {box.packagingType.height} cm
-          </p>
+          <p className="text-sm text-muted-foreground">{box.packagingName}</p>
         </div>
 
         {/* Remove box button (only if empty and not closed) */}
@@ -105,17 +115,9 @@ export default function BoxCard({
             <Weight className="w-3 h-3" />
             Gewicht
           </span>
-          <span className={isOverWeight ? 'text-red-500 font-medium' : ''}>
-            {(totalWeight / 1000).toFixed(2)} / {(box.packagingType.maxWeight / 1000).toFixed(0)} kg
+          <span>
+            {(totalWeight / 1000).toFixed(2)} kg
           </span>
-        </div>
-        <div className="w-full bg-muted rounded-full h-1.5">
-          <div
-            className={`h-1.5 rounded-full transition-all ${
-              isOverWeight ? 'bg-red-500' : weightPercentage > 80 ? 'bg-amber-500' : 'bg-green-500'
-            }`}
-            style={{ width: `${weightPercentage}%` }}
-          />
         </div>
       </div>
 
@@ -154,7 +156,7 @@ export default function BoxCard({
                 <div className="flex-1 min-w-0">
                   <p className="text-sm truncate">{product.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    {(product.weight / 1000).toFixed(2)} kg
+                    {product.productCode} {product.weight > 0 ? `· ${(product.weight / 1000).toFixed(2)} kg` : ''}
                   </p>
                 </div>
                 {!box.isClosed && (

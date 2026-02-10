@@ -1,8 +1,14 @@
 'use client'
 
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { Package, LogOut, ArrowLeft } from 'lucide-react'
+
+const NAV_LINKS = [
+  { href: '/verpakkingsmodule', label: 'Wachtrij' },
+  { href: '/verpakkingsmodule/geschiedenis', label: 'Geschiedenis' },
+  { href: '/verpakkingsmodule/instellingen', label: 'Instellingen' },
+] as const
 
 export default function VerpakkingsmoduleLayout({
   children,
@@ -10,11 +16,19 @@ export default function VerpakkingsmoduleLayout({
   children: React.ReactNode
 }) {
   const router = useRouter()
+  const pathname = usePathname()
 
   const handleLogout = async () => {
     await fetch('/api/auth', { method: 'DELETE' })
     router.push('/login')
     router.refresh()
+  }
+
+  const isActive = (href: string) => {
+    if (href === '/verpakkingsmodule') {
+      return pathname === '/verpakkingsmodule'
+    }
+    return pathname.startsWith(href)
   }
 
   return (
@@ -32,8 +46,23 @@ export default function VerpakkingsmoduleLayout({
             <div className="w-8 h-8 bg-primary rounded-md flex items-center justify-center">
               <Package className="text-white w-5 h-5" />
             </div>
-            <h1 className="text-lg font-bold tracking-tight">Verpakkingsmodule</h1>
+            <h1 className="text-lg font-bold tracking-tight hidden sm:block">Verpakkingsmodule</h1>
           </div>
+          <nav className="flex items-center gap-1 ml-2">
+            {NAV_LINKS.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                  isActive(link.href)
+                    ? 'bg-primary/10 text-primary font-medium'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                }`}
+              >
+                {link.label}
+              </Link>
+            ))}
+          </nav>
         </div>
         <button
           onClick={handleLogout}

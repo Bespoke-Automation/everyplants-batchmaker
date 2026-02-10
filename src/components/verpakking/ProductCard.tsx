@@ -4,14 +4,35 @@ import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 import { Package, GripVertical, Check, X, ChevronDown, Box } from 'lucide-react'
 import { useState } from 'react'
-import type { Box as BoxType, PicklistProduct } from '@/types/verpakking'
+
+// Lightweight product type for display
+export interface ProductCardItem {
+  id: string // unique key (productcode or idproduct-based)
+  productCode: string
+  name: string
+  amount: number
+  amountPicked: number
+  weight: number // in grams (0 if unknown)
+  imageUrl: string | null
+  location: string
+  assignedBoxId: string | null
+}
+
+// Lightweight box reference for the dropdown
+export interface BoxRef {
+  id: string
+  name: string
+  index: number
+  productCount: number
+  isClosed: boolean
+}
 
 interface ProductCardProps {
-  product: PicklistProduct
+  product: ProductCardItem
   boxName: string | null
   boxIndex: number | null
   onRemoveFromBox: () => void
-  boxes: BoxType[]
+  boxes: BoxRef[]
   onAssignToBox: (boxId: string) => void
 }
 
@@ -35,6 +56,8 @@ export default function ProductCard({
     transform: CSS.Translate.toString(transform),
     opacity: isDragging ? 0.5 : 1,
   }
+
+  const openBoxes = boxes.filter((b) => !b.isClosed)
 
   return (
     <div
@@ -84,16 +107,15 @@ export default function ProductCard({
 
         {/* Product info */}
         <div className="flex-1 min-w-0">
-          <a
-            href="#"
-            className="text-primary hover:underline text-sm font-medium"
-          >
+          <span className="text-primary text-sm font-medium">
             {product.productCode}
-          </a>
-          <p className="text-sm truncate">{product.name}</p>
-          <span className="inline-block px-2 py-0.5 text-[10px] bg-muted rounded mt-1">
-            {product.location}
           </span>
+          <p className="text-sm truncate">{product.name}</p>
+          {product.location && (
+            <span className="inline-block px-2 py-0.5 text-[10px] bg-muted rounded mt-1">
+              {product.location}
+            </span>
+          )}
         </div>
 
         {/* Amount picker / status */}
@@ -118,35 +140,29 @@ export default function ProductCard({
             <>
               {/* Amount display */}
               <div className="flex items-center border border-border rounded-lg overflow-hidden">
-                <button className="px-2 py-1 text-muted-foreground hover:bg-muted transition-colors">
-                  -
-                </button>
                 <span className="px-3 py-1 text-sm min-w-[3rem] text-center">
                   {product.amountPicked} / {product.amount}
                 </span>
-                <button className="px-2 py-1 text-muted-foreground hover:bg-muted transition-colors">
-                  +
-                </button>
               </div>
 
               {/* Assign to box button (alternative to drag) */}
               <div className="relative">
                 <button
                   onClick={() => setShowBoxMenu(!showBoxMenu)}
-                  disabled={boxes.length === 0}
+                  disabled={openBoxes.length === 0}
                   className={`p-2 rounded-lg transition-colors flex items-center gap-1 text-sm ${
-                    boxes.length === 0
+                    openBoxes.length === 0
                       ? 'text-muted-foreground bg-muted cursor-not-allowed'
                       : 'text-primary hover:bg-primary/10'
                   }`}
-                  title={boxes.length === 0 ? 'Voeg eerst een doos toe' : 'Wijs toe aan doos'}
+                  title={openBoxes.length === 0 ? 'Voeg eerst een doos toe' : 'Wijs toe aan doos'}
                 >
                   <Box className="w-4 h-4" />
                   <ChevronDown className="w-3 h-3" />
                 </button>
 
                 {/* Dropdown menu */}
-                {showBoxMenu && boxes.length > 0 && (
+                {showBoxMenu && openBoxes.length > 0 && (
                   <>
                     <div
                       className="fixed inset-0 z-10"
@@ -157,7 +173,7 @@ export default function ProductCard({
                         <p className="px-2 py-1 text-xs text-muted-foreground font-medium">
                           Wijs toe aan doos
                         </p>
-                        {boxes.map((box, index) => (
+                        {openBoxes.map((box) => (
                           <button
                             key={box.id}
                             onClick={() => {
@@ -166,17 +182,15 @@ export default function ProductCard({
                             }}
                             className="w-full flex items-center gap-2 px-2 py-2 text-sm rounded hover:bg-muted transition-colors text-left"
                           >
-                            <img
-                              src={box.packagingType.imageUrl}
-                              alt={box.packagingType.name}
-                              className="w-8 h-8 rounded object-cover"
-                            />
+                            <div className="w-8 h-8 bg-muted rounded flex items-center justify-center flex-shrink-0">
+                              <Box className="w-4 h-4 text-muted-foreground" />
+                            </div>
                             <div className="flex-1 min-w-0">
                               <p className="font-medium truncate">
-                                Doos {index + 1}: {box.packagingType.name}
+                                Doos {box.index}: {box.name}
                               </p>
                               <p className="text-xs text-muted-foreground">
-                                {box.products.length} producten
+                                {box.productCount} producten
                               </p>
                             </div>
                           </button>

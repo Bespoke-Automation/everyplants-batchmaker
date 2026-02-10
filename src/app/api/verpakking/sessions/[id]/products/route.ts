@@ -1,0 +1,112 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { assignProduct, updateProductAssignment, removeProduct } from '@/lib/supabase/packingSessions'
+
+export const dynamic = 'force-dynamic'
+
+/**
+ * POST /api/verpakking/sessions/[id]/products
+ * Assigns a product to a box in the session
+ */
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: sessionId } = await params
+    const body = await request.json()
+    const { boxId, picqerProductId, productcode, productName, amount, weightPerUnit } = body
+
+    if (!boxId || !picqerProductId || !productcode || !productName || !amount) {
+      return NextResponse.json(
+        { error: 'Missing required fields: boxId, picqerProductId, productcode, productName, amount' },
+        { status: 400 }
+      )
+    }
+
+    const product = await assignProduct({
+      session_id: sessionId,
+      box_id: boxId,
+      picqer_product_id: picqerProductId,
+      productcode,
+      product_name: productName,
+      amount,
+      weight_per_unit: weightPerUnit,
+    })
+
+    return NextResponse.json(product)
+  } catch (error) {
+    console.error('[verpakking] Error assigning product:', error)
+    return NextResponse.json(
+      { error: 'Failed to assign product', details: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * PUT /api/verpakking/sessions/[id]/products
+ * Updates a product assignment (move to different box or change amount)
+ */
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    await params // acknowledge route param
+    const body = await request.json()
+    const { productId, boxId, amount } = body
+
+    if (!productId) {
+      return NextResponse.json(
+        { error: 'Missing required field: productId' },
+        { status: 400 }
+      )
+    }
+
+    const updates: { box_id?: string; amount?: number } = {}
+    if (boxId !== undefined) updates.box_id = boxId
+    if (amount !== undefined) updates.amount = amount
+
+    const updatedProduct = await updateProductAssignment(productId, updates)
+
+    return NextResponse.json(updatedProduct)
+  } catch (error) {
+    console.error('[verpakking] Error updating product assignment:', error)
+    return NextResponse.json(
+      { error: 'Failed to update product assignment', details: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * DELETE /api/verpakking/sessions/[id]/products
+ * Removes a product assignment
+ */
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    await params // acknowledge route param
+    const body = await request.json()
+    const { productId } = body
+
+    if (!productId) {
+      return NextResponse.json(
+        { error: 'Missing required field: productId' },
+        { status: 400 }
+      )
+    }
+
+    await removeProduct(productId)
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('[verpakking] Error removing product:', error)
+    return NextResponse.json(
+      { error: 'Failed to remove product', details: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 }
+    )
+  }
+}
