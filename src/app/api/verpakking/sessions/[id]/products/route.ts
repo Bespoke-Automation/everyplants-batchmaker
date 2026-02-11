@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { assignProduct, updateProductAssignment, removeProduct } from '@/lib/supabase/packingSessions'
+import { assignProduct, updateProductAssignment, removeProduct, getPackingSession } from '@/lib/supabase/packingSessions'
+import { pickProduct, fetchPicklist } from '@/lib/picqer/client'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,6 +24,18 @@ export async function POST(
       )
     }
 
+    // B4: Validate product belongs to this picklist
+    const session = await getPackingSession(sessionId)
+    const picklist = await fetchPicklist(session.picklist_id)
+    const picklistProductIds = picklist.products.map(p => p.idproduct)
+
+    if (!picklistProductIds.includes(picqerProductId)) {
+      return NextResponse.json(
+        { error: 'Product niet gevonden in picklist' },
+        { status: 400 }
+      )
+    }
+
     const product = await assignProduct({
       session_id: sessionId,
       box_id: boxId,
@@ -33,7 +46,16 @@ export async function POST(
       weight_per_unit: weightPerUnit,
     })
 
-    return NextResponse.json(product)
+    // Mark product as picked in Picqer (non-blocking — don't fail if Picqer is down)
+    let picqerWarning: string | undefined
+    try {
+      await pickProduct(session.picklist_id, productcode, amount)
+    } catch (pickError) {
+      console.error('[verpakking] Failed to pick product in Picqer:', pickError)
+      picqerWarning = `Product assigned but Picqer pick failed: ${pickError instanceof Error ? pickError.message : 'Unknown error'}. Please pick manually in Picqer.`
+    }
+
+    return NextResponse.json({ ...product, warning: picqerWarning })
   } catch (error) {
     console.error('[verpakking] Error assigning product:', error)
     return NextResponse.json(

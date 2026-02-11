@@ -86,6 +86,11 @@ export function usePackingSession(sessionId: string | null) {
   const [isSaving, setIsSaving] = useState(false)
   const [shipProgress, setShipProgress] = useState<Map<string, BoxShipmentStatus>>(new Map())
   const previousSessionRef = useRef<Session | null>(null)
+  const sessionRef = useRef<Session | null>(session)
+
+  useEffect(() => {
+    sessionRef.current = session
+  }, [session])
 
   const fetchSession = useCallback(async (signal?: AbortSignal) => {
     if (!sessionId) return
@@ -127,15 +132,15 @@ export function usePackingSession(sessionId: string | null) {
 
   const addBox = useCallback(
     async (packagingName: string, picqerPackagingId?: number, packagingBarcode?: string) => {
-      if (!sessionId || !session) return
+      if (!sessionId || !sessionRef.current) return
 
       // Save snapshot for rollback (local variable is stable in this closure)
-      const snapshot = session
-      previousSessionRef.current = session
+      const snapshot = sessionRef.current
+      previousSessionRef.current = sessionRef.current
 
       // Determine next box index
-      const nextIndex = session.boxes.length > 0
-        ? Math.max(...session.boxes.map((b) => b.boxIndex)) + 1
+      const nextIndex = snapshot.boxes.length > 0
+        ? Math.max(...snapshot.boxes.map((b) => b.boxIndex)) + 1
         : 0
 
       // Optimistically add box
@@ -181,15 +186,15 @@ export function usePackingSession(sessionId: string | null) {
         setIsSaving(false)
       }
     },
-    [sessionId, session]
+    [sessionId]
   )
 
   const updateBox = useCallback(
     async (boxId: string, updates: Partial<SessionBox>) => {
-      if (!sessionId || !session) return
+      if (!sessionId || !sessionRef.current) return
 
-      const snapshot = session
-      previousSessionRef.current = session
+      const snapshot = sessionRef.current
+      previousSessionRef.current = sessionRef.current
 
       // Optimistically update
       setSession((prev) => {
@@ -229,15 +234,15 @@ export function usePackingSession(sessionId: string | null) {
         setIsSaving(false)
       }
     },
-    [sessionId, session]
+    [sessionId]
   )
 
   const removeBox = useCallback(
     async (boxId: string) => {
-      if (!sessionId || !session) return
+      if (!sessionId || !sessionRef.current) return
 
-      const snapshot = session
-      previousSessionRef.current = session
+      const snapshot = sessionRef.current
+      previousSessionRef.current = sessionRef.current
 
       // Optimistically remove
       setSession((prev) => {
@@ -266,7 +271,7 @@ export function usePackingSession(sessionId: string | null) {
         setIsSaving(false)
       }
     },
-    [sessionId, session]
+    [sessionId]
   )
 
   // --- Product methods ---
@@ -282,10 +287,10 @@ export function usePackingSession(sessionId: string | null) {
         weightPerUnit?: number
       }
     ) => {
-      if (!sessionId || !session) return
+      if (!sessionId || !sessionRef.current) return
 
-      const snapshot = session
-      previousSessionRef.current = session
+      const snapshot = sessionRef.current
+      previousSessionRef.current = sessionRef.current
 
       // Optimistically add product to the correct box
       const tempId = `temp-prod-${Date.now()}-${++tempIdCounter}`
@@ -345,15 +350,15 @@ export function usePackingSession(sessionId: string | null) {
         setIsSaving(false)
       }
     },
-    [sessionId, session]
+    [sessionId]
   )
 
   const moveProduct = useCallback(
     async (productId: string, newBoxId: string) => {
-      if (!sessionId || !session) return
+      if (!sessionId || !sessionRef.current) return
 
-      const snapshot = session
-      previousSessionRef.current = session
+      const snapshot = sessionRef.current
+      previousSessionRef.current = sessionRef.current
 
       // Optimistically move product between boxes
       setSession((prev) => {
@@ -395,15 +400,15 @@ export function usePackingSession(sessionId: string | null) {
         setIsSaving(false)
       }
     },
-    [sessionId, session]
+    [sessionId]
   )
 
   const removeProduct = useCallback(
     async (productId: string) => {
-      if (!sessionId || !session) return
+      if (!sessionId || !sessionRef.current) return
 
-      const snapshot = session
-      previousSessionRef.current = session
+      const snapshot = sessionRef.current
+      previousSessionRef.current = sessionRef.current
 
       // Optimistically remove product from its box
       setSession((prev) => {
@@ -435,7 +440,7 @@ export function usePackingSession(sessionId: string | null) {
         setIsSaving(false)
       }
     },
-    [sessionId, session]
+    [sessionId]
   )
 
   // --- Shipping methods ---
@@ -502,24 +507,27 @@ export function usePackingSession(sessionId: string | null) {
 
   const shipAllBoxes = useCallback(
     async (shippingProviderId: number) => {
-      if (!session) return
+      const currentSession = sessionRef.current
+      if (!currentSession) return
 
-      const pendingBoxes = session.boxes.filter((b) => b.status === 'pending')
-      for (const box of pendingBoxes) {
-        await shipBox(box.id, shippingProviderId, box.picqerPackagingId ?? undefined)
-      }
+      const pendingBoxes = currentSession.boxes.filter((b) => b.status === 'pending')
+      await Promise.allSettled(
+        pendingBoxes.map((box) =>
+          shipBox(box.id, shippingProviderId, box.picqerPackagingId ?? undefined)
+        )
+      )
     },
-    [session, shipBox]
+    [shipBox]
   )
 
   // --- Session methods ---
 
   const updateStatus = useCallback(
     async (status: string) => {
-      if (!sessionId || !session) return
+      if (!sessionId || !sessionRef.current) return
 
-      const snapshot = session
-      previousSessionRef.current = session
+      const snapshot = sessionRef.current
+      previousSessionRef.current = sessionRef.current
 
       setSession((prev) => (prev ? { ...prev, status } : prev))
 
@@ -541,7 +549,7 @@ export function usePackingSession(sessionId: string | null) {
         setIsSaving(false)
       }
     },
-    [sessionId, session]
+    [sessionId]
   )
 
   const completeSession = useCallback(() => updateStatus('completed'), [updateStatus])

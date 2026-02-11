@@ -70,14 +70,14 @@ export default function ProductCard({
       } ${isDragging ? 'shadow-lg ring-2 ring-primary' : ''}`}
     >
       <div className="flex items-center gap-3">
-        {/* Drag handle */}
+        {/* Drag handle - larger touch target for tablet use */}
         {!isAssigned && (
           <div
             {...attributes}
             {...listeners}
-            className="cursor-grab active:cursor-grabbing touch-none p-1 -ml-1 rounded hover:bg-muted"
+            className="cursor-grab active:cursor-grabbing touch-none p-2 -ml-2 rounded-lg hover:bg-muted min-w-[44px] min-h-[44px] flex items-center justify-center"
           >
-            <GripVertical className="w-4 h-4 text-muted-foreground" />
+            <GripVertical className="w-5 h-5 text-muted-foreground" />
           </div>
         )}
 
@@ -127,10 +127,10 @@ export default function ProductCard({
                 <Box className="w-3 h-3" />
                 Doos {boxIndex}
               </span>
-              {/* Remove button */}
+              {/* Remove button - larger touch target */}
               <button
                 onClick={onRemoveFromBox}
-                className="p-1 rounded hover:bg-red-100 text-red-500 transition-colors"
+                className="p-2 rounded-lg hover:bg-red-100 text-red-500 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
                 title="Verwijder uit doos"
               >
                 <X className="w-4 h-4" />
@@ -150,7 +150,7 @@ export default function ProductCard({
                 <button
                   onClick={() => setShowBoxMenu(!showBoxMenu)}
                   disabled={openBoxes.length === 0}
-                  className={`p-2 rounded-lg transition-colors flex items-center gap-1 text-sm ${
+                  className={`p-2 rounded-lg transition-colors flex items-center gap-1 text-sm min-w-[44px] min-h-[44px] justify-center ${
                     openBoxes.length === 0
                       ? 'text-muted-foreground bg-muted cursor-not-allowed'
                       : 'text-primary hover:bg-primary/10'
@@ -180,7 +180,7 @@ export default function ProductCard({
                               onAssignToBox(box.id)
                               setShowBoxMenu(false)
                             }}
-                            className="w-full flex items-center gap-2 px-2 py-2 text-sm rounded hover:bg-muted transition-colors text-left"
+                            className="w-full flex items-center gap-2 px-2 py-2.5 text-sm rounded-lg hover:bg-muted transition-colors text-left min-h-[44px]"
                           >
                             <div className="w-8 h-8 bg-muted rounded flex items-center justify-center flex-shrink-0">
                               <Box className="w-4 h-4 text-muted-foreground" />

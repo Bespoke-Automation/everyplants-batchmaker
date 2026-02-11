@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getPackingSession, updatePackingSession } from '@/lib/supabase/packingSessions'
+import { fetchPicklist } from '@/lib/picqer/client'
 
 export const dynamic = 'force-dynamic'
 
@@ -50,7 +51,28 @@ export async function PUT(
 
     const updatedSession = await updatePackingSession(id, allowedFields)
 
-    return NextResponse.json(updatedSession)
+    // B5: If status is being set to 'completed', check if all products are packed
+    let warning: string | undefined
+    if (body.status === 'completed') {
+      try {
+        const sessionWithDetails = await getPackingSession(id)
+        const picklist = await fetchPicklist(sessionWithDetails.picklist_id)
+        const totalPicklistProducts = picklist.products.reduce((sum, p) => sum + p.amount, 0)
+        const totalPackedProducts = sessionWithDetails.packing_session_boxes.reduce(
+          (sum, box) => sum + box.packing_session_products.reduce((s, p) => s + p.amount, 0),
+          0
+        )
+
+        if (totalPackedProducts !== totalPicklistProducts) {
+          warning = `Let op: niet alle producten uit de picklist zijn ingepakt (${totalPackedProducts} van ${totalPicklistProducts})`
+        }
+      } catch (completenessError) {
+        console.error('[verpakking] Error checking product completeness:', completenessError)
+        // Non-blocking: don't fail the update
+      }
+    }
+
+    return NextResponse.json({ ...updatedSession, ...(warning && { warning }) })
   } catch (error) {
     console.error('[verpakking] Error updating packing session:', error)
     return NextResponse.json(

@@ -100,7 +100,7 @@ export default function BoxCard({
         {box.products.length === 0 && !box.isClosed && (
           <button
             onClick={onRemoveBox}
-            className="p-2 text-muted-foreground hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+            className="p-2 text-muted-foreground hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
             title="Verwijder doos"
           >
             <Trash2 className="w-4 h-4" />
@@ -162,7 +162,7 @@ export default function BoxCard({
                 {!box.isClosed && (
                   <button
                     onClick={() => onRemoveProduct(product.id)}
-                    className="p-1 text-muted-foreground hover:text-red-500 rounded transition-colors"
+                    className="p-2 text-muted-foreground hover:text-red-500 rounded-lg transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center -mr-1"
                     title="Verwijder uit doos"
                   >
                     <X className="w-4 h-4" />
@@ -188,7 +188,7 @@ export default function BoxCard({
       {/* Box actions */}
       <div className="px-3 pb-3 flex gap-2">
         {box.shipmentCreated ? (
-          <div className="flex-1 flex items-center justify-center gap-2 py-2 bg-green-100 text-green-800 rounded-lg text-sm font-medium">
+          <div className="flex-1 flex items-center justify-center gap-2 py-2 min-h-[44px] bg-green-100 text-green-800 rounded-lg text-sm font-medium">
             <Check className="w-4 h-4" />
             Zending aangemaakt
           </div>
@@ -196,14 +196,14 @@ export default function BoxCard({
           <>
             <button
               onClick={onReopenBox}
-              className="flex-1 flex items-center justify-center gap-2 py-2 border border-border rounded-lg text-sm hover:bg-muted transition-colors"
+              className="flex-1 flex items-center justify-center gap-2 py-2 min-h-[44px] border border-border rounded-lg text-sm hover:bg-muted transition-colors"
             >
               <Unlock className="w-4 h-4" />
               Heropenen
             </button>
             <button
               onClick={onCreateShipment}
-              className="flex-1 flex items-center justify-center gap-2 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
+              className="flex-1 flex items-center justify-center gap-2 py-2 min-h-[44px] bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
             >
               <Truck className="w-4 h-4" />
               Maak zending
@@ -213,7 +213,7 @@ export default function BoxCard({
           <button
             onClick={onCloseBox}
             disabled={box.products.length === 0}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm transition-colors ${
+            className={`flex-1 flex items-center justify-center gap-2 py-2 min-h-[44px] rounded-lg text-sm transition-colors ${
               box.products.length === 0
                 ? 'bg-muted text-muted-foreground cursor-not-allowed'
                 : 'bg-primary text-primary-foreground hover:bg-primary/90 font-medium'

@@ -13,16 +13,6 @@ interface PicqerUser {
 }
 
 const STORAGE_KEY = 'verpakking_worker'
-const COOKIE_KEY = 'verpakking_worker_id'
-
-function setCookie(name: string, value: string, days: number = 365) {
-  const expires = new Date(Date.now() + days * 864e5).toUTCString()
-  document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/`
-}
-
-function removeCookie(name: string) {
-  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`
-}
 
 function transformUserToWorker(user: PicqerUser): Worker {
   return {
@@ -69,13 +59,11 @@ export function useWorker() {
           } else {
             // Worker no longer exists, clean up
             localStorage.removeItem(STORAGE_KEY)
-            removeCookie(COOKIE_KEY)
           }
         }
       } catch {
-        // Invalid localStorage data, clean up both storage and cookie
+        // Invalid localStorage data, clean up
         localStorage.removeItem(STORAGE_KEY)
-        removeCookie(COOKIE_KEY)
       }
 
       setIsLoading(false)
@@ -95,13 +83,11 @@ export function useWorker() {
   const selectWorker = useCallback((worker: Worker) => {
     setSelectedWorker(worker)
     localStorage.setItem(STORAGE_KEY, JSON.stringify(worker))
-    setCookie(COOKIE_KEY, String(worker.iduser))
   }, [])
 
   const clearWorker = useCallback(() => {
     setSelectedWorker(null)
     localStorage.removeItem(STORAGE_KEY)
-    removeCookie(COOKIE_KEY)
   }, [])
 
   return {

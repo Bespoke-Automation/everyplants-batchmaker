@@ -35,8 +35,16 @@ const STATUS_CONFIG: Record<
     label: 'Geclaimd',
     className: 'bg-amber-100 text-amber-800 border-amber-200',
   },
+  assigned: {
+    label: 'Toegewezen',
+    className: 'bg-amber-100 text-amber-800 border-amber-200',
+  },
   packing: {
     label: 'Inpakken',
+    className: 'bg-blue-100 text-blue-800 border-blue-200',
+  },
+  shipping: {
+    label: 'Verzenden',
     className: 'bg-blue-100 text-blue-800 border-blue-200',
   },
   completed: {
@@ -45,6 +53,34 @@ const STATUS_CONFIG: Record<
   },
   failed: {
     label: 'Mislukt',
+    className: 'bg-red-100 text-red-800 border-red-200',
+  },
+  pending: {
+    label: 'Wachtend',
+    className: 'bg-gray-100 text-gray-800 border-gray-200',
+  },
+  open: {
+    label: 'Open',
+    className: 'bg-gray-100 text-gray-800 border-gray-200',
+  },
+  closed: {
+    label: 'Afgesloten',
+    className: 'bg-gray-100 text-gray-800 border-gray-200',
+  },
+  shipment_created: {
+    label: 'Zending aangemaakt',
+    className: 'bg-blue-100 text-blue-800 border-blue-200',
+  },
+  label_fetched: {
+    label: 'Label opgehaald',
+    className: 'bg-blue-100 text-blue-800 border-blue-200',
+  },
+  shipped: {
+    label: 'Verzonden',
+    className: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  },
+  error: {
+    label: 'Fout',
     className: 'bg-red-100 text-red-800 border-red-200',
   },
 }

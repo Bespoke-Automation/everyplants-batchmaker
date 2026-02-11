@@ -1,6 +1,6 @@
 'use client'
 
-import { Check, Loader2, AlertCircle, Clock, Download, ExternalLink } from 'lucide-react'
+import { Check, Loader2, AlertCircle, Clock, Download, ExternalLink, RefreshCw } from 'lucide-react'
 import Dialog from '@/components/ui/Dialog'
 import type { BoxShipmentStatus } from '@/types/verpakking'
 
@@ -25,6 +25,7 @@ interface ShipmentProgressProps {
   isOpen: boolean
   onClose: () => void
   onShipAll: (shippingProviderId: number) => void
+  onRetryBox: (boxId: string) => void
   shippingProviderId: number | null
 }
 
@@ -66,6 +67,7 @@ export default function ShipmentProgress({
   isOpen,
   onClose,
   onShipAll,
+  onRetryBox,
   shippingProviderId,
 }: ShipmentProgressProps) {
   const shippedCount = boxes.filter((box) => {
@@ -148,6 +150,15 @@ export default function ShipmentProgress({
                       <p className="text-xs text-red-600 mt-1">{progress.error}</p>
                     )}
                   </div>
+                  {status === 'error' && (
+                    <button
+                      onClick={() => onRetryBox(box.id)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 min-h-[44px] text-sm font-medium text-red-700 bg-red-100 hover:bg-red-200 rounded-lg transition-colors flex-shrink-0"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                      Opnieuw proberen
+                    </button>
+                  )}
                   {progress?.labelUrl && (
                     <a
                       href={progress.labelUrl}

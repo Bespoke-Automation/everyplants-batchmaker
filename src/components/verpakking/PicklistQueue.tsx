@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback } from 'react'
+import { useCallback, useState, useEffect, useRef } from 'react'
 import {
   ClipboardList,
   RefreshCw,
@@ -57,6 +57,48 @@ export default function PicklistQueue({
 }: PicklistQueueProps) {
   const { picklists, isLoading, error, isClaiming, claimPicklist, refetch } =
     usePicklistQueue(worker.iduser)
+
+  // Confirmation state: only one picklist at a time can be in "confirming" state
+  const [confirmingId, setConfirmingId] = useState<number | null>(null)
+  const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Auto-cancel confirmation after 5 seconds
+  useEffect(() => {
+    if (confirmingId !== null) {
+      confirmTimerRef.current = setTimeout(() => {
+        setConfirmingId(null)
+      }, 5000)
+    }
+    return () => {
+      if (confirmTimerRef.current) {
+        clearTimeout(confirmTimerRef.current)
+        confirmTimerRef.current = null
+      }
+    }
+  }, [confirmingId])
+
+  const handleConfirmClaim = useCallback(
+    async (picklist: QueuePicklist) => {
+      setConfirmingId(null)
+      if (confirmTimerRef.current) {
+        clearTimeout(confirmTimerRef.current)
+        confirmTimerRef.current = null
+      }
+      const result = await claimPicklist(picklist.idpicklist, worker.fullName)
+      if (result.success && result.sessionId) {
+        onSessionStarted(result.sessionId)
+      }
+    },
+    [claimPicklist, worker.fullName, onSessionStarted]
+  )
+
+  const handleCancelConfirm = useCallback(() => {
+    setConfirmingId(null)
+    if (confirmTimerRef.current) {
+      clearTimeout(confirmTimerRef.current)
+      confirmTimerRef.current = null
+    }
+  }, [])
 
   const handleClaim = useCallback(
     async (picklist: QueuePicklist) => {
@@ -175,6 +217,8 @@ export default function PicklistQueue({
               const isClaimedByOther =
                 pl.isClaimed && pl.claimedByName !== worker.fullName
 
+              const isConfirming = confirmingId === pl.idpicklist
+
               return (
                 <div
                   key={pl.idpicklist}
@@ -183,8 +227,10 @@ export default function PicklistQueue({
                       ? 'border-border opacity-60'
                       : isClaimedByMe
                         ? 'border-primary bg-primary/5'
-                        : 'border-border hover:border-primary/50'
-                  } ${pl.urgent ? 'ring-2 ring-amber-400' : ''}`}
+                        : isConfirming
+                          ? 'border-emerald-500 bg-emerald-50/50 ring-2 ring-emerald-200'
+                          : 'border-border hover:border-primary/50'
+                  } ${pl.urgent && !isConfirming ? 'ring-2 ring-amber-400' : ''}`}
                 >
                   {/* Top row: picklist ID + delivery name */}
                   <div className="flex items-start justify-between gap-3 mb-2">
@@ -264,9 +310,32 @@ export default function PicklistQueue({
                           Doorgaan
                         </button>
                       )}
-                      {!pl.isClaimed && (
+                      {!pl.isClaimed && confirmingId === pl.idpicklist && (
+                        <div className="inline-flex items-center gap-2">
+                          <button
+                            onClick={() => handleConfirmClaim(pl)}
+                            disabled={isClaiming}
+                            className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-lg font-medium text-sm hover:bg-emerald-700 transition-colors min-h-[44px] disabled:opacity-50"
+                          >
+                            {isClaiming ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Play className="w-4 h-4" />
+                            )}
+                            Bevestig
+                          </button>
+                          <button
+                            onClick={handleCancelConfirm}
+                            disabled={isClaiming}
+                            className="inline-flex items-center gap-2 px-4 py-2.5 border border-border text-muted-foreground rounded-lg font-medium text-sm hover:bg-muted transition-colors min-h-[44px] disabled:opacity-50"
+                          >
+                            Annuleer
+                          </button>
+                        </div>
+                      )}
+                      {!pl.isClaimed && confirmingId !== pl.idpicklist && (
                         <button
-                          onClick={() => handleClaim(pl)}
+                          onClick={() => setConfirmingId(pl.idpicklist)}
                           disabled={isClaiming}
                           className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-lg font-medium text-sm hover:bg-emerald-700 transition-colors min-h-[44px] disabled:opacity-50"
                         >

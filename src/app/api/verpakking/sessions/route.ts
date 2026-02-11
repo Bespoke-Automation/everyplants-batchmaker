@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionHistory, claimPicklist } from '@/lib/supabase/packingSessions'
-import { assignPicklist } from '@/lib/picqer/client'
+import { assignPicklist, fetchPicklist } from '@/lib/picqer/client'
 
 export const dynamic = 'force-dynamic'
 
@@ -75,18 +75,55 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Validate picklist status in Picqer before claiming
+    let picqerPicklist: Awaited<ReturnType<typeof fetchPicklist>> | null = null
+    try {
+      picqerPicklist = await fetchPicklist(picklistId)
+    } catch (fetchError) {
+      console.error('[verpakking] Failed to fetch picklist from Picqer:', fetchError)
+      return NextResponse.json(
+        { error: `Could not verify picklist status in Picqer: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}` },
+        { status: 502 }
+      )
+    }
+
+    // Only allow claiming if picklist is in 'new' status (open and ready)
+    if (picqerPicklist.status === 'closed') {
+      return NextResponse.json(
+        { error: `Picklist ${picklistId} is already closed in Picqer and cannot be claimed.` },
+        { status: 409 }
+      )
+    }
+    if (picqerPicklist.status === 'cancelled') {
+      return NextResponse.json(
+        { error: `Picklist ${picklistId} has been cancelled in Picqer and cannot be claimed.` },
+        { status: 409 }
+      )
+    }
+    if (picqerPicklist.status !== 'new') {
+      return NextResponse.json(
+        { error: `Picklist ${picklistId} has status '${picqerPicklist.status}' in Picqer. Only picklists with status 'new' can be claimed.` },
+        { status: 409 }
+      )
+    }
+
+    // Extract metadata from the Picqer picklist for enrichment
+    const picqerPicklistId = picqerPicklist.picklistid
+    const picqerOrderId = picqerPicklist.idorder
+
     // Claim the picklist in Supabase (checks for existing claims)
     const session = await claimPicklist(picklistId, assignedTo, assignedToName)
 
-    // Update session with optional fields if provided
-    if (orderId || orderReference || retailer || deliveryCountry || picklistid) {
+    // Update session with optional fields and Picqer metadata
+    {
       const { updatePackingSession } = await import('@/lib/supabase/packingSessions')
       await updatePackingSession(session.id, {
         ...(orderId && { order_id: orderId }),
+        ...(!orderId && picqerOrderId && { order_id: picqerOrderId }),
         ...(orderReference && { order_reference: orderReference }),
         ...(retailer && { retailer }),
         ...(deliveryCountry && { delivery_country: deliveryCountry }),
-        ...(picklistid && { picklistid }),
+        ...(picklistid ? { picklistid } : picqerPicklistId ? { picklistid: picqerPicklistId } : {}),
       })
     }
 

@@ -29,6 +29,8 @@ export interface PicqerPicklist {
   // Shipping provider profile from order (used for shipment creation)
   idshippingprovider_profile: number | null
   weight: number | null
+  // Tags assigned to this picklist (from Picqer API)
+  tags?: { idtag: number; title: string; color?: string }[]
 }
 
 // Product within an order
