@@ -25,8 +25,10 @@ import {
   ArrowLeft,
   Loader2,
   AlertCircle,
+  AlertTriangle,
   Send,
   Info,
+  X,
   ChevronDown as ChevronDownIcon,
 } from 'lucide-react'
 import Dialog from '@/components/ui/Dialog'
@@ -72,6 +74,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
     error: sessionError,
     isSaving,
     shipProgress,
+    warnings,
     addBox,
     updateBox,
     removeBox,
@@ -79,6 +82,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
     removeProduct,
     shipBox,
     shipAllBoxes,
+    dismissWarning,
   } = usePackingSession(sessionId)
 
   // Picklist data from Picqer
@@ -153,6 +157,15 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
 
     return () => { cancelled = true }
   }, [])
+
+  // Auto-dismiss warnings after 8 seconds
+  useEffect(() => {
+    if (warnings.length === 0) return
+    const timer = setTimeout(() => {
+      dismissWarning(0)
+    }, 8000)
+    return () => clearTimeout(timer)
+  }, [warnings, dismissWarning])
 
   // Map picklist products to ProductCardItems
   const productItems: ProductCardItem[] = useMemo(() => {
@@ -551,6 +564,28 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
                 <p>{session.boxes.length}</p>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Warning banners */}
+        {warnings.length > 0 && (
+          <div className="px-3 pt-2 lg:px-4 space-y-2">
+            {warnings.map((warning, index) => (
+              <div
+                key={`${index}-${warning.slice(0, 20)}`}
+                className="flex items-start gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800"
+              >
+                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-600" />
+                <span className="flex-1">{warning}</span>
+                <button
+                  onClick={() => dismissWarning(index)}
+                  className="p-1 -mr-1 -mt-0.5 rounded hover:bg-amber-200/50 transition-colors flex-shrink-0"
+                  title="Sluiten"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
           </div>
         )}
 

@@ -91,6 +91,8 @@ export interface BoxShipmentStatus {
   trackingCode?: string
   labelUrl?: string
   error?: string
+  warning?: string
+  sessionCompleted?: boolean
 }
 
 // Ship-all progress for the ShipmentProgress component

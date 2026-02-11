@@ -62,6 +62,25 @@ export default function PicklistQueue({
   const [confirmingId, setConfirmingId] = useState<number | null>(null)
   const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Error feedback state
+  const [claimError, setClaimError] = useState<string | null>(null)
+  const claimErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Auto-dismiss claim error after 5 seconds
+  useEffect(() => {
+    if (claimError) {
+      claimErrorTimerRef.current = setTimeout(() => {
+        setClaimError(null)
+      }, 5000)
+    }
+    return () => {
+      if (claimErrorTimerRef.current) {
+        clearTimeout(claimErrorTimerRef.current)
+        claimErrorTimerRef.current = null
+      }
+    }
+  }, [claimError])
+
   // Auto-cancel confirmation after 5 seconds
   useEffect(() => {
     if (confirmingId !== null) {
@@ -79,14 +98,22 @@ export default function PicklistQueue({
 
   const handleConfirmClaim = useCallback(
     async (picklist: QueuePicklist) => {
-      setConfirmingId(null)
+      // Clear the auto-cancel timer but keep confirmingId visible during the claim
       if (confirmTimerRef.current) {
         clearTimeout(confirmTimerRef.current)
         confirmTimerRef.current = null
       }
+      setClaimError(null)
+
       const result = await claimPicklist(picklist.idpicklist, worker.fullName)
+
+      // Now dismiss the confirmation UI after the API call completes
+      setConfirmingId(null)
+
       if (result.success && result.sessionId) {
         onSessionStarted(result.sessionId)
+      } else if (!result.success) {
+        setClaimError(result.error || 'Onbekende fout bij het claimen')
       }
     },
     [claimPicklist, worker.fullName, onSessionStarted]
@@ -102,9 +129,12 @@ export default function PicklistQueue({
 
   const handleClaim = useCallback(
     async (picklist: QueuePicklist) => {
+      setClaimError(null)
       const result = await claimPicklist(picklist.idpicklist, worker.fullName)
       if (result.success && result.sessionId) {
         onSessionStarted(result.sessionId)
+      } else if (!result.success) {
+        setClaimError(result.error || 'Onbekende fout bij het claimen')
       }
     },
     [claimPicklist, worker.fullName, onSessionStarted]
@@ -155,6 +185,21 @@ export default function PicklistQueue({
           Vernieuw
         </button>
       </div>
+
+      {/* Claim error banner */}
+      {claimError && (
+        <div className="mx-4 mt-3 flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <AlertCircle className="w-5 h-5 shrink-0" />
+          <span className="flex-1 font-medium">{claimError}</span>
+          <button
+            onClick={() => setClaimError(null)}
+            className="shrink-0 rounded-md px-2 py-1 text-xs font-medium hover:bg-destructive/20 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
+            aria-label="Sluiten"
+          >
+            &times;
+          </button>
+        </div>
+      )}
 
       {/* Content area */}
       <div className="flex-1 overflow-y-auto">

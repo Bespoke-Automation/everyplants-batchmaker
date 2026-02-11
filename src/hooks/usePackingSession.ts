@@ -85,6 +85,7 @@ export function usePackingSession(sessionId: string | null) {
   const [error, setError] = useState<Error | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [shipProgress, setShipProgress] = useState<Map<string, BoxShipmentStatus>>(new Map())
+  const [warnings, setWarnings] = useState<string[]>([])
   const previousSessionRef = useRef<Session | null>(null)
   const sessionRef = useRef<Session | null>(session)
 
@@ -343,6 +344,11 @@ export function usePackingSession(sessionId: string | null) {
             ),
           }
         })
+
+        // Capture warning from API response (e.g. Picqer pick failed)
+        if (data.warning) {
+          setWarnings((prev) => [...prev, data.warning])
+        }
       } catch (err) {
         setSession(snapshot)
         setError(err instanceof Error ? err : new Error('Operation failed'))
@@ -479,9 +485,16 @@ export function usePackingSession(sessionId: string | null) {
             status: 'shipped',
             trackingCode: data.trackingCode,
             labelUrl: data.labelUrl,
+            warning: data.warning,
+            sessionCompleted: data.sessionCompleted,
           })
           return next
         })
+
+        // If the API returned a warning, also add it to the global warnings list
+        if (data.warning) {
+          setWarnings((prev) => [...prev, data.warning])
+        }
 
         // Update box status in session
         setSession((prev) => {
@@ -493,6 +506,11 @@ export function usePackingSession(sessionId: string | null) {
             ),
           }
         })
+
+        // If session completed, update session status locally
+        if (data.sessionCompleted) {
+          setSession((prev) => prev ? { ...prev, status: 'completed' } : prev)
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error'
         setShipProgress((prev) => {
@@ -556,12 +574,19 @@ export function usePackingSession(sessionId: string | null) {
 
   const refetch = useCallback(() => fetchSession(), [fetchSession])
 
+  const clearWarnings = useCallback(() => setWarnings([]), [])
+
+  const dismissWarning = useCallback((index: number) => {
+    setWarnings((prev) => prev.filter((_, i) => i !== index))
+  }, [])
+
   return {
     session,
     isLoading,
     error,
     isSaving,
     shipProgress,
+    warnings,
     addBox,
     updateBox,
     removeBox,
@@ -573,5 +598,7 @@ export function usePackingSession(sessionId: string | null) {
     updateStatus,
     completeSession,
     refetch,
+    clearWarnings,
+    dismissWarning,
   }
 }

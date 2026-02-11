@@ -1,6 +1,6 @@
 'use client'
 
-import { Check, Loader2, AlertCircle, Clock, Download, ExternalLink, RefreshCw } from 'lucide-react'
+import { Check, Loader2, AlertCircle, AlertTriangle, Clock, Download, ExternalLink, RefreshCw, CheckCircle2 } from 'lucide-react'
 import Dialog from '@/components/ui/Dialog'
 import type { BoxShipmentStatus } from '@/types/verpakking'
 
@@ -89,6 +89,11 @@ export default function ShipmentProgress({
     return progress?.status === 'shipping' || progress?.status === 'fetching_label'
   })
 
+  const sessionCompleted = boxes.some((box) => {
+    const progress = shipProgress.get(box.id)
+    return progress?.sessionCompleted === true
+  })
+
   // Collect all label URLs for bulk download
   const labelUrls = boxes
     .map((box) => shipProgress.get(box.id))
@@ -149,6 +154,12 @@ export default function ShipmentProgress({
                     {progress?.error && (
                       <p className="text-xs text-red-600 mt-1">{progress.error}</p>
                     )}
+                    {progress?.warning && (
+                      <p className="text-xs text-amber-700 mt-1 flex items-start gap-1">
+                        <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                        <span>{progress.warning}</span>
+                      </p>
+                    )}
                   </div>
                   {status === 'error' && (
                     <button
@@ -175,6 +186,14 @@ export default function ShipmentProgress({
             )
           })}
         </div>
+
+        {/* Session completed banner */}
+        {sessionCompleted && (
+          <div className="mb-4 flex items-start gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
+            <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0 text-green-600" />
+            <span>Sessie voltooid - alle dozen zijn verzonden en de picklist is afgesloten in Picqer</span>
+          </div>
+        )}
 
         {/* Progress bar */}
         <div className="mb-4">

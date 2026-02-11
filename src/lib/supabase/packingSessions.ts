@@ -219,6 +219,10 @@ export async function claimPicklist(
   }
 
   if (existing) {
+    // If the same worker is re-claiming, return the existing session (for "Doorgaan" flow)
+    if (existing.assigned_to === workerId) {
+      return existing
+    }
     throw new Error(`Picklist ${picklistId} is already claimed by ${existing.assigned_to_name}`)
   }
 
