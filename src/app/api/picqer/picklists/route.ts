@@ -10,10 +10,13 @@ export async function GET(request: NextRequest) {
     const picklistid = searchParams.get('picklistid') || undefined
     const idpicklist_batch = searchParams.get('idpicklist_batch')
 
+    const maxResults = searchParams.get('limit') ? Number(searchParams.get('limit')) : undefined
+
     const picklists = await getPicklists({
       status,
       picklistid,
       idpicklist_batch: idpicklist_batch ? Number(idpicklist_batch) : undefined,
+      maxResults,
     })
 
     return NextResponse.json({

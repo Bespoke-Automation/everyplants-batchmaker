@@ -41,7 +41,7 @@ export function usePicklistQueue(workerId: number | null) {
     try {
       // Fetch picklists and sessions in parallel
       const [picklistsRes, sessionsRes] = await Promise.all([
-        fetch('/api/picqer/picklists?status=new', { signal }),
+        fetch('/api/picqer/picklists?status=new&limit=200', { signal }),
         fetch('/api/verpakking/sessions?limit=50', { signal }),
       ])
 
@@ -68,8 +68,16 @@ export function usePicklistQueue(workerId: number | null) {
         sessionMap.set(session.picklist_id, session)
       }
 
+      // Deduplicate picklists (Picqer pagination can return duplicates)
+      const seen = new Set<number>()
+      const uniquePicklists = rawPicklists.filter((pl) => {
+        if (seen.has(pl.idpicklist)) return false
+        seen.add(pl.idpicklist)
+        return true
+      })
+
       // Transform and enrich picklists
-      const enriched: QueuePicklist[] = rawPicklists.map((pl) => {
+      const enriched: QueuePicklist[] = uniquePicklists.map((pl) => {
         const session = sessionMap.get(pl.idpicklist)
         return {
           idpicklist: pl.idpicklist,

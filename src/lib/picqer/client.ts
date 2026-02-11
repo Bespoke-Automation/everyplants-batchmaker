@@ -652,10 +652,11 @@ export async function getUsers(): Promise<PicqerUser[]> {
 /**
  * Fetch picklists from Picqer with optional filters and pagination
  */
-export async function getPicklists(params?: { status?: string; picklistid?: string; idpicklist_batch?: number }): Promise<PicqerPicklist[]> {
+export async function getPicklists(params?: { status?: string; picklistid?: string; idpicklist_batch?: number; maxResults?: number }): Promise<PicqerPicklist[]> {
   const allPicklists: PicqerPicklist[] = []
   let offset = 0
   const limit = 100
+  const maxResults = params?.maxResults
 
   console.log('Fetching picklists from Picqer...', params)
 
@@ -695,6 +696,11 @@ export async function getPicklists(params?: { status?: string; picklistid?: stri
     console.log(`Fetched ${picklists.length} picklists (total: ${allPicklists.length})`)
 
     if (picklists.length < limit) {
+      break
+    }
+
+    // Stop if we've reached the requested max
+    if (maxResults && allPicklists.length >= maxResults) {
       break
     }
 
