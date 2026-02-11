@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { Filter, Calendar, ChevronDown, X, Loader2 } from 'lucide-react'
 import { FilterState, ALL_RETAILERS } from '@/types/filters'
+import { SortOrder } from '@/hooks/useFilters'
 import { COUNTRIES, COUNTRY_NAMES, DAYS } from '@/constants'
 import { Preset } from '@/types/preset'
 import PresetNameDialog from '@/components/ui/PresetNameDialog'
@@ -24,6 +25,10 @@ interface FilterPanelProps {
   onCreateBatch?: () => void
   isCreatingBatch?: boolean
   postalRegions?: PostalRegion[]
+  sortOrder?: SortOrder
+  maxResults?: number | null
+  onSortOrderChange?: (order: SortOrder) => void
+  onMaxResultsChange?: (value: number | null) => void
 }
 
 interface MultiSelectDropdownProps {
@@ -34,6 +39,174 @@ interface MultiSelectDropdownProps {
   disabled?: boolean
   placeholder?: string
   displayNames?: Record<string, string>
+}
+
+interface OptionGroup {
+  label: string
+  country: string
+  options: { id: string; name: string }[]
+}
+
+interface GroupedMultiSelectDropdownProps {
+  groups: OptionGroup[]
+  selected: string[]
+  onChange: (selected: string[]) => void
+  disabled?: boolean
+  placeholder?: string
+}
+
+const COUNTRY_LABELS: Record<string, string> = {
+  DE: 'Duitsland',
+  AT: 'Oostenrijk',
+  NL: 'Nederland',
+  BE: 'Belgie',
+  FR: 'Frankrijk',
+  LU: 'Luxemburg',
+  ES: 'Spanje',
+  IT: 'Italie',
+  SE: 'Zweden',
+}
+
+function GroupedMultiSelectDropdown({ groups, selected, onChange, disabled, placeholder = 'Select options' }: GroupedMultiSelectDropdownProps) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(groups.map(g => g.country)))
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const toggleOption = (optionId: string) => {
+    if (selected.includes(optionId)) {
+      onChange(selected.filter(s => s !== optionId))
+    } else {
+      onChange([...selected, optionId])
+    }
+  }
+
+  const toggleGroup = (country: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(country)) {
+        next.delete(country)
+      } else {
+        next.add(country)
+      }
+      return next
+    })
+  }
+
+  const clearAll = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    onChange([])
+  }
+
+  const getDisplayName = (optionId: string): string => {
+    for (const group of groups) {
+      const option = group.options.find(o => o.id === optionId)
+      if (option) return option.name
+    }
+    return optionId
+  }
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        disabled={disabled}
+        className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary flex items-center justify-between disabled:opacity-50"
+      >
+        <span className="truncate text-left">
+          {selected.length === 0 ? (
+            <span className="text-muted-foreground">{placeholder}</span>
+          ) : (
+            <span>{selected.length} selected</span>
+          )}
+        </span>
+        <div className="flex items-center gap-1">
+          {selected.length > 0 && (
+            <span
+              onClick={clearAll}
+              className="p-0.5 hover:bg-muted rounded"
+            >
+              <X className="w-3 h-3" />
+            </span>
+          )}
+          <ChevronDown className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        </div>
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-50 mt-1 w-full bg-card border border-border rounded-md shadow-lg max-h-60 overflow-auto">
+          {groups.length === 0 ? (
+            <div className="px-3 py-2 text-sm text-muted-foreground">No options available</div>
+          ) : (
+            groups.map(group => (
+              <div key={group.country}>
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(group.country)}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold text-muted-foreground hover:bg-muted/50 transition-colors"
+                >
+                  <ChevronDown className={`w-3 h-3 transition-transform ${expandedGroups.has(group.country) ? '' : '-rotate-90'}`} />
+                  {group.label}
+                </button>
+                {expandedGroups.has(group.country) && (
+                  <div className="pl-4">
+                    {group.options.map(option => (
+                      <label
+                        key={option.id}
+                        className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-muted/50 transition-colors"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected.includes(option.id)}
+                          onChange={() => toggleOption(option.id)}
+                          className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                        />
+                        <span className="truncate">{option.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {selected.length > 0 && (
+        <div className="mt-1 flex flex-wrap gap-1">
+          {selected.slice(0, 3).map(item => (
+            <span
+              key={item}
+              className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary/10 text-primary text-xs rounded"
+            >
+              <span className="truncate max-w-[100px]">{getDisplayName(item)}</span>
+              <button
+                onClick={() => toggleOption(item)}
+                className="hover:text-primary/70"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          {selected.length > 3 && (
+            <span className="inline-flex items-center px-2 py-0.5 bg-muted text-muted-foreground text-xs rounded">
+              +{selected.length - 3} more
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function MultiSelectDropdown({ label, options, selected, onChange, disabled, placeholder = 'Select options', displayNames }: MultiSelectDropdownProps) {
@@ -154,9 +327,33 @@ export default function FilterPanel({
   onCreateBatch,
   isCreatingBatch = false,
   postalRegions = [],
+  sortOrder = 'oldest',
+  maxResults = null,
+  onSortOrderChange,
+  onMaxResultsChange,
 }: FilterPanelProps) {
   const [isPresetDialogOpen, setIsPresetDialogOpen] = useState(false)
   const [isCreatingPreset, setIsCreatingPreset] = useState(false)
+
+  // Group postal regions by country
+  const groupedRegions = useMemo(() => {
+    const groups: Record<string, { id: string; name: string }[]> = {}
+    postalRegions.forEach(region => {
+      const country = region.countries[0]
+      if (!country) return
+      if (!groups[country]) groups[country] = []
+      groups[country].push({ id: region.region_id, name: region.name })
+    })
+
+    // Convert to array and sort by country label
+    return Object.entries(groups)
+      .map(([country, options]) => ({
+        label: COUNTRY_LABELS[country] || country,
+        country,
+        options,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+  }, [postalRegions])
 
   const availableTags = metadata.tags.length > 0 ? metadata.tags : []
   const availableCountries = COUNTRIES
@@ -280,14 +477,12 @@ export default function FilterPanel({
             <label className="text-xs font-bold text-muted-foreground uppercase mb-1 block">
               Regio
             </label>
-            <MultiSelectDropdown
-              label="Regio"
-              options={postalRegions.map(r => r.region_id)}
+            <GroupedMultiSelectDropdown
+              groups={groupedRegions}
               selected={filters.postalRegions || []}
               onChange={(selected) => onFilterChange('postalRegions', selected.length ? selected : undefined)}
               disabled={isLoading}
               placeholder="Alle regio's"
-              displayNames={Object.fromEntries(postalRegions.map(r => [r.region_id, r.name]))}
             />
           </div>
 
@@ -354,6 +549,41 @@ export default function FilterPanel({
               </div>
             </div>
           )}
+
+          {/* Sorting & Max Results */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-bold text-muted-foreground uppercase mb-1 block">
+                Sorteren
+              </label>
+              <select
+                value={sortOrder}
+                onChange={(e) => onSortOrderChange?.(e.target.value as SortOrder)}
+                disabled={isLoading}
+                className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
+              >
+                <option value="oldest">Oudste eerst</option>
+                <option value="newest">Nieuwste eerst</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-muted-foreground uppercase mb-1 block">
+                Max resultaten
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={maxResults ?? ''}
+                onChange={(e) => {
+                  const val = e.target.value
+                  onMaxResultsChange?.(val === '' ? null : Math.max(1, parseInt(val, 10) || 1))
+                }}
+                placeholder="Alles"
+                className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
+                disabled={isLoading}
+              />
+            </div>
+          </div>
 
           {/* Buttons */}
           <div className="flex gap-2 pt-2">

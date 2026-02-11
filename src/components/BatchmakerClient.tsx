@@ -20,7 +20,7 @@ interface BatchResult {
 export default function BatchmakerClient() {
   const { orders, metadata, total, isLoading, error, refetch, fetchedAt } = useOrders()
   const { regions: postalRegions } = usePostalRegions()
-  const { filters, filteredOrders, updateFilter, resetFilters, applyPreset } = useFilters(orders, postalRegions)
+  const { filters, filteredOrders, updateFilter, resetFilters, applyPreset, sortOrder, maxResults, updateSortOrder, updateMaxResults } = useFilters(orders, postalRegions)
   const { presets, isLoading: presetsLoading, removePreset, addPreset } = usePresets('batch')
 
   // Batch creation state
@@ -148,6 +148,10 @@ export default function BatchmakerClient() {
             onCreateBatch={handleCreateBatchClick}
             isCreatingBatch={isCreatingBatch}
             postalRegions={postalRegions}
+            sortOrder={sortOrder}
+            maxResults={maxResults}
+            onSortOrderChange={updateSortOrder}
+            onMaxResultsChange={updateMaxResults}
           />
           <PresetsPanel
             presets={presets}

@@ -14,14 +14,18 @@ function normalizeTag(tag: string): string {
   return tag.trim().replace(/\s+/g, ' ')
 }
 
+export type SortOrder = 'oldest' | 'newest'
+
 export function useFilters(orders: TransformedOrder[], postalRegions: PostalRegion[] = []) {
   const [filters, setFilters] = useState<FilterState>(initialFilterState)
+  const [sortOrder, setSortOrder] = useState<SortOrder>('oldest')
+  const [maxResults, setMaxResults] = useState<number | null>(null)
 
   const filteredOrders = useMemo(() => {
     // Pre-normalize filter tags for comparison
     const normalizedFilterTags = filters.tags.map(normalizeTag)
 
-    return orders.filter(order => {
+    const filtered = orders.filter(order => {
       // Retailer filter
       if (filters.retailers.length > 0) {
         if (!filters.retailers.includes(order.retailerName)) {
@@ -83,7 +87,20 @@ export function useFilters(orders: TransformedOrder[], postalRegions: PostalRegi
 
       return true
     })
-  }, [orders, filters, postalRegions])
+
+    // Sort by created date
+    filtered.sort((a, b) => {
+      const cmp = a.created.localeCompare(b.created)
+      return sortOrder === 'oldest' ? cmp : -cmp
+    })
+
+    // Limit results
+    if (maxResults !== null && maxResults > 0) {
+      return filtered.slice(0, maxResults)
+    }
+
+    return filtered
+  }, [orders, filters, postalRegions, sortOrder, maxResults])
 
   const updateFilter = useCallback(<K extends keyof FilterState>(
     key: K,
@@ -94,6 +111,8 @@ export function useFilters(orders: TransformedOrder[], postalRegions: PostalRegi
 
   const resetFilters = useCallback(() => {
     setFilters(initialFilterState)
+    setSortOrder('oldest')
+    setMaxResults(null)
   }, [])
 
   const applyPreset = useCallback((preset: Preset) => {
@@ -107,11 +126,23 @@ export function useFilters(orders: TransformedOrder[], postalRegions: PostalRegi
     })
   }, [])
 
+  const updateSortOrder = useCallback((order: SortOrder) => {
+    setSortOrder(order)
+  }, [])
+
+  const updateMaxResults = useCallback((value: number | null) => {
+    setMaxResults(value)
+  }, [])
+
   return {
     filters,
     filteredOrders,
     updateFilter,
     resetFilters,
     applyPreset,
+    sortOrder,
+    maxResults,
+    updateSortOrder,
+    updateMaxResults,
   }
 }
