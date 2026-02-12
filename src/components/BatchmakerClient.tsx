@@ -1,6 +1,8 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
+import { History } from 'lucide-react'
 import { useOrders } from '@/hooks/useOrders'
 import { useFilters } from '@/hooks/useFilters'
 import { usePresets } from '@/hooks/usePresets'
@@ -121,6 +123,18 @@ export default function BatchmakerClient() {
   return (
     <>
       <main className="flex-1 p-6 space-y-6 overflow-auto">
+        {/* Header with history link */}
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold">Batches</h1>
+          <Link
+            href="/batchmaker/batches/history"
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors border border-border"
+          >
+            <History className="w-4 h-4" />
+            Bekijk geschiedenis
+          </Link>
+        </div>
+
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
           <FilterPanel
             filters={filters}

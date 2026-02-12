@@ -45,3 +45,53 @@ export async function getRecentBatchCreations(limit: number = 5): Promise<BatchC
 
   return data || []
 }
+
+export interface BatchCreationHistoryResult {
+  creations: BatchCreation[]
+  totalCount: number
+  page: number
+  pageSize: number
+  totalPages: number
+}
+
+/**
+ * Get paginated batch creation history
+ */
+export async function getBatchCreationHistory(
+  page: number = 1,
+  pageSize: number = 20
+): Promise<BatchCreationHistoryResult> {
+  const offset = (page - 1) * pageSize
+
+  const { count, error: countError } = await supabase
+    .schema('batchmaker')
+    .from('batch_creations')
+    .select('*', { count: 'exact', head: true })
+
+  if (countError) {
+    console.error('Error fetching batch creation count:', countError)
+    throw countError
+  }
+
+  const { data, error } = await supabase
+    .schema('batchmaker')
+    .from('batch_creations')
+    .select()
+    .order('created_at', { ascending: false })
+    .range(offset, offset + pageSize - 1)
+
+  if (error) {
+    console.error('Error fetching batch creation history:', error)
+    throw error
+  }
+
+  const totalCount = count || 0
+
+  return {
+    creations: data || [],
+    totalCount,
+    page,
+    pageSize,
+    totalPages: Math.ceil(totalCount / pageSize),
+  }
+}
