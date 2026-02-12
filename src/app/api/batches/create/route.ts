@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createPicklistBatch } from '@/lib/picqer/client'
+import { createBatchCreation } from '@/lib/supabase/batchCreations'
 
 interface CreateBatchRequest {
   picklistIds: number[]
@@ -15,9 +16,11 @@ interface CreateBatchResponse {
 }
 
 export async function POST(request: Request) {
+  let body: CreateBatchRequest | undefined
+
   try {
-    const body: CreateBatchRequest = await request.json()
-    const { picklistIds, ppsFilter } = body
+    body = await request.json()
+    const { picklistIds, ppsFilter } = body!
 
     // Validate request
     if (!Array.isArray(picklistIds) || picklistIds.length === 0) {
@@ -75,6 +78,20 @@ export async function POST(request: Request) {
       console.error('Error triggering Grive webhook:', webhookError)
     }
 
+    // Step 3: Save to Supabase
+    try {
+      await createBatchCreation({
+        picqer_batch_id: batchId,
+        picklist_count: picklistIds.length,
+        pps_filter: ppsFilter,
+        webhook_triggered: webhookTriggered,
+        status: 'success',
+        error_message: null,
+      })
+    } catch (dbError) {
+      console.error('Failed to save batch creation to Supabase:', dbError)
+    }
+
     return NextResponse.json<CreateBatchResponse>({
       success: true,
       batchId,
@@ -83,6 +100,21 @@ export async function POST(request: Request) {
     })
   } catch (error) {
     console.error('Error creating batch:', error)
+
+    // Save failure to Supabase
+    try {
+      await createBatchCreation({
+        picqer_batch_id: 0,
+        picklist_count: body?.picklistIds?.length ?? 0,
+        pps_filter: body?.ppsFilter ?? 'nee',
+        webhook_triggered: false,
+        status: 'failed',
+        error_message: error instanceof Error ? error.message : 'Unknown error',
+      })
+    } catch (dbError) {
+      console.error('Failed to save batch failure to Supabase:', dbError)
+    }
+
     return NextResponse.json<CreateBatchResponse>(
       {
         success: false,

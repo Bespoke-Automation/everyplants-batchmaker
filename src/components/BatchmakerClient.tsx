@@ -10,12 +10,7 @@ import PresetsPanel from '@/components/presets/PresetsPanel'
 import OrdersTable from '@/components/orders/OrdersTable'
 import Footer from '@/components/layout/Footer'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
-
-interface BatchResult {
-  success: boolean
-  message: string
-  batchId?: number
-}
+import BatchCreationNotification, { type BatchCreationResult } from '@/components/ui/BatchCreationNotification'
 
 export default function BatchmakerClient() {
   const { orders, metadata, total, isLoading, error, refetch, fetchedAt } = useOrders()
@@ -26,7 +21,7 @@ export default function BatchmakerClient() {
   // Batch creation state
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false)
   const [isCreatingBatch, setIsCreatingBatch] = useState(false)
-  const [batchResult, setBatchResult] = useState<BatchResult | null>(null)
+  const [latestBatchCreation, setLatestBatchCreation] = useState<BatchCreationResult | null>(null)
 
   // Get eligible picklist IDs from filtered orders
   const getEligiblePicklistIds = (): number[] => {
@@ -37,7 +32,6 @@ export default function BatchmakerClient() {
 
   // Handler to open confirmation dialog (refresh data first)
   const handleCreateBatchClick = async () => {
-    setBatchResult(null)
     // Refresh data to get latest orders
     await refetch()
     setIsConfirmDialogOpen(true)
@@ -51,9 +45,12 @@ export default function BatchmakerClient() {
       const picklistIds = getEligiblePicklistIds()
 
       if (picklistIds.length === 0) {
-        setBatchResult({
+        setLatestBatchCreation({
           success: false,
-          message: 'Geen picklists gevonden om aan batch toe te voegen',
+          picklistCount: 0,
+          webhookTriggered: false,
+          ppsFilter: filters.pps as 'ja' | 'nee',
+          errorMessage: 'Geen picklists gevonden om aan batch toe te voegen',
         })
         setIsConfirmDialogOpen(false)
         setIsCreatingBatch(false)
@@ -72,23 +69,31 @@ export default function BatchmakerClient() {
       const result = await response.json()
 
       if (result.success) {
-        setBatchResult({
+        setLatestBatchCreation({
           success: true,
-          message: `Batch #${result.batchId} aangemaakt met ${result.picklistCount} picklists${result.webhookTriggered ? '' : ' (webhook niet getriggerd)'}`,
           batchId: result.batchId,
+          picklistCount: result.picklistCount,
+          webhookTriggered: result.webhookTriggered,
+          ppsFilter: filters.pps as 'ja' | 'nee',
         })
         // Refresh orders to show updated batch status
         await refetch()
       } else {
-        setBatchResult({
+        setLatestBatchCreation({
           success: false,
-          message: result.error || 'Er is een fout opgetreden',
+          picklistCount: 0,
+          webhookTriggered: false,
+          ppsFilter: filters.pps as 'ja' | 'nee',
+          errorMessage: result.error || 'Er is een fout opgetreden',
         })
       }
     } catch (err) {
-      setBatchResult({
+      setLatestBatchCreation({
         success: false,
-        message: err instanceof Error ? err.message : 'Er is een onbekende fout opgetreden',
+        picklistCount: 0,
+        webhookTriggered: false,
+        ppsFilter: filters.pps as 'ja' | 'nee',
+        errorMessage: err instanceof Error ? err.message : 'Er is een onbekende fout opgetreden',
       })
     } finally {
       setIsCreatingBatch(false)
@@ -116,27 +121,6 @@ export default function BatchmakerClient() {
   return (
     <>
       <main className="flex-1 p-6 space-y-6 overflow-auto">
-        {/* Batch result message */}
-        {batchResult && (
-          <div
-            className={`p-4 rounded-lg border ${
-              batchResult.success
-                ? 'bg-green-50 border-green-200 text-green-800'
-                : 'bg-red-50 border-red-200 text-red-800'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span>{batchResult.message}</span>
-              <button
-                onClick={() => setBatchResult(null)}
-                className="text-current hover:opacity-70"
-              >
-                &times;
-              </button>
-            </div>
-          </div>
-        )}
-
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
           <FilterPanel
             filters={filters}
@@ -171,6 +155,9 @@ export default function BatchmakerClient() {
       </main>
 
       <Footer fetchedAt={fetchedAt} />
+
+      {/* Batch creation notification popup */}
+      <BatchCreationNotification latestResult={latestBatchCreation} />
 
       {/* Batch confirmation dialog */}
       <ConfirmDialog

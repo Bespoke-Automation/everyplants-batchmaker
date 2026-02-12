@@ -37,10 +37,22 @@ export interface ExcludedProduct {
   updated_at: string
 }
 
+export interface BatchCreation {
+  id: string
+  picqer_batch_id: number
+  picklist_count: number
+  pps_filter: 'ja' | 'nee'
+  webhook_triggered: boolean
+  status: 'success' | 'failed'
+  error_message: string | null
+  created_at: string
+}
+
 // Insert types (without auto-generated fields)
 export type BatchPresetInsert = Omit<BatchPreset, 'id' | 'created_at' | 'updated_at'>
 export type SingleOrderPresetInsert = Omit<SingleOrderPreset, 'id' | 'created_at' | 'updated_at'>
 export type ExcludedProductInsert = Omit<ExcludedProduct, 'id' | 'created_at' | 'updated_at'>
+export type BatchCreationInsert = Omit<BatchCreation, 'id' | 'created_at'>
 
 // Update types (all fields optional)
 export type BatchPresetUpdate = Partial<BatchPresetInsert>
