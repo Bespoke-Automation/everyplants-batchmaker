@@ -18,6 +18,7 @@ export interface BoxProductItem {
   id: string
   productCode: string
   name: string
+  amount: number
   weight: number // grams
   imageUrl: string | null
 }
@@ -154,7 +155,12 @@ export default function BoxCard({
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm truncate">{product.name}</p>
+                  <p className="text-sm truncate">
+                    {product.amount > 1 && (
+                      <span className="font-semibold text-primary">{product.amount}x </span>
+                    )}
+                    {product.name}
+                  </p>
                   <p className="text-xs text-muted-foreground">
                     {product.productCode} {product.weight > 0 ? `· ${(product.weight / 1000).toFixed(2)} kg` : ''}
                   </p>
