@@ -1,4 +1,4 @@
-import { PicqerOrder, PicqerPicklist, PicqerPicklistWithProducts, PicqerProduct, PicqerShipment, CreateShipmentResult, GetLabelResult, PicqerPackaging, ShippingMethod, PicqerUser } from './types'
+import { PicqerOrder, PicqerPicklist, PicqerPicklistWithProducts, PicqerProduct, PicqerTag, PicqerShipment, CreateShipmentResult, CancelShipmentResult, GetLabelResult, PicqerPackaging, ShippingMethod, PicqerUser, PicqerPicklistBatch, PicqerBatchPicklist, type MulticolloParcelInput } from './types'
 
 const PICQER_SUBDOMAIN = process.env.PICQER_SUBDOMAIN!
 const PICQER_API_KEY = process.env.PICQER_API_KEY!
@@ -284,6 +284,37 @@ export async function getPackagings(): Promise<PicqerPackaging[]> {
 }
 
 /**
+ * Get all tags from Picqer
+ */
+export async function getTags(): Promise<PicqerTag[]> {
+  try {
+    const response = await rateLimitedFetch(
+      `${PICQER_BASE_URL}/tags`,
+      {
+        method: 'GET',
+        headers: {
+          'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+          'User-Agent': 'EveryPlants-Batchmaker/2.0',
+          'Content-Type': 'application/json',
+        },
+      }
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('Picqer API error fetching tags:', response.status, errorText)
+      return []
+    }
+
+    const tags: PicqerTag[] = await response.json()
+    return tags
+  } catch (error) {
+    console.error('Error fetching tags:', error)
+    return []
+  }
+}
+
+/**
  * Get available shipping methods for a picklist
  */
 export async function getPicklistShippingMethods(picklistId: number): Promise<ShippingMethod[]> {
@@ -328,7 +359,8 @@ export async function getPicklistShippingMethods(picklistId: number): Promise<Sh
 export async function createShipment(
   picklistId: number,
   shippingProviderId?: number,
-  packagingId?: number | null
+  packagingId?: number | null,
+  weightOverride?: number
 ): Promise<CreateShipmentResult> {
   console.log(`Creating shipment for picklist ${picklistId}...`)
 
@@ -369,8 +401,10 @@ export async function createShipment(
       idshippingprofile: profileId,
     }
 
-    // Add weight if available
-    if (picklist.weight) {
+    // Add weight: prefer override, then picklist weight
+    if (weightOverride) {
+      body.weight = weightOverride
+    } else if (picklist.weight) {
       body.weight = picklist.weight
     }
 
@@ -510,6 +544,161 @@ export async function getShipmentLabel(shipmentId: number, labelUrl?: string): P
       success: false,
       error: errorMessage,
     }
+  }
+}
+
+// ── Shipment read & cancel operations ────────────────────────────────────
+
+/**
+ * Get a single shipment by ID
+ */
+export async function getShipment(shipmentId: number): Promise<PicqerShipment> {
+  console.log(`Fetching shipment ${shipmentId}...`)
+
+  const response = await rateLimitedFetch(
+    `${PICQER_BASE_URL}/shipments/${shipmentId}`,
+    {
+      method: 'GET',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+        'User-Agent': 'EveryPlants-Batchmaker/2.0',
+        'Content-Type': 'application/json',
+      },
+    }
+  )
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Failed to fetch shipment ${shipmentId}: ${response.status} - ${errorText}`)
+  }
+
+  return response.json()
+}
+
+/**
+ * Get all shipments for a picklist
+ */
+export async function getPicklistShipments(picklistId: number): Promise<PicqerShipment[]> {
+  console.log(`Fetching shipments for picklist ${picklistId}...`)
+
+  const response = await rateLimitedFetch(
+    `${PICQER_BASE_URL}/picklists/${picklistId}/shipments`,
+    {
+      method: 'GET',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+        'User-Agent': 'EveryPlants-Batchmaker/2.0',
+        'Content-Type': 'application/json',
+      },
+    }
+  )
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Failed to fetch shipments for picklist ${picklistId}: ${response.status} - ${errorText}`)
+  }
+
+  const shipments: PicqerShipment[] = await response.json()
+  console.log(`Found ${shipments.length} shipments for picklist ${picklistId}`)
+  return shipments
+}
+
+/**
+ * Cancel a shipment (only possible within 5 minutes after creation)
+ * Note: Picqer does NOT communicate cancellation to the carrier
+ */
+export async function cancelShipment(shipmentId: number): Promise<CancelShipmentResult> {
+  console.log(`Cancelling shipment ${shipmentId}...`)
+
+  try {
+    const response = await rateLimitedFetch(
+      `${PICQER_BASE_URL}/shipments/${shipmentId}`,
+      {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+          'User-Agent': 'EveryPlants-Batchmaker/2.0',
+          'Content-Type': 'application/json',
+        },
+      }
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error(`Picqer API error cancelling shipment ${shipmentId}:`, response.status, errorText)
+      return {
+        success: false,
+        error: `Failed to cancel shipment: ${response.status} - ${errorText}`,
+      }
+    }
+
+    console.log(`Shipment ${shipmentId} cancelled successfully`)
+    return { success: true }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    console.error(`Error cancelling shipment ${shipmentId}:`, errorMessage)
+    return { success: false, error: errorMessage }
+  }
+}
+
+/**
+ * Create a multicollo shipment (multiple parcels in one shipment)
+ * All parcels must have the same packaging and weight per Picqer's requirements.
+ * Each parcel gets its own tracking code.
+ */
+export async function createMulticolloShipment(
+  picklistId: number,
+  shippingProviderId: number,
+  parcels: MulticolloParcelInput[],
+): Promise<CreateShipmentResult> {
+  console.log(`Creating multicollo shipment for picklist ${picklistId} with ${parcels.length} parcels...`)
+
+  try {
+    const body: Record<string, unknown> = {
+      idshippingprofile: shippingProviderId,
+      parcels,
+    }
+
+    console.log(`Multicollo request body:`, JSON.stringify(body))
+
+    const response = await rateLimitedFetch(
+      `${PICQER_BASE_URL}/picklists/${picklistId}/shipments?return=shipment`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+          'User-Agent': 'EveryPlants-Batchmaker/2.0',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      }
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error(`Picqer API error creating multicollo shipment for picklist ${picklistId}:`, response.status, errorText)
+      return {
+        success: false,
+        error: `Failed to create multicollo shipment: ${response.status} - ${errorText}`,
+      }
+    }
+
+    const shipment: PicqerShipment = await response.json()
+
+    if (!shipment.idshipment) {
+      return {
+        success: false,
+        error: 'Multicollo shipment created but no shipment ID in response',
+      }
+    }
+
+    console.log(`Multicollo shipment created: ${shipment.idshipment} with ${shipment.parcels?.length ?? 0} parcels`)
+
+    return { success: true, shipment }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    console.error(`Error creating multicollo shipment for picklist ${picklistId}:`, errorMessage)
+    return { success: false, error: errorMessage }
   }
 }
 
@@ -748,10 +937,11 @@ export async function assignPicklist(picklistId: number, userId: number): Promis
 }
 
 /**
- * Pick a specific product on a picklist
+ * Pick a specific product on a picklist.
+ * Uses idpicklist_product (the line-item ID on the picklist), not the global product ID.
  */
-export async function pickProduct(picklistId: number, productcode: string, amount: number | 'all'): Promise<PicqerPicklistWithProducts> {
-  console.log(`Picking product ${productcode} (amount: ${amount}) on picklist ${picklistId}...`)
+export async function pickProduct(picklistId: number, idpicklistProduct: number, amount: number): Promise<PicqerPicklistWithProducts> {
+  console.log(`Picking picklist product ${idpicklistProduct} (amount: ${amount}) on picklist ${picklistId}...`)
 
   const response = await rateLimitedFetch(
     `${PICQER_BASE_URL}/picklists/${picklistId}/pick`,
@@ -762,7 +952,7 @@ export async function pickProduct(picklistId: number, productcode: string, amoun
         'User-Agent': 'EveryPlants-Batchmaker/2.0',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ product: productcode, amount }),
+      body: JSON.stringify({ idpicklist_product: idpicklistProduct, amount }),
     }
   )
 
@@ -773,6 +963,645 @@ export async function pickProduct(picklistId: number, productcode: string, amoun
   }
 
   const result = await response.json()
-  console.log(`Product ${productcode} picked on picklist ${picklistId} successfully`)
+  console.log(`Picklist product ${idpicklistProduct} picked on picklist ${picklistId} successfully`)
   return result
+}
+
+// ── Picklist Batch operations ──────────────────────────────────────────────
+
+/**
+ * Fetch picklist batches from Picqer with optional filters and pagination
+ */
+export async function getPicklistBatches(params?: { status?: string; type?: string; assigned_to_iduser?: number; maxResults?: number }): Promise<PicqerPicklistBatch[]> {
+  const allBatches: PicqerPicklistBatch[] = []
+  let offset = 0
+  const limit = 100
+  const maxResults = params?.maxResults
+
+  console.log('Fetching picklist batches from Picqer...', params)
+
+  while (true) {
+    const queryParams = new URLSearchParams({
+      offset: offset.toString(),
+    })
+
+    if (params?.status) {
+      queryParams.set('status', params.status)
+    }
+    if (params?.type) {
+      queryParams.set('type', params.type)
+    }
+    if (params?.assigned_to_iduser !== undefined) {
+      queryParams.set('assigned_to_iduser', params.assigned_to_iduser.toString())
+    }
+
+    const response = await rateLimitedFetch(`${PICQER_BASE_URL}/picklists/batches?${queryParams}`, {
+      headers: {
+        'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+        'User-Agent': 'EveryPlants-Batchmaker/2.0',
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store',
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('Picqer API error fetching picklist batches:', response.status, errorText)
+      throw new Error(`Picqer API error: ${response.status}`)
+    }
+
+    const batches: PicqerPicklistBatch[] = await response.json()
+    allBatches.push(...batches)
+
+    console.log(`Fetched ${batches.length} batches (total: ${allBatches.length})`)
+
+    if (batches.length < limit) {
+      break
+    }
+
+    if (maxResults && allBatches.length >= maxResults) {
+      break
+    }
+
+    offset += limit
+
+    if (offset >= 3000) {
+      console.log('Reached safety limit of 3000 batches')
+      break
+    }
+  }
+
+  console.log(`Total picklist batches fetched: ${allBatches.length}`)
+  return allBatches
+}
+
+/**
+ * Fetch a single picklist batch by ID
+ */
+export async function getPicklistBatch(batchId: number): Promise<PicqerPicklistBatch> {
+  console.log(`Fetching picklist batch ${batchId} from Picqer...`)
+
+  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/picklists/batches/${batchId}`, {
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      'Content-Type': 'application/json',
+    },
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error fetching batch ${batchId}:`, response.status, errorText)
+    throw new Error(`Picqer API error: ${response.status}`)
+  }
+
+  return response.json()
+}
+
+/**
+ * Assign a picklist batch to a user
+ */
+export async function assignPicklistBatch(batchId: number, userId: number): Promise<PicqerPicklistBatch> {
+  console.log(`Assigning picklist batch ${batchId} to user ${userId}...`)
+
+  const response = await rateLimitedFetch(
+    `${PICQER_BASE_URL}/picklists/batches/${batchId}/assign`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+        'User-Agent': 'EveryPlants-Batchmaker/2.0',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ iduser: userId }),
+    }
+  )
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error assigning batch ${batchId}:`, response.status, errorText)
+    throw new Error(`Failed to assign batch: ${response.status} - ${errorText}`)
+  }
+
+  const result = await response.json()
+  console.log(`Batch ${batchId} assigned to user ${userId} successfully`)
+  return result
+}
+
+/**
+ * Get PDF for a picklist batch (packing slips / pick list)
+ * Returns raw PDF data as a Buffer
+ */
+export async function getPicklistBatchPdf(
+  batchId: number,
+  options?: { includePicklists?: boolean; includePackinglists?: boolean }
+): Promise<{ success: boolean; data?: Buffer; error?: string }> {
+  console.log(`Fetching PDF for batch ${batchId}...`)
+
+  try {
+    const queryParams = new URLSearchParams()
+    if (options?.includePicklists) queryParams.set('includePicklists', 'true')
+    if (options?.includePackinglists) queryParams.set('includePackinglists', 'true')
+
+    const queryString = queryParams.toString()
+    const url = `${PICQER_BASE_URL}/picklists/batches/${batchId}/pdf${queryString ? `?${queryString}` : ''}`
+
+    const response = await rateLimitedFetch(url, {
+      headers: {
+        'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+        'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      },
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error(`Picqer API error fetching batch PDF ${batchId}:`, response.status, errorText)
+      return { success: false, error: `Failed to fetch batch PDF: ${response.status}` }
+    }
+
+    const arrayBuffer = await response.arrayBuffer()
+    const data = Buffer.from(arrayBuffer)
+    console.log(`Batch PDF fetched: ${data.length} bytes`)
+
+    return { success: true, data }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    console.error(`Error fetching batch PDF ${batchId}:`, errorMessage)
+    return { success: false, error: errorMessage }
+  }
+}
+
+/**
+ * Add a picklist to an existing batch
+ */
+export async function addPicklistToBatch(batchId: number, picklistId: number): Promise<PicqerPicklistBatch> {
+  console.log(`Adding picklist ${picklistId} to batch ${batchId}...`)
+
+  const response = await rateLimitedFetch(
+    `${PICQER_BASE_URL}/picklists/batches/${batchId}/picklists`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+        'User-Agent': 'EveryPlants-Batchmaker/2.0',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ idpicklist: picklistId }),
+    }
+  )
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error adding picklist to batch ${batchId}:`, response.status, errorText)
+    throw new Error(`Failed to add picklist to batch: ${response.status} - ${errorText}`)
+  }
+
+  const result = await response.json()
+  console.log(`Picklist ${picklistId} added to batch ${batchId} successfully`)
+  return result
+}
+
+/**
+ * Remove a picklist from a batch
+ */
+export async function removePicklistFromBatch(batchId: number, picklistId: number): Promise<void> {
+  console.log(`Removing picklist ${picklistId} from batch ${batchId}...`)
+
+  const response = await rateLimitedFetch(
+    `${PICQER_BASE_URL}/picklists/batches/${batchId}/picklists/${picklistId}`,
+    {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+        'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      },
+    }
+  )
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error removing picklist from batch ${batchId}:`, response.status, errorText)
+    throw new Error(`Failed to remove picklist from batch: ${response.status} - ${errorText}`)
+  }
+
+  console.log(`Picklist ${picklistId} removed from batch ${batchId} successfully`)
+}
+
+/**
+ * Get picklists for a specific product within a batch
+ */
+export async function getProductPicklistsInBatch(batchId: number, productId: number): Promise<PicqerBatchPicklist[]> {
+  console.log(`Fetching picklists for product ${productId} in batch ${batchId}...`)
+
+  const response = await rateLimitedFetch(
+    `${PICQER_BASE_URL}/picklists/batches/${batchId}/products/${productId}/picklists`,
+    {
+      headers: {
+        'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+        'User-Agent': 'EveryPlants-Batchmaker/2.0',
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store',
+    }
+  )
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error fetching product picklists in batch ${batchId}:`, response.status, errorText)
+    throw new Error(`Picqer API error: ${response.status}`)
+  }
+
+  return response.json()
+}
+
+/**
+ * Delete a picklist batch in Picqer
+ */
+export async function deletePicklistBatch(batchId: number): Promise<void> {
+  console.log(`Deleting picklist batch ${batchId}...`)
+
+  const response = await rateLimitedFetch(
+    `${PICQER_BASE_URL}/picklists/batches/${batchId}`,
+    {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+        'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      },
+      cache: 'no-store',
+    }
+  )
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error deleting batch ${batchId}:`, response.status, errorText)
+    throw new Error(`Failed to delete batch: ${response.status} - ${errorText}`)
+  }
+
+  console.log(`Batch ${batchId} deleted successfully`)
+}
+
+// ── Order operations ──────────────────────────────────────────────────────
+
+/**
+ * Fetch a single order by ID
+ */
+export async function fetchOrder(orderId: number): Promise<PicqerOrder> {
+  console.log(`Fetching order ${orderId} from Picqer...`)
+
+  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/orders/${orderId}`, {
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      'Content-Type': 'application/json',
+    },
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error fetching order ${orderId}:`, response.status, errorText)
+    throw new Error(`Picqer API error: ${response.status}`)
+  }
+
+  return response.json()
+}
+
+// ── Packing List PDF ──────────────────────────────────────────────────────
+
+/**
+ * Get packing list PDF for one or more picklists
+ * Returns raw PDF data as a Buffer
+ */
+export async function getPackingListPdf(
+  picklistIds: number[],
+  _showAliases?: boolean
+): Promise<{ success: boolean; data?: Buffer; error?: string }> {
+  const { PDFDocument } = await import('pdf-lib')
+
+  console.log(`Fetching packing list PDFs for ${picklistIds.length} picklists...`)
+
+  try {
+    const mergedPdf = await PDFDocument.create()
+
+    for (const id of picklistIds) {
+      const response = await rateLimitedFetch(
+        `${PICQER_BASE_URL}/picklists/${id}/packinglistpdf`,
+        {
+          headers: {
+            'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+            'User-Agent': 'EveryPlants-Batchmaker/2.0',
+          },
+        }
+      )
+
+      if (!response.ok) {
+        console.warn(`Skipping packing list PDF for picklist ${id}: ${response.status}`)
+        continue
+      }
+
+      const arrayBuffer = await response.arrayBuffer()
+      const pdf = await PDFDocument.load(arrayBuffer)
+      const pages = await mergedPdf.copyPages(pdf, pdf.getPageIndices())
+      for (const page of pages) {
+        mergedPdf.addPage(page)
+      }
+    }
+
+    if (mergedPdf.getPageCount() === 0) {
+      return { success: false, error: 'Geen pakbonnen gevonden' }
+    }
+
+    const data = Buffer.from(await mergedPdf.save())
+    console.log(`Merged packing list PDF: ${data.length} bytes, ${mergedPdf.getPageCount()} pages`)
+
+    return { success: true, data }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    console.error(`Error fetching packing list PDFs:`, errorMessage)
+    return { success: false, error: errorMessage }
+  }
+}
+
+// ── Comments API ───────────────────────────────────────────────────────────
+
+export interface PicqerComment {
+  idcomment: number
+  body: string
+  author_type: string
+  author: {
+    iduser: number
+    username: string
+    full_name: string
+    image_url: string | null
+  }
+  created_at: string
+  updated_at: string
+}
+
+/**
+ * Get comments for a picklist or picklist batch
+ */
+export async function getComments(
+  resourceType: 'picklists' | 'picklists/batches',
+  resourceId: number
+): Promise<PicqerComment[]> {
+  console.log(`Fetching comments for ${resourceType}/${resourceId}...`)
+
+  const response = await rateLimitedFetch(
+    `${PICQER_BASE_URL}/${resourceType}/${resourceId}/comments`,
+    {
+      headers: {
+        'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+        'User-Agent': 'EveryPlants-Batchmaker/2.0',
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store',
+    }
+  )
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error fetching comments for ${resourceType}/${resourceId}:`, response.status, errorText)
+    throw new Error(`Picqer API error: ${response.status}`)
+  }
+
+  return response.json()
+}
+
+/**
+ * Add a comment to a picklist or picklist batch
+ */
+export async function addComment(
+  resourceType: 'picklists' | 'picklists/batches',
+  resourceId: number,
+  body: string
+): Promise<PicqerComment> {
+  console.log(`Adding comment to ${resourceType}/${resourceId}...`)
+
+  const response = await rateLimitedFetch(
+    `${PICQER_BASE_URL}/${resourceType}/${resourceId}/comments`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+        'User-Agent': 'EveryPlants-Batchmaker/2.0',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ body }),
+      cache: 'no-store',
+    }
+  )
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error adding comment to ${resourceType}/${resourceId}:`, response.status, errorText)
+    throw new Error(`Failed to add comment: ${response.status} - ${errorText}`)
+  }
+
+  return response.json()
+}
+
+// ── Authenticated user ───────────────────────────────────────────────────
+
+/**
+ * Get the currently authenticated Picqer API user (the user behind the API key)
+ */
+export async function getMe(): Promise<PicqerUser> {
+  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/me`, {
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      'Content-Type': 'application/json',
+    },
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error('Picqer API error fetching /me:', response.status, errorText)
+    throw new Error(`Failed to fetch authenticated user: ${response.status} - ${errorText}`)
+  }
+
+  return response.json()
+}
+
+// ── Tag write operations ──────────────────────────────────────────────────
+
+/**
+ * Create a new tag in Picqer
+ */
+export async function createTag(
+  title: string,
+  color: string = '#0000f0',
+  inherit: boolean = false
+): Promise<PicqerTag> {
+  console.log(`Creating tag "${title}" in Picqer...`)
+
+  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/tags`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ title, color, inherit }),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error creating tag:`, response.status, errorText)
+    throw new Error(`Failed to create tag: ${response.status} - ${errorText}`)
+  }
+
+  const tag: PicqerTag = await response.json()
+  console.log(`Tag created: ${tag.idtag} - "${tag.title}"`)
+  return tag
+}
+
+/**
+ * Update a tag in Picqer
+ */
+export async function updateTag(
+  idtag: number,
+  updates: Partial<Pick<PicqerTag, 'title' | 'color' | 'inherit'>>
+): Promise<PicqerTag> {
+  console.log(`Updating tag ${idtag} in Picqer...`)
+
+  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/tags/${idtag}`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(updates),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error updating tag ${idtag}:`, response.status, errorText)
+    throw new Error(`Failed to update tag: ${response.status} - ${errorText}`)
+  }
+
+  return response.json()
+}
+
+/**
+ * Delete a tag in Picqer
+ */
+export async function deleteTag(idtag: number): Promise<void> {
+  console.log(`Deleting tag ${idtag} in Picqer...`)
+
+  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/tags/${idtag}`, {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+    },
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error deleting tag ${idtag}:`, response.status, errorText)
+    throw new Error(`Failed to delete tag: ${response.status} - ${errorText}`)
+  }
+
+  console.log(`Tag ${idtag} deleted successfully`)
+}
+
+// ── Packaging write operations ────────────────────────────────────────────
+
+/**
+ * Create a new packaging in Picqer
+ */
+export async function createPackaging(input: {
+  name: string
+  barcode?: string
+  length?: number
+  width?: number
+  height?: number
+}): Promise<PicqerPackaging> {
+  console.log(`Creating packaging "${input.name}" in Picqer...`)
+
+  const body: Record<string, unknown> = { name: input.name }
+  if (input.barcode) body.barcode = input.barcode
+  if (input.length) body.length = input.length
+  if (input.width) body.width = input.width
+  if (input.height) body.height = input.height
+
+  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/packagings`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error creating packaging:`, response.status, errorText)
+    throw new Error(`Failed to create packaging: ${response.status} - ${errorText}`)
+  }
+
+  const packaging: PicqerPackaging = await response.json()
+  console.log(`Packaging created: ${packaging.idpackaging} - "${packaging.name}"`)
+  return packaging
+}
+
+/**
+ * Update a packaging in Picqer
+ */
+export async function updatePackaging(
+  idpackaging: number,
+  updates: Partial<Pick<PicqerPackaging, 'name' | 'barcode' | 'length' | 'width' | 'height'>>
+): Promise<PicqerPackaging> {
+  console.log(`Updating packaging ${idpackaging} in Picqer...`)
+
+  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/packagings/${idpackaging}`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(updates),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error updating packaging ${idpackaging}:`, response.status, errorText)
+    throw new Error(`Failed to update packaging: ${response.status} - ${errorText}`)
+  }
+
+  return response.json()
+}
+
+/**
+ * Delete a comment
+ */
+export async function deleteComment(idcomment: number): Promise<void> {
+  console.log(`Deleting comment ${idcomment}...`)
+
+  const response = await rateLimitedFetch(
+    `${PICQER_BASE_URL}/comments/${idcomment}`,
+    {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+        'User-Agent': 'EveryPlants-Batchmaker/2.0',
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store',
+    }
+  )
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error deleting comment ${idcomment}:`, response.status, errorText)
+    throw new Error(`Failed to delete comment: ${response.status} - ${errorText}`)
+  }
 }

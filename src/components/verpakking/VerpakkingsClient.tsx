@@ -87,6 +87,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
     updateBox,
     removeBox,
     assignProduct,
+    updateProductAmount,
     removeProduct,
     shipBox,
     shipAllBoxes,
@@ -121,6 +122,9 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
     addComment: addPicklistComment,
     deleteComment: deletePicklistComment,
   } = usePicklistComments(picklistIdForComments)
+
+  // API user name for comment ownership (falls back to workerName)
+  const [apiUserName] = useState<string | null>(null)
 
   // Leave session confirmation
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
@@ -309,18 +313,35 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
     return session.boxes.map((box) => ({
       id: box.id,
       packagingName: box.packagingName,
-      products: box.products.map((sp): BoxProductItem => ({
-        id: sp.id,
-        productCode: sp.productcode,
-        name: sp.productName,
-        amount: sp.amount,
-        weight: (sp.weightPerUnit ?? 0) * sp.amount,
-        imageUrl: null,
-      })),
+      products: box.products.map((sp): BoxProductItem => {
+        // Calculate maxAmount: current amount in this box + unassigned for this product
+        const picklistProduct = picklist?.products.find(
+          (pp) => pp.idproduct === sp.picqerProductId && pp.productcode === sp.productcode
+        )
+        const totalOnPicklist = picklistProduct?.amount ?? sp.amount
+        // Sum what's assigned across ALL boxes for this product
+        const totalAssigned = session.boxes.reduce((sum, b) => {
+          return sum + b.products
+            .filter((p) => p.picqerProductId === sp.picqerProductId && p.productcode === sp.productcode)
+            .reduce((s, p) => s + p.amount, 0)
+        }, 0)
+        const unassigned = totalOnPicklist - totalAssigned
+        const maxAmount = sp.amount + unassigned
+
+        return {
+          id: sp.id,
+          productCode: sp.productcode,
+          name: sp.productName,
+          amount: sp.amount,
+          maxAmount,
+          weight: (sp.weightPerUnit ?? 0) * sp.amount,
+          imageUrl: null,
+        }
+      }),
       isClosed: closedBoxes.has(box.id),
       shipmentCreated: box.status === 'shipped',
     }))
-  }, [session, closedBoxes])
+  }, [session, closedBoxes, picklist])
 
   // Filtered packagings for the add box modal
   const activePackagings = useMemo(() => {
@@ -459,14 +480,32 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
 
       if (assignAmount <= 0) return
 
-      await assignProduct(boxId, {
-        picqerProductId: picklistProduct.idproduct,
-        productcode: picklistProduct.productcode,
-        productName: picklistProduct.name,
-        amount: assignAmount,
-      })
+      // Check if this product already exists in the target box — merge instead of creating duplicate
+      const existingInBox = session?.boxes
+        .find((b) => b.id === boxId)
+        ?.products.find(
+          (sp) => sp.picqerProductId === picklistProduct.idproduct && sp.productcode === picklistProduct.productcode
+        )
+
+      if (existingInBox) {
+        await updateProductAmount(existingInBox.id, existingInBox.amount + assignAmount)
+      } else {
+        await assignProduct(boxId, {
+          picqerProductId: picklistProduct.idproduct,
+          productcode: picklistProduct.productcode,
+          productName: picklistProduct.name,
+          amount: assignAmount,
+        })
+      }
     },
-    [productItems, picklist, assignProduct]
+    [productItems, picklist, session, assignProduct, updateProductAmount]
+  )
+
+  const handleUpdateProductAmount = useCallback(
+    async (sessionProductId: string, newAmount: number) => {
+      await updateProductAmount(sessionProductId, newAmount)
+    },
+    [updateProductAmount]
   )
 
   const handleRemoveProduct = useCallback(
@@ -509,21 +548,50 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
   // Shipping provider ID from picklist
   const shippingProviderId = picklist?.idshippingprovider_profile ?? null
 
+  // Calculate weights per box (sum of product weights)
+  const boxWeights = useMemo(() => {
+    if (!session) return new Map<string, number>()
+    const weights = new Map<string, number>()
+    for (const box of session.boxes) {
+      const totalWeight = box.products.reduce(
+        (sum, p) => sum + (p.weightPerUnit ?? 0) * p.amount,
+        0
+      )
+      if (totalWeight > 0) {
+        weights.set(box.id, totalWeight)
+      }
+    }
+    return weights
+  }, [session])
+
   const handleShipAll = useCallback(
-    (providerId: number) => {
-      shipAllBoxes(providerId)
+    (providerId: number, weights?: Map<string, number>) => {
+      shipAllBoxes(providerId, weights)
     },
     [shipAllBoxes]
   )
 
   const handleRetryBox = useCallback(
-    (boxId: string) => {
-      if (!shippingProviderId || !session) return
+    (boxId: string, providerId: number) => {
+      if (!session) return
       const box = session.boxes.find((b) => b.id === boxId)
       if (!box) return
-      shipBox(boxId, shippingProviderId, box.picqerPackagingId ?? undefined)
+      shipBox(boxId, providerId, box.picqerPackagingId ?? undefined, boxWeights.get(boxId))
     },
-    [shipBox, shippingProviderId, session]
+    [shipBox, session, boxWeights]
+  )
+
+  // Assign all unassigned products to a specific box
+  const handleAssignAllToBox = useCallback(
+    async (boxId: string) => {
+      const toAssign = productItems.filter((p) => p.amountAssigned < p.amount)
+      if (toAssign.length === 0) return
+
+      for (const product of toAssign) {
+        await handleAssignProduct(product.id, boxId)
+      }
+    },
+    [productItems, handleAssignProduct]
   )
 
   // Multi-select handlers
@@ -1153,10 +1221,13 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
                         box={box}
                         index={sessionBox ? sessionBox.boxIndex + 1 : 1}
                         onRemoveProduct={(productId) => handleRemoveProduct(productId)}
+                        onUpdateProductAmount={(productId, newAmount) => handleUpdateProductAmount(productId, newAmount)}
                         onCloseBox={() => handleCloseBox(box.id)}
                         onReopenBox={() => handleReopenBox(box.id)}
                         onRemoveBox={() => handleRemoveBox(box.id)}
                         onCreateShipment={() => setShowShipmentModal(true)}
+                        onAssignAllProducts={() => handleAssignAllToBox(box.id)}
+                        unassignedProductCount={unassignedProducts.length}
                       />
                     )
                   })}
@@ -1186,7 +1257,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
                 onDeleteComment={deletePicklistComment}
                 onRefresh={fetchComments}
                 users={picqerUsers}
-                currentUserName={workerName}
+                currentUserName={apiUserName ?? workerName}
               />
             </div>
           </div>
@@ -1482,13 +1553,15 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
 
       {/* Shipment Progress Modal */}
       <ShipmentProgress
-        boxes={session.boxes}
+        boxes={session.boxes.filter((b) => b.status === 'closed' || b.status === 'shipped')}
         shipProgress={shipProgress}
         isOpen={showShipmentModal}
         onClose={() => setShowShipmentModal(false)}
         onShipAll={handleShipAll}
         onRetryBox={handleRetryBox}
-        shippingProviderId={shippingProviderId}
+        picklistId={session.picklistId}
+        defaultShippingProviderId={shippingProviderId}
+        boxWeights={boxWeights}
       />
     </DndContext>
   )
