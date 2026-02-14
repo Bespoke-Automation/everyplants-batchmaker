@@ -14,23 +14,23 @@ import {
   Save,
 } from 'lucide-react'
 import { useTagMappings } from '@/hooks/useTagMappings'
+import { useLocalTags } from '@/hooks/useLocalTags'
+import { useLocalPackagings } from '@/hooks/useLocalPackagings'
 import type { TagPackagingMapping } from '@/types/verpakking'
-import type { PicqerPackaging } from '@/lib/picqer/types'
-import { useEffect } from 'react'
 
 interface MappingFormData {
   tagTitle: string
+  idtag: number | null
   picqerPackagingId: number | null
   packagingName: string
-  priority: number
   isActive: boolean
 }
 
 const emptyFormData: MappingFormData = {
   tagTitle: '',
+  idtag: null,
   picqerPackagingId: null,
   packagingName: '',
-  priority: 1,
   isActive: true,
 }
 
@@ -45,9 +45,15 @@ export default function TagMappingSettings() {
     refresh,
   } = useTagMappings()
 
-  const [packagings, setPackagings] = useState<PicqerPackaging[]>([])
-  const [packagingsLoading, setPackagingsLoading] = useState(true)
-  const [packagingsError, setPackagingsError] = useState<string | null>(null)
+  const {
+    tags: allTags,
+    isLoading: tagsLoading,
+  } = useLocalTags()
+
+  const {
+    packagings: localPackagings,
+    isLoading: packagingsLoading,
+  } = useLocalPackagings(true)
 
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -55,31 +61,6 @@ export default function TagMappingSettings() {
   const [isSaving, setIsSaving] = useState(false)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
-
-  // Fetch Picqer packagings
-  useEffect(() => {
-    const fetchPackagings = async () => {
-      setPackagingsLoading(true)
-      setPackagingsError(null)
-      try {
-        const response = await fetch('/api/picqer/packagings')
-        if (!response.ok) {
-          throw new Error('Kon verpakkingen niet laden')
-        }
-        const data = await response.json()
-        setPackagings(data.packagings ?? [])
-      } catch (err) {
-        setPackagingsError(
-          err instanceof Error ? err.message : 'Onbekende fout'
-        )
-      } finally {
-        setPackagingsLoading(false)
-      }
-    }
-    fetchPackagings()
-  }, [])
-
-  const activePackagings = packagings.filter((p) => p.active)
 
   const openAddForm = () => {
     setEditingId(null)
@@ -92,9 +73,9 @@ export default function TagMappingSettings() {
     setEditingId(mapping.id)
     setFormData({
       tagTitle: mapping.tagTitle,
+      idtag: null, // We don't have this in the mapping yet
       picqerPackagingId: mapping.picqerPackagingId,
       packagingName: mapping.packagingName,
-      priority: mapping.priority,
       isActive: mapping.isActive,
     })
     setFormError(null)
@@ -108,9 +89,19 @@ export default function TagMappingSettings() {
     setFormError(null)
   }
 
+  const handleTagChange = (idtagStr: string) => {
+    const idtag = Number(idtagStr)
+    const tag = allTags.find((t) => t.idtag === idtag)
+    setFormData((prev) => ({
+      ...prev,
+      tagTitle: tag?.title ?? '',
+      idtag: idtag || null,
+    }))
+  }
+
   const handlePackagingChange = (packagingId: string) => {
     const id = Number(packagingId)
-    const packaging = packagings.find((p) => p.idpackaging === id)
+    const packaging = localPackagings.find((p) => p.idpackaging === id)
     setFormData((prev) => ({
       ...prev,
       picqerPackagingId: id,
@@ -120,7 +111,7 @@ export default function TagMappingSettings() {
 
   const handleSubmit = async () => {
     if (!formData.tagTitle.trim()) {
-      setFormError('Tag titel is verplicht')
+      setFormError('Selecteer een tag')
       return
     }
     if (!formData.picqerPackagingId) {
@@ -137,7 +128,6 @@ export default function TagMappingSettings() {
           tagTitle: formData.tagTitle.trim(),
           picqerPackagingId: formData.picqerPackagingId,
           packagingName: formData.packagingName,
-          priority: formData.priority,
           isActive: formData.isActive,
         })
       } else {
@@ -145,7 +135,6 @@ export default function TagMappingSettings() {
           tagTitle: formData.tagTitle.trim(),
           picqerPackagingId: formData.picqerPackagingId,
           packagingName: formData.packagingName,
-          priority: formData.priority,
           isActive: formData.isActive,
         })
       }
@@ -167,6 +156,26 @@ export default function TagMappingSettings() {
       // Error is set by the hook
     }
   }
+
+  // Filter out tags/packagings that already have a mapping (except the one being edited)
+  const mappedTagTitles = new Set(
+    mappings
+      .filter((m) => m.id !== editingId)
+      .map((m) => m.tagTitle.toLowerCase())
+  )
+  const mappedPackagingIds = new Set(
+    mappings
+      .filter((m) => m.id !== editingId)
+      .map((m) => m.picqerPackagingId)
+  )
+  const availableTags = allTags.filter(
+    (t) => !mappedTagTitles.has(t.title.toLowerCase())
+  )
+  const availablePackagings = localPackagings.filter(
+    (p) => !mappedPackagingIds.has(p.idpackaging)
+  )
+
+  const noTagsOrPackagings = allTags.length === 0 || localPackagings.length === 0
 
   // Loading state
   if (isLoading) {
@@ -226,6 +235,14 @@ export default function TagMappingSettings() {
         </button>
       </div>
 
+      {/* Warning: no data */}
+      {noTagsOrPackagings && !tagsLoading && !packagingsLoading && (
+        <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2 text-sm text-amber-800">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          Synchroniseer eerst tags en verpakkingen via de Tags- en Verpakkingen-tabbladen.
+        </div>
+      )}
+
       {/* Error banner */}
       {error && (
         <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded-lg flex items-center gap-2 text-sm text-destructive">
@@ -261,34 +278,58 @@ export default function TagMappingSettings() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Tag title */}
+            {/* Tag dropdown */}
             <div>
               <label className="block text-sm font-medium mb-1">
-                Tag titel
+                Tag (verpakking)
               </label>
-              <input
-                type="text"
-                value={formData.tagTitle}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, tagTitle: e.target.value }))
-                }
-                placeholder="Bijv. Bol.com, DPD, PostNL"
-                className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
-              />
+              {tagsLoading ? (
+                <div className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Laden...
+                </div>
+              ) : availableTags.length === 0 ? (
+                <p className="text-sm text-amber-600">
+                  {allTags.length === 0
+                    ? 'Geen tags gevonden. Synchroniseer eerst via het Tags-tabblad.'
+                    : 'Alle tags zijn al gekoppeld.'}
+                </p>
+              ) : (
+                <select
+                  value={
+                    formData.idtag
+                      ? formData.idtag.toString()
+                      : availableTags.find((t) => t.title === formData.tagTitle)?.idtag?.toString() ?? ''
+                  }
+                  onChange={(e) => handleTagChange(e.target.value)}
+                  className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                >
+                  <option value="">Selecteer tag...</option>
+                  {availableTags.map((tag) => (
+                    <option key={tag.idtag} value={tag.idtag}>
+                      {tag.title}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             {/* Packaging dropdown */}
             <div>
               <label className="block text-sm font-medium mb-1">
-                Picqer Verpakking
+                Verpakking
               </label>
               {packagingsLoading ? (
                 <div className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
                   <Loader2 className="w-4 h-4 animate-spin" />
                   Laden...
                 </div>
-              ) : packagingsError ? (
-                <p className="text-sm text-destructive">{packagingsError}</p>
+              ) : availablePackagings.length === 0 ? (
+                <p className="text-sm text-amber-600">
+                  {localPackagings.length === 0
+                    ? 'Geen verpakkingen. Synchroniseer via het Verpakkingen-tabblad.'
+                    : 'Alle verpakkingen zijn al gekoppeld.'}
+                </p>
               ) : (
                 <select
                   value={formData.picqerPackagingId ?? ''}
@@ -296,35 +337,13 @@ export default function TagMappingSettings() {
                   className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
                 >
                   <option value="">Selecteer verpakking...</option>
-                  {activePackagings.map((p) => (
+                  {availablePackagings.map((p) => (
                     <option key={p.idpackaging} value={p.idpackaging}>
                       {p.name}
                     </option>
                   ))}
                 </select>
               )}
-            </div>
-
-            {/* Priority */}
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                Prioriteit
-              </label>
-              <input
-                type="number"
-                min={1}
-                value={formData.priority}
-                onChange={(e) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    priority: Math.max(1, parseInt(e.target.value) || 1),
-                  }))
-                }
-                className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Lagere waarde = hogere prioriteit
-              </p>
             </div>
 
             {/* Active toggle */}
@@ -396,88 +415,98 @@ export default function TagMappingSettings() {
         </div>
       ) : (
         <div className="space-y-2">
-          {mappings
-            .sort((a, b) => a.priority - b.priority)
-            .map((mapping) => (
-              <div
-                key={mapping.id}
-                className={`p-4 bg-card border rounded-lg flex items-center justify-between gap-4 ${
-                  mapping.isActive ? 'border-border' : 'border-border opacity-60'
-                }`}
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium bg-primary/10 text-primary">
-                      {mapping.tagTitle}
-                    </span>
-                    <span className="text-muted-foreground">→</span>
-                    <span className="font-medium text-sm truncate">
-                      {mapping.packagingName}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
-                    <span>Packaging ID: {mapping.picqerPackagingId}</span>
-                    <span>Prio: {mapping.priority}</span>
-                    <span
-                      className={`inline-flex items-center gap-1 ${
-                        mapping.isActive ? 'text-emerald-600' : 'text-muted-foreground'
-                      }`}
-                    >
-                      {mapping.isActive ? (
-                        <>
-                          <Check className="w-3 h-3" /> Actief
-                        </>
-                      ) : (
-                        <>
-                          <X className="w-3 h-3" /> Inactief
-                        </>
-                      )}
-                    </span>
-                  </div>
-                </div>
+          {mappings.map((mapping) => {
+              // Find the tag color from local tags
+              const tagInfo = allTags.find(
+                (t) => t.title.toLowerCase() === mapping.tagTitle.toLowerCase()
+              )
 
-                <div className="flex items-center gap-1 shrink-0">
-                  {deleteConfirmId === mapping.id ? (
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs text-destructive mr-1">
-                        Verwijderen?
+              return (
+                <div
+                  key={mapping.id}
+                  className={`p-4 bg-card border rounded-lg flex items-center justify-between gap-4 ${
+                    mapping.isActive ? 'border-border' : 'border-border opacity-60'
+                  }`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-sm font-medium bg-primary/10 text-primary">
+                        {tagInfo && (
+                          <span
+                            className="w-3 h-3 rounded-full shrink-0 border border-black/10"
+                            style={{ backgroundColor: tagInfo.color || '#ccc' }}
+                          />
+                        )}
+                        {mapping.tagTitle}
                       </span>
-                      <button
-                        onClick={() => handleDelete(mapping.id)}
-                        className="p-2 rounded-lg bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
-                        title="Bevestig verwijdering"
-                      >
-                        <Check className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => setDeleteConfirmId(null)}
-                        className="p-2 rounded-lg hover:bg-muted transition-colors"
-                        title="Annuleren"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
+                      <span className="text-muted-foreground">→</span>
+                      <span className="font-medium text-sm truncate">
+                        {mapping.packagingName}
+                      </span>
                     </div>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => openEditForm(mapping)}
-                        className="p-2 rounded-lg hover:bg-muted transition-colors"
-                        title="Bewerken"
+                    <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
+                      <span>Packaging ID: {mapping.picqerPackagingId}</span>
+                      <span
+                        className={`inline-flex items-center gap-1 ${
+                          mapping.isActive ? 'text-emerald-600' : 'text-muted-foreground'
+                        }`}
                       >
-                        <Pencil className="w-4 h-4 text-muted-foreground" />
-                      </button>
-                      <button
-                        onClick={() => setDeleteConfirmId(mapping.id)}
-                        className="p-2 rounded-lg hover:bg-destructive/10 transition-colors"
-                        title="Verwijderen"
-                      >
-                        <Trash2 className="w-4 h-4 text-muted-foreground hover:text-destructive" />
-                      </button>
-                    </>
-                  )}
+                        {mapping.isActive ? (
+                          <>
+                            <Check className="w-3 h-3" /> Actief
+                          </>
+                        ) : (
+                          <>
+                            <X className="w-3 h-3" /> Inactief
+                          </>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    {deleteConfirmId === mapping.id ? (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-destructive mr-1">
+                          Verwijderen?
+                        </span>
+                        <button
+                          onClick={() => handleDelete(mapping.id)}
+                          className="p-2 rounded-lg bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
+                          title="Bevestig verwijdering"
+                        >
+                          <Check className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirmId(null)}
+                          className="p-2 rounded-lg hover:bg-muted transition-colors"
+                          title="Annuleren"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => openEditForm(mapping)}
+                          className="p-2 rounded-lg hover:bg-muted transition-colors"
+                          title="Bewerken"
+                        >
+                          <Pencil className="w-4 h-4 text-muted-foreground" />
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirmId(mapping.id)}
+                          className="p-2 rounded-lg hover:bg-destructive/10 transition-colors"
+                          title="Verwijderen"
+                        >
+                          <Trash2 className="w-4 h-4 text-muted-foreground hover:text-destructive" />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
         </div>
       )}
     </div>

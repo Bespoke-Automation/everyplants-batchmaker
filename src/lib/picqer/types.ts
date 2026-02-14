@@ -57,6 +57,9 @@ export interface PicqerOrder {
   invoicename: string
   invoicecontactname: string
   deliveryname: string
+  deliverycontactname: string
+  deliveryaddress: string
+  deliverycity: string
   deliverycountry: string
   deliveryzipcode: string | null
   emailaddress: string
@@ -133,6 +136,17 @@ export interface ShippingMethod {
 }
 
 // Shipment types
+
+export interface PicqerShipmentParcel {
+  idshipment_parcel: number
+  idpackaging: number | null
+  weight: number | null
+  trackingcode: string | null
+  tracktraceurl: string | null
+  labelurl?: string
+  labelurl_pdf?: string
+}
+
 export interface PicqerShipment {
   idshipment: number
   idpicklist: number
@@ -147,13 +161,25 @@ export interface PicqerShipment {
   tracktraceurl?: string
   trackingurl?: string
   trackingcode?: string
+  cancelled: boolean
+  parcels?: PicqerShipmentParcel[]
   created: string
   updated: string
+}
+
+export interface MulticolloParcelInput {
+  idpackaging: number
+  weight: number // in grams
 }
 
 export interface CreateShipmentResult {
   success: boolean
   shipment?: PicqerShipment
+  error?: string
+}
+
+export interface CancelShipmentResult {
+  success: boolean
   error?: string
 }
 
@@ -175,6 +201,94 @@ export interface PicqerUser {
   last_login_at: string | null
   created_at: string
   updated_at: string
+}
+
+// Picklist batch (from /picklists/batches endpoint)
+export interface PicqerPicklistBatch {
+  idpicklist_batch: number
+  picklist_batchid: string
+  idwarehouse: number
+  type: 'singles' | 'normal'
+  status: 'open' | 'completed'
+  assigned_to: { iduser: number; full_name: string; username: string } | null
+  completed_by: { iduser: number; full_name: string; username: string } | null
+  total_products: number
+  total_picklists: number
+  created_at: string
+  updated_at: string
+  completed_at: string | null
+  // Only present in single batch detail (GET /picklists/batches/{id})
+  picklists?: PicqerBatchPicklist[]
+  products?: PicqerBatchProduct[]
+}
+
+// Product-picklist allocation within a batch product
+export interface PicqerBatchProductPicklist {
+  idpicklist: number
+  amount: number
+  amount_picked: number
+  amount_collected: number
+}
+
+// Product within a batch (from batch detail response)
+// Note: amounts are nested per-picklist, not top-level
+export interface PicqerBatchProduct {
+  idproduct: number
+  name: string
+  productcode: string
+  productcode_supplier: string | null
+  image: string | null
+  stock_location: string | null
+  picklists: PicqerBatchProductPicklist[]
+}
+
+// Picklist as nested inside a batch detail response
+export interface PicqerBatchPicklist {
+  idpicklist: number
+  picklistid: string
+  reference: string | null
+  alias: string | null
+  status: string
+  total_products: number
+  delivery_name: string
+  has_notes: boolean
+  has_customer_remarks: boolean
+  customer_remarks: string | null
+  created_at: string
+}
+
+// Product field (custom field on product)
+export interface PicqerProductField {
+  idproductfield: number
+  title: string
+  value: string
+}
+
+// Product with full details including custom fields
+export interface PicqerProductFull {
+  idproduct: number
+  productcode: string
+  name: string
+  price: number
+  weight?: number
+  length?: number
+  width?: number
+  height?: number
+  type?: string // 'normal' | 'virtual_composition' | 'composition_with_stock' | 'unlimited_stock'
+  active: boolean
+  productfields?: PicqerProductField[]
+  tags?: PicqerTag[]
+  created?: string
+  updated?: string
+}
+
+// Composition part
+export interface PicqerCompositionPart {
+  idproduct: number
+  idproduct_part: number
+  amount: number
+  productcode_part?: string
+  name_part?: string
 }
 
 // Result for batch creation with shipments

@@ -23,6 +23,14 @@ interface SessionBox {
   packagingBarcode: string | null
   boxIndex: number
   status: string
+  shipmentId: number | null
+  trackingCode: string | null
+  trackingUrl: string | null
+  labelUrl: string | null
+  shippedAt: string | null
+  suggestedPackagingId: number | null
+  suggestedPackagingName: string | null
+  wasOverride: boolean
   products: SessionProduct[]
 }
 
@@ -60,6 +68,14 @@ function transformBox(raw: any): SessionBox {
     packagingBarcode: raw.packaging_barcode ?? raw.packagingBarcode ?? null,
     boxIndex: raw.box_index ?? raw.boxIndex,
     status: raw.status,
+    shipmentId: raw.shipment_id ?? raw.shipmentId ?? null,
+    trackingCode: raw.tracking_code ?? raw.trackingCode ?? null,
+    trackingUrl: raw.tracking_url ?? raw.trackingUrl ?? null,
+    labelUrl: raw.label_url ?? raw.labelUrl ?? null,
+    shippedAt: raw.shipped_at ?? raw.shippedAt ?? null,
+    suggestedPackagingId: raw.suggested_packaging_id ?? raw.suggestedPackagingId ?? null,
+    suggestedPackagingName: raw.suggested_packaging_name ?? raw.suggestedPackagingName ?? null,
+    wasOverride: raw.was_override ?? raw.wasOverride ?? false,
     products: products.map(transformProduct),
   }
 }
@@ -132,39 +148,62 @@ export function usePackingSession(sessionId: string | null) {
   // --- Box methods ---
 
   const addBox = useCallback(
-    async (packagingName: string, picqerPackagingId?: number, packagingBarcode?: string) => {
-      if (!sessionId || !sessionRef.current) return
+    async (
+      packagingName: string,
+      picqerPackagingId?: number,
+      packagingBarcode?: string,
+      adviceMeta?: { packagingAdviceId?: string; suggestedPackagingId?: number; suggestedPackagingName?: string }
+    ): Promise<string | undefined> => {
+      if (!sessionId || !sessionRef.current) return undefined
 
       // Save snapshot for rollback (local variable is stable in this closure)
       const snapshot = sessionRef.current
       previousSessionRef.current = sessionRef.current
 
-      // Determine next box index
-      const nextIndex = snapshot.boxes.length > 0
-        ? Math.max(...snapshot.boxes.map((b) => b.boxIndex)) + 1
-        : 0
-
-      // Optimistically add box
+      // Compute next box index inside the state updater so it uses the latest
+      // state even when multiple addBox calls run sequentially before React flushes.
       const tempId = `temp-${Date.now()}-${++tempIdCounter}`
-      const optimisticBox: SessionBox = {
-        id: tempId,
-        packagingName,
-        picqerPackagingId: picqerPackagingId ?? null,
-        packagingBarcode: packagingBarcode ?? null,
-        boxIndex: nextIndex,
-        status: 'pending',
-        products: [],
-      }
-      setSession((prev) =>
-        prev ? { ...prev, boxes: [...prev.boxes, optimisticBox] } : prev
-      )
+      let computedIndex = 0
+
+      setSession((prev) => {
+        if (!prev) return prev
+        computedIndex = prev.boxes.length > 0
+          ? Math.max(...prev.boxes.map((b) => b.boxIndex)) + 1
+          : 0
+        const optimisticBox: SessionBox = {
+          id: tempId,
+          packagingName,
+          picqerPackagingId: picqerPackagingId ?? null,
+          packagingBarcode: packagingBarcode ?? null,
+          boxIndex: computedIndex,
+          status: 'pending',
+          shipmentId: null,
+          trackingCode: null,
+          trackingUrl: null,
+          labelUrl: null,
+          shippedAt: null,
+          suggestedPackagingId: adviceMeta?.suggestedPackagingId ?? null,
+          suggestedPackagingName: adviceMeta?.suggestedPackagingName ?? null,
+          wasOverride: false,
+          products: [],
+        }
+        return { ...prev, boxes: [...prev.boxes, optimisticBox] }
+      })
 
       setIsSaving(true)
       try {
         const response = await fetch(`/api/verpakking/sessions/${sessionId}/boxes`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ packagingName, picqerPackagingId, packagingBarcode, boxIndex: nextIndex }),
+          body: JSON.stringify({
+            packagingName,
+            picqerPackagingId,
+            packagingBarcode,
+            boxIndex: computedIndex,
+            packagingAdviceId: adviceMeta?.packagingAdviceId,
+            suggestedPackagingId: adviceMeta?.suggestedPackagingId,
+            suggestedPackagingName: adviceMeta?.suggestedPackagingName,
+          }),
         })
         if (!response.ok) {
           const errorData = await response.json()
@@ -180,9 +219,11 @@ export function usePackingSession(sessionId: string | null) {
             boxes: prev.boxes.map((b) => (b.id === tempId ? serverBox : b)),
           }
         })
+        return serverBox.id
       } catch (err) {
         setSession(snapshot)
         setError(err instanceof Error ? err : new Error('Operation failed'))
+        return undefined
       } finally {
         setIsSaving(false)
       }
@@ -409,6 +450,84 @@ export function usePackingSession(sessionId: string | null) {
     [sessionId]
   )
 
+  const updateProductAmount = useCallback(
+    async (productId: string, newAmount: number) => {
+      if (!sessionId || !sessionRef.current) return
+
+      // If amount drops to 0, remove the product entirely
+      if (newAmount <= 0) {
+        // We call the internal logic below via removeProduct after defining it
+        // For now, just optimistic-remove and API-delete
+        const snapshot = sessionRef.current
+        previousSessionRef.current = sessionRef.current
+        setSession((prev) => {
+          if (!prev) return prev
+          return {
+            ...prev,
+            boxes: prev.boxes.map((b) => ({
+              ...b,
+              products: b.products.filter((p) => p.id !== productId),
+            })),
+          }
+        })
+        setIsSaving(true)
+        try {
+          const response = await fetch(`/api/verpakking/sessions/${sessionId}/products`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ productId }),
+          })
+          if (!response.ok) {
+            const errorData = await response.json()
+            throw new Error(errorData.error || 'Failed to remove product')
+          }
+        } catch (err) {
+          setSession(snapshot)
+          setError(err instanceof Error ? err : new Error('Operation failed'))
+        } finally {
+          setIsSaving(false)
+        }
+        return
+      }
+
+      const snapshot = sessionRef.current
+      previousSessionRef.current = sessionRef.current
+
+      // Optimistically update amount
+      setSession((prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          boxes: prev.boxes.map((b) => ({
+            ...b,
+            products: b.products.map((p) =>
+              p.id === productId ? { ...p, amount: newAmount } : p
+            ),
+          })),
+        }
+      })
+
+      setIsSaving(true)
+      try {
+        const response = await fetch(`/api/verpakking/sessions/${sessionId}/products`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ productId, amount: newAmount }),
+        })
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || 'Failed to update product amount')
+        }
+      } catch (err) {
+        setSession(snapshot)
+        setError(err instanceof Error ? err : new Error('Operation failed'))
+      } finally {
+        setIsSaving(false)
+      }
+    },
+    [sessionId]
+  )
+
   const removeProduct = useCallback(
     async (productId: string) => {
       if (!sessionId || !sessionRef.current) return
@@ -452,7 +571,7 @@ export function usePackingSession(sessionId: string | null) {
   // --- Shipping methods ---
 
   const shipBox = useCallback(
-    async (boxId: string, shippingProviderId: number, packagingId?: number) => {
+    async (boxId: string, shippingProviderId: number, packagingId?: number, weight?: number) => {
       if (!sessionId) return
 
       setShipProgress((prev) => {
@@ -465,7 +584,7 @@ export function usePackingSession(sessionId: string | null) {
         const response = await fetch(`/api/verpakking/sessions/${sessionId}/ship`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ boxId, shippingProviderId, packagingId: packagingId ?? null }),
+          body: JSON.stringify({ boxId, shippingProviderId, packagingId: packagingId ?? null, weight: weight ?? null }),
         })
         const data = await response.json()
 
@@ -502,7 +621,15 @@ export function usePackingSession(sessionId: string | null) {
           return {
             ...prev,
             boxes: prev.boxes.map((b) =>
-              b.id === boxId ? { ...b, status: 'shipped' } : b
+              b.id === boxId ? {
+                ...b,
+                status: 'shipped',
+                shipmentId: data.shipmentId ?? null,
+                trackingCode: data.trackingCode ?? null,
+                trackingUrl: data.trackingUrl ?? null,
+                labelUrl: data.labelUrl ?? null,
+                shippedAt: new Date().toISOString(),
+              } : b
             ),
           }
         })
@@ -523,19 +650,178 @@ export function usePackingSession(sessionId: string | null) {
     [sessionId]
   )
 
-  const shipAllBoxes = useCallback(
-    async (shippingProviderId: number) => {
-      const currentSession = sessionRef.current
-      if (!currentSession) return
+  const cancelBoxShipment = useCallback(
+    async (boxId: string) => {
+      if (!sessionId) return { success: false, error: 'No session' }
 
-      const pendingBoxes = currentSession.boxes.filter((b) => b.status === 'pending')
-      await Promise.allSettled(
-        pendingBoxes.map((box) =>
-          shipBox(box.id, shippingProviderId, box.picqerPackagingId ?? undefined)
-        )
-      )
+      try {
+        const response = await fetch(`/api/verpakking/sessions/${sessionId}/ship`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ boxId }),
+        })
+        const data = await response.json()
+
+        if (!response.ok) {
+          return { success: false, error: data.error || 'Failed to cancel shipment' }
+        }
+
+        // Update local state — box goes back to 'closed', clear shipment fields
+        setSession((prev) => {
+          if (!prev) return prev
+          const updatedBoxes = prev.boxes.map((b) =>
+            b.id === boxId ? {
+              ...b,
+              status: 'closed',
+              shipmentId: null,
+              trackingCode: null,
+              trackingUrl: null,
+              labelUrl: null,
+              shippedAt: null,
+            } : b
+          )
+          // If session was completed, reopen it
+          const newStatus = data.sessionReopened ? 'shipping' : prev.status
+          return { ...prev, status: newStatus, boxes: updatedBoxes }
+        })
+
+        // Clear from shipProgress
+        setShipProgress((prev) => {
+          const next = new Map(prev)
+          next.delete(boxId)
+          return next
+        })
+
+        return { success: true }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error'
+        return { success: false, error: message }
+      }
     },
-    [shipBox]
+    [sessionId]
+  )
+
+  const shipAllBoxes = useCallback(
+    async (shippingProviderId: number, boxWeights?: Map<string, number>) => {
+      const currentSession = sessionRef.current
+      if (!sessionId || !currentSession) return
+
+      const pendingBoxes = currentSession.boxes.filter((b) => b.status === 'closed')
+      if (pendingBoxes.length === 0) return
+
+      // Set all pending boxes to 'shipping' state
+      for (const box of pendingBoxes) {
+        setShipProgress((prev) => {
+          const next = new Map(prev)
+          next.set(box.id, { boxId: box.id, status: 'shipping' })
+          return next
+        })
+      }
+
+      try {
+        const response = await fetch(`/api/verpakking/sessions/${sessionId}/ship-all`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            shippingProviderId,
+            boxWeights: boxWeights ? Object.fromEntries(boxWeights) : undefined,
+          }),
+        })
+        const data = await response.json()
+
+        if (!response.ok) {
+          // Mark all boxes as error
+          for (const box of pendingBoxes) {
+            setShipProgress((prev) => {
+              const next = new Map(prev)
+              next.set(box.id, { boxId: box.id, status: 'error', error: data.error || 'Verzenden mislukt' })
+              return next
+            })
+          }
+          return
+        }
+
+        // Process per-box results
+        const boxResults = data.boxes as Array<{
+          boxId: string; success: boolean; trackingCode?: string; trackingUrl?: string; labelUrl?: string; error?: string
+        }>
+
+        for (const result of boxResults) {
+          if (result.success) {
+            setShipProgress((prev) => {
+              const next = new Map(prev)
+              next.set(result.boxId, {
+                boxId: result.boxId,
+                status: 'shipped',
+                trackingCode: result.trackingCode,
+                labelUrl: result.labelUrl,
+                sessionCompleted: data.sessionCompleted,
+              })
+              return next
+            })
+
+            // Update box in session state
+            setSession((prev) => {
+              if (!prev) return prev
+              return {
+                ...prev,
+                boxes: prev.boxes.map((b) =>
+                  b.id === result.boxId ? {
+                    ...b,
+                    status: 'shipped',
+                    shipmentId: null, // We don't get the ID back per-box in ship-all
+                    trackingCode: result.trackingCode ?? null,
+                    trackingUrl: result.trackingUrl ?? null,
+                    labelUrl: result.labelUrl ?? null,
+                    shippedAt: new Date().toISOString(),
+                  } : b
+                ),
+              }
+            })
+          } else {
+            setShipProgress((prev) => {
+              const next = new Map(prev)
+              next.set(result.boxId, {
+                boxId: result.boxId,
+                status: 'error',
+                error: result.error || 'Verzenden mislukt',
+              })
+              return next
+            })
+          }
+        }
+
+        // Store multicollo info in first box's progress
+        if (data.multicollo && boxResults.length > 0) {
+          setShipProgress((prev) => {
+            const next = new Map(prev)
+            const first = next.get(boxResults[0].boxId)
+            if (first) {
+              next.set(first.boxId, { ...first, multicollo: true } as BoxShipmentStatus & { multicollo?: boolean })
+            }
+            return next
+          })
+        }
+
+        if (data.warning) {
+          setWarnings((prev) => [...prev, data.warning])
+        }
+
+        if (data.sessionCompleted) {
+          setSession((prev) => prev ? { ...prev, status: 'completed' } : prev)
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error'
+        for (const box of pendingBoxes) {
+          setShipProgress((prev) => {
+            const next = new Map(prev)
+            next.set(box.id, { boxId: box.id, status: 'error', error: message })
+            return next
+          })
+        }
+      }
+    },
+    [sessionId]
   )
 
   // --- Session methods ---
@@ -592,9 +878,11 @@ export function usePackingSession(sessionId: string | null) {
     removeBox,
     assignProduct,
     moveProduct,
+    updateProductAmount,
     removeProduct,
     shipBox,
     shipAllBoxes,
+    cancelBoxShipment,
     updateStatus,
     completeSession,
     refetch,

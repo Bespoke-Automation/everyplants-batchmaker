@@ -104,13 +104,44 @@ export interface ShipAllProgress {
   combinedPdfUrl?: string
 }
 
+// Local tag (synced from Picqer)
+export interface LocalTag {
+  id: string
+  idtag: number
+  title: string
+  color: string | null
+  textColor: string | null
+  inherit: boolean
+  tagType: 'packaging' | 'plantura' | 'other'
+  isActive: boolean
+  lastSyncedAt: string
+}
+
+// Local packaging (synced from Picqer)
+export interface LocalPackaging {
+  id: string
+  idpackaging: number
+  name: string
+  barcode: string | null
+  length: number | null
+  width: number | null
+  height: number | null
+  maxWeight: number | null
+  boxCategory: string | null
+  specificityScore: number
+  handlingCost: number
+  materialCost: number
+  useInAutoAdvice: boolean
+  active: boolean
+  lastSyncedAt: string
+}
+
 // Tag to packaging mapping
 export interface TagPackagingMapping {
   id: string
   tagTitle: string
   picqerPackagingId: number
   packagingName: string
-  priority: number
   isActive: boolean
 }
 
@@ -138,6 +169,77 @@ export interface ClaimResult {
   success: boolean
   sessionId?: string
   error?: string
+}
+
+// ── Batch types ──────────────────────────────────────────────────────────────
+
+// Product within a batch (aggregated across all picklists)
+export interface BatchProduct {
+  idproduct: number
+  productcode: string
+  name: string
+  image: string | null
+  stockLocation: string | null
+  amount: number
+  amountPicked: number
+}
+
+// Queue item (batch in the batch queue view)
+export interface QueueBatch {
+  idpicklistBatch: number
+  batchDisplayId: string
+  type: 'singles' | 'normal'
+  status: string
+  totalProducts: number
+  totalPicklists: number
+  createdAt: string
+  // Picqer assigned user (from picking phase)
+  picqerAssignedTo: string | null
+  // Comment count from Picqer
+  totalComments: number
+  // Enriched from Supabase:
+  isClaimed: boolean
+  claimedByName?: string
+  batchSessionId?: string  // If already claimed by current worker
+}
+
+// Batch claim result
+export interface BatchClaimResult {
+  success: boolean
+  batchSessionId?: string
+  error?: string
+}
+
+// Batch session detail (used in BatchOverview)
+export interface BatchSessionDetail {
+  id: string
+  batchId: number
+  batchDisplayId: string
+  totalPicklists: number
+  completedPicklists: number
+  totalProducts: number
+  batchType: 'singles' | 'normal'
+  status: string
+  assignedTo: number
+  assignedToName: string
+  picklists: BatchPicklistItem[]
+  products: BatchProduct[]
+}
+
+// Picklist item within a batch (for BatchOverview)
+export interface BatchPicklistItem {
+  idpicklist: number
+  picklistid: string
+  alias: string | null
+  deliveryname: string
+  reference: string | null
+  totalproducts: number
+  status: string  // Picqer status
+  hasNotes: boolean
+  hasCustomerRemarks: boolean
+  customerRemarks: string | null
+  sessionId?: string  // If a packing session exists
+  sessionStatus?: string  // Status of the packing session
 }
 
 // Ship box request/response

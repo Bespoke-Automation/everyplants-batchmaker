@@ -47,6 +47,7 @@ export async function POST(request: NextRequest) {
       deliveryCountry,
       assignedTo,
       assignedToName,
+      batchSessionId,
     } = body
 
     if (!picklistId || !assignedTo || !assignedToName) {
@@ -124,6 +125,7 @@ export async function POST(request: NextRequest) {
         ...(retailer && { retailer }),
         ...(deliveryCountry && { delivery_country: deliveryCountry }),
         ...(picklistid ? { picklistid } : picqerPicklistId ? { picklistid: picqerPicklistId } : {}),
+        ...(batchSessionId && { batch_session_id: batchSessionId }),
       })
     }
 

@@ -6,8 +6,9 @@ import {
   updatePackingSession,
   claimBoxForShipping,
 } from '@/lib/supabase/packingSessions'
-import { createShipment, getShipmentLabel, pickAllProducts, closePicklist, fetchPicklist } from '@/lib/picqer/client'
+import { createShipment, getShipmentLabel, pickAllProducts, closePicklist, fetchPicklist, cancelShipment } from '@/lib/picqer/client'
 import { supabase } from '@/lib/supabase/client'
+import { recordSessionOutcome } from '@/lib/engine/feedbackTracking'
 
 export const dynamic = 'force-dynamic'
 
@@ -56,7 +57,7 @@ export async function POST(
   try {
     const body = await request.json()
     boxId = body.boxId
-    const { shippingProviderId, packagingId } = body
+    const { shippingProviderId, packagingId, weight } = body
 
     if (!boxId || !shippingProviderId) {
       return NextResponse.json(
@@ -82,6 +83,7 @@ export async function POST(
         success: true,
         shipmentId: box.shipment_id,
         trackingCode: box.tracking_code || null,
+        trackingUrl: box.tracking_url || null,
         labelUrl: box.label_url || null,
       })
     }
@@ -102,7 +104,8 @@ export async function POST(
     const shipmentResult = await createShipment(
       session.picklist_id,
       shippingProviderId,
-      packagingId || undefined
+      packagingId || undefined,
+      weight || undefined
     )
 
     if (!shipmentResult.success || !shipmentResult.shipment) {
@@ -123,6 +126,7 @@ export async function POST(
     const shipment = shipmentResult.shipment
     const shipmentId = shipment.idshipment
     const trackingCode = shipment.trackingcode || undefined
+    const trackingUrl = shipment.trackingurl || shipment.tracktraceurl || undefined
 
     // Step 6: Fetch the shipping label
     let labelUrl: string | undefined
@@ -149,7 +153,9 @@ export async function POST(
     await updateBox(boxId, {
       shipment_id: shipmentId,
       tracking_code: trackingCode || null,
+      tracking_url: trackingUrl || null,
       label_url: labelUrl || null,
+      shipped_at: new Date().toISOString(),
       status: 'label_fetched',
     })
 
@@ -208,6 +214,13 @@ export async function POST(
           completed_at: new Date().toISOString(),
         })
         sessionCompleted = true
+
+        // Record feedback loop data (non-blocking)
+        try {
+          await recordSessionOutcome(sessionId)
+        } catch (feedbackError) {
+          console.error('[verpakking] Error recording session outcome:', feedbackError)
+        }
       }
     } catch (completionError) {
       console.error('[verpakking] Error checking session completion:', completionError)
@@ -218,6 +231,7 @@ export async function POST(
       success: true,
       shipmentId,
       trackingCode: trackingCode || null,
+      trackingUrl: trackingUrl || null,
       labelUrl: labelUrl || null,
       sessionCompleted,
       ...(closeWarning && { warning: closeWarning }),
@@ -240,6 +254,116 @@ export async function POST(
       {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to ship box',
+      },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * DELETE /api/verpakking/sessions/[id]/ship
+ * Cancel a shipment for a box (within 5-minute window)
+ */
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id: sessionId } = await params
+
+  try {
+    const body = await request.json()
+    const { boxId } = body
+
+    if (!boxId) {
+      return NextResponse.json(
+        { error: 'Missing required field: boxId' },
+        { status: 400 }
+      )
+    }
+
+    // Step 1: Get the box
+    const boxes = await getBoxesBySession(sessionId)
+    const box = boxes.find(b => b.id === boxId)
+
+    if (!box) {
+      return NextResponse.json(
+        { error: `Box ${boxId} not found in session ${sessionId}` },
+        { status: 404 }
+      )
+    }
+
+    if (!box.shipment_id) {
+      return NextResponse.json(
+        { error: 'Box has no shipment to cancel' },
+        { status: 400 }
+      )
+    }
+
+    // Step 2: Check 5-minute time window
+    if (box.shipped_at) {
+      const elapsed = Date.now() - new Date(box.shipped_at).getTime()
+      const fiveMinutes = 5 * 60 * 1000
+      if (elapsed > fiveMinutes) {
+        return NextResponse.json(
+          { error: 'Annuleerperiode verlopen (max 5 minuten na aanmaken zending)' },
+          { status: 422 }
+        )
+      }
+    }
+
+    // Step 3: Cancel shipment in Picqer
+    const cancelResult = await cancelShipment(box.shipment_id)
+    if (!cancelResult.success) {
+      return NextResponse.json(
+        { success: false, error: cancelResult.error || 'Failed to cancel shipment in Picqer' },
+        { status: 500 }
+      )
+    }
+
+    // Step 4: Reset box in Supabase
+    await updateBox(boxId, {
+      shipment_id: null,
+      tracking_code: null,
+      tracking_url: null,
+      label_url: null,
+      shipped_at: null,
+      status: 'closed',
+    })
+
+    // Step 5: If session was completed, reopen it
+    let sessionReopened = false
+    try {
+      const currentSession = await getPackingSession(sessionId)
+      if (currentSession.status === 'completed') {
+        await updatePackingSession(sessionId, {
+          status: 'shipping',
+          completed_at: null,
+        })
+        sessionReopened = true
+
+        // Invalidate the previous outcome (will be re-computed on next completion)
+        const adviceId = currentSession.packing_session_boxes
+          .map(b => b.packaging_advice_id)
+          .find(id => id != null)
+        if (adviceId) {
+          await supabase
+            .schema('batchmaker')
+            .from('packaging_advice')
+            .update({ outcome: null, actual_boxes: null, deviation_type: null, resolved_at: null })
+            .eq('id', adviceId)
+        }
+      }
+    } catch (reopenError) {
+      console.error('[verpakking] Error reopening session after cancel:', reopenError)
+    }
+
+    return NextResponse.json({ success: true, sessionReopened })
+  } catch (error) {
+    console.error('[verpakking] Error cancelling shipment:', error)
+    return NextResponse.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to cancel shipment',
       },
       { status: 500 }
     )

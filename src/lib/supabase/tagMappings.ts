@@ -7,7 +7,6 @@ export interface TagPackagingMap {
   tag_title: string
   picqer_packaging_id: number
   packaging_name: string
-  priority: number
   is_active: boolean
   created_at: string
   updated_at: string
@@ -23,7 +22,7 @@ export async function getTagMappings(): Promise<TagPackagingMap[]> {
     .schema('batchmaker')
     .from('tag_packaging_map')
     .select()
-    .order('priority', { ascending: true })
+    .order('tag_title', { ascending: true })
 
   if (error) {
     console.error('Error fetching tag mappings:', error)
@@ -40,7 +39,6 @@ export async function createTagMapping(input: {
   tag_title: string
   picqer_packaging_id: number
   packaging_name: string
-  priority?: number
   is_active?: boolean
 }): Promise<TagPackagingMap> {
   const { data, error } = await supabase
@@ -50,7 +48,6 @@ export async function createTagMapping(input: {
       tag_title: input.tag_title,
       picqer_packaging_id: input.picqer_packaging_id,
       packaging_name: input.packaging_name,
-      priority: input.priority ?? 0,
       is_active: input.is_active ?? true,
     })
     .select()
@@ -115,7 +112,7 @@ export async function getTagMappingsByTags(tagTitles: string[]): Promise<TagPack
     .select()
     .in('tag_title', tagTitles)
     .eq('is_active', true)
-    .order('priority', { ascending: true })
+    .order('tag_title', { ascending: true })
 
   if (error) {
     console.error('Error fetching tag mappings by tags:', error)

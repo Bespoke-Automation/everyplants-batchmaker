@@ -34,6 +34,8 @@ import {
   MessageSquare,
   RefreshCw,
   ScanBarcode,
+  ExternalLink,
+  Sparkles,
 } from 'lucide-react'
 import Dialog from '@/components/ui/Dialog'
 import { usePackingSession } from '@/hooks/usePackingSession'
@@ -46,6 +48,24 @@ import BarcodeListener from './BarcodeListener'
 import ProductCard, { type ProductCardItem, type BoxRef } from './ProductCard'
 import BoxCard, { type BoxCardItem, type BoxProductItem } from './BoxCard'
 import ShipmentProgress from './ShipmentProgress'
+
+// Engine advice response type
+interface EngineAdviceBox {
+  packaging_id: string
+  packaging_name: string
+  idpackaging: number
+  products: { productcode: string; shipping_unit_name: string; quantity: number }[]
+}
+
+interface EngineAdvice {
+  id: string
+  order_id: number
+  confidence: 'full_match' | 'partial_match' | 'no_match'
+  advice_boxes: EngineAdviceBox[]
+  unclassified_products: string[]
+  tags_written: string[]
+  weight_exceeded?: boolean
+}
 
 // Shared status translation map (English -> Dutch)
 const STATUS_TRANSLATIONS: Record<string, string> = {
@@ -91,6 +111,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
     removeProduct,
     shipBox,
     shipAllBoxes,
+    cancelBoxShipment,
     dismissWarning,
   } = usePackingSession(sessionId)
 
@@ -109,6 +130,11 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
   // Packagings from Picqer
   const [packagings, setPackagings] = useState<PicqerPackaging[]>([])
   const [packagingsLoading, setPackagingsLoading] = useState(false)
+
+  // Engine packaging advice
+  const [engineAdvice, setEngineAdvice] = useState<EngineAdvice | null>(null)
+  const [engineLoading, setEngineLoading] = useState(false)
+  const engineCalledRef = useRef(false)
 
   // Tag-to-packaging mappings for suggestions
   const { getMappingsForTags, isLoading: mappingsLoading } = useTagMappings()
@@ -210,6 +236,50 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
       fetchComments()
     }
   }, [picklistIdForComments, fetchComments])
+
+  // Call packaging engine when picklist products are available
+  useEffect(() => {
+    if (engineCalledRef.current) return
+    if (!picklist?.products || picklist.products.length === 0) return
+    if (!picklist.idorder) return
+
+    engineCalledRef.current = true
+    setEngineLoading(true)
+
+    const products = picklist.products.map((pp: PicqerPicklistProduct) => ({
+      picqer_product_id: pp.idproduct,
+      productcode: pp.productcode,
+      quantity: pp.amount,
+    }))
+
+    fetch('/api/verpakking/engine/calculate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        orderId: picklist.idorder,
+        picklistId: picklist.idpicklist,
+        products,
+        shippingProviderProfileId: picklist.idshippingprovider_profile ?? undefined,
+      }),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error('Engine advies ophalen mislukt')
+        return res.json()
+      })
+      .then((data) => {
+        if (data.advice) {
+          setEngineAdvice(data.advice)
+          console.log('[VerpakkingsClient] Engine advice:', data.advice.confidence, data.advice.advice_boxes?.length, 'boxes')
+        }
+      })
+      .catch((err) => {
+        console.error('[VerpakkingsClient] Engine advice error:', err)
+        // Silently fall back to tag mappings — don't show error to user
+      })
+      .finally(() => {
+        setEngineLoading(false)
+      })
+  }, [picklist])
 
   // Fetch packagings once
   useEffect(() => {
@@ -339,7 +409,11 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
         }
       }),
       isClosed: closedBoxes.has(box.id),
-      shipmentCreated: box.status === 'shipped',
+      shipmentCreated: box.status === 'shipped' || box.status === 'label_fetched',
+      trackingCode: box.trackingCode,
+      trackingUrl: box.trackingUrl,
+      labelUrl: box.labelUrl,
+      shippedAt: box.shippedAt,
     }))
   }, [session, closedBoxes, picklist])
 
@@ -384,29 +458,87 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
     [suggestedPackagings]
   )
 
-  // Auto-create boxes based on tag-packaging mappings (multi-tag: all matching tags → all matching boxes)
+  // Auto-create boxes: prefer engine advice, fall back to tag mappings
   useEffect(() => {
     if (autoBoxCreatedRef.current) return
     if (!session || !picklist) return
     if (session.boxes.length > 0) return
     if (packagingsLoading || mappingsLoading) return
-    if (suggestedPackagings.length === 0) return
+    // Wait for engine to finish before deciding
+    if (engineLoading) return
 
-    autoBoxCreatedRef.current = true
+    // Determine which boxes to auto-create
+    const engineBoxes = engineAdvice?.advice_boxes ?? []
+    const useEngine = engineAdvice && engineAdvice.confidence !== 'no_match' && engineBoxes.length > 0
 
-    // Create all matching boxes sequentially to avoid race conditions
-    const createBoxes = async () => {
-      for (const pkg of suggestedPackagings) {
-        await addBox(pkg.name, pkg.idpackaging, pkg.barcode ?? undefined)
+    if (useEngine) {
+      autoBoxCreatedRef.current = true
+
+      const createBoxes = async () => {
+        for (const adviceBox of engineBoxes) {
+          const pkg = activePackagings.find((p) => p.idpackaging === adviceBox.idpackaging)
+          const boxId = await addBox(
+            adviceBox.packaging_name,
+            adviceBox.idpackaging,
+            pkg?.barcode ?? undefined,
+            {
+              packagingAdviceId: engineAdvice!.id,
+              suggestedPackagingId: adviceBox.idpackaging,
+              suggestedPackagingName: adviceBox.packaging_name,
+            }
+          )
+
+          // Auto-assign producten voor deze doos
+          // Skip synthetic entries like "(composition parts)" — those don't exist on the picklist
+          if (boxId && adviceBox.products.length > 0) {
+            const assignableProducts = adviceBox.products.filter(
+              (ap) => !ap.productcode.startsWith('(')
+            )
+            for (const adviceProduct of assignableProducts) {
+              const picklistProduct = picklist!.products.find(
+                (pp: PicqerPicklistProduct) => pp.productcode === adviceProduct.productcode
+              )
+              if (picklistProduct) {
+                await assignProduct(boxId, {
+                  picqerProductId: picklistProduct.idproduct,
+                  productcode: adviceProduct.productcode,
+                  productName: picklistProduct.name,
+                  amount: adviceProduct.quantity,
+                })
+              } else {
+                console.warn(`[VerpakkingsClient] Auto-assign: product ${adviceProduct.productcode} niet gevonden op picklist`)
+              }
+            }
+          }
+        }
+        const label = engineAdvice!.confidence === 'full_match' ? 'Advies' : 'Gedeeltelijk advies'
+        const autoAssigned = engineBoxes.every(b => b.products.length > 0)
+          ? ' — producten automatisch toegewezen'
+          : ''
+        setAutoBoxMessage(
+          engineBoxes.length === 1
+            ? `${label}: ${engineBoxes[0].packaging_name}${autoAssigned}`
+            : `${label}: ${engineBoxes.length} dozen aangemaakt${autoAssigned}`
+        )
       }
-      setAutoBoxMessage(
-        suggestedPackagings.length === 1
-          ? `Doos automatisch aangemaakt: ${suggestedPackagings[0].name}`
-          : `${suggestedPackagings.length} dozen automatisch aangemaakt`
-      )
+      createBoxes()
+    } else if (suggestedPackagings.length > 0) {
+      // Fall back to tag-packaging mappings
+      autoBoxCreatedRef.current = true
+
+      const createBoxes = async () => {
+        for (const pkg of suggestedPackagings) {
+          await addBox(pkg.name, pkg.idpackaging, pkg.barcode ?? undefined)
+        }
+        setAutoBoxMessage(
+          suggestedPackagings.length === 1
+            ? `Doos automatisch aangemaakt: ${suggestedPackagings[0].name}`
+            : `${suggestedPackagings.length} dozen automatisch aangemaakt`
+        )
+      }
+      createBoxes()
     }
-    createBoxes()
-  }, [session, picklist, suggestedPackagings, packagingsLoading, mappingsLoading, addBox])
+  }, [session, picklist, suggestedPackagings, packagingsLoading, mappingsLoading, engineAdvice, engineLoading, activePackagings, addBox, assignProduct])
 
   // Auto-dismiss auto-box message
   useEffect(() => {
@@ -517,11 +649,26 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
 
   const handleAddBox = useCallback(
     async (packaging: PicqerPackaging) => {
-      await addBox(packaging.name, packaging.idpackaging, packaging.barcode ?? undefined)
+      // If engine advice exists, pass it as context so we can detect overrides.
+      // Find the matching advice box for this packaging (not always [0])
+      // so was_override is only true when the worker genuinely picks something different.
+      let adviceMeta: { packagingAdviceId: string; suggestedPackagingId: number; suggestedPackagingName: string } | undefined
+      if (engineAdvice && engineAdvice.confidence !== 'no_match' && engineAdvice.advice_boxes.length > 0) {
+        const matchingAdviceBox = engineAdvice.advice_boxes.find(
+          (ab) => ab.idpackaging === packaging.idpackaging
+        )
+        adviceMeta = {
+          packagingAdviceId: engineAdvice.id,
+          suggestedPackagingId: matchingAdviceBox?.idpackaging ?? engineAdvice.advice_boxes[0].idpackaging,
+          suggestedPackagingName: matchingAdviceBox?.packaging_name ?? engineAdvice.advice_boxes[0].packaging_name,
+        }
+      }
+
+      await addBox(packaging.name, packaging.idpackaging, packaging.barcode ?? undefined, adviceMeta)
       setShowAddBoxModal(false)
       setBoxSearchQuery('')
     },
-    [addBox]
+    [addBox, engineAdvice]
   )
 
   const handleRemoveBox = useCallback(
@@ -569,6 +716,24 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
       shipAllBoxes(providerId, weights)
     },
     [shipAllBoxes]
+  )
+
+  const handleCancelShipment = useCallback(
+    async (boxId: string) => {
+      const result = await cancelBoxShipment(boxId)
+      if (result.success) {
+        // Remove from closedBoxes so the box becomes editable (closed state, not locked)
+        setClosedBoxes((prev) => {
+          const next = new Set(prev)
+          next.delete(boxId)
+          return next
+        })
+        setScanFeedback({ message: 'Zending geannuleerd', type: 'success' })
+      } else if (result.error) {
+        setScanFeedback({ message: `Annuleren mislukt: ${result.error}`, type: 'error' })
+      }
+    },
+    [cancelBoxShipment]
   )
 
   const handleRetryBox = useCallback(
@@ -662,7 +827,18 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
         (pkg) => pkg.barcode && pkg.barcode.toLowerCase() === barcode.toLowerCase()
       )
       if (matchedPackaging) {
-        addBox(matchedPackaging.name, matchedPackaging.idpackaging, matchedPackaging.barcode ?? undefined)
+        let adviceMeta: { packagingAdviceId: string; suggestedPackagingId: number; suggestedPackagingName: string } | undefined
+        if (engineAdvice && engineAdvice.confidence !== 'no_match' && engineAdvice.advice_boxes.length > 0) {
+          const matchingAdviceBox = engineAdvice.advice_boxes.find(
+            (ab) => ab.idpackaging === matchedPackaging.idpackaging
+          )
+          adviceMeta = {
+            packagingAdviceId: engineAdvice.id,
+            suggestedPackagingId: matchingAdviceBox?.idpackaging ?? engineAdvice.advice_boxes[0].idpackaging,
+            suggestedPackagingName: matchingAdviceBox?.packaging_name ?? engineAdvice.advice_boxes[0].packaging_name,
+          }
+        }
+        addBox(matchedPackaging.name, matchedPackaging.idpackaging, matchedPackaging.barcode ?? undefined, adviceMeta)
         setScanFeedback({ message: `Doos aangemaakt: ${matchedPackaging.name}`, type: 'success' })
         return
       }
@@ -697,7 +873,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
       // 4. No match
       setScanFeedback({ message: `Barcode niet herkend: ${barcode}`, type: 'error' })
     },
-    [activePackagings, productItems, session, closedBoxes, addBox, handleAssignProduct]
+    [activePackagings, productItems, session, closedBoxes, addBox, handleAssignProduct, engineAdvice]
   )
 
   // Auto-dismiss scan feedback
@@ -926,6 +1102,45 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Engine packaging advice banner */}
+        {engineAdvice && engineAdvice.confidence !== 'no_match' && (
+          <div className="px-3 pt-2 lg:px-4">
+            <div
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${
+                engineAdvice.confidence === 'full_match'
+                  ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                  : 'bg-blue-50 border border-blue-200 text-blue-800'
+              }`}
+            >
+              <Sparkles className={`w-4 h-4 flex-shrink-0 ${
+                engineAdvice.confidence === 'full_match' ? 'text-emerald-600' : 'text-blue-600'
+              }`} />
+              <span className="flex-1">
+                {engineAdvice.confidence === 'full_match' ? 'Advies: ' : 'Gedeeltelijk advies: '}
+                {engineAdvice.advice_boxes.map((b) => b.packaging_name).join(' + ')}
+                {engineAdvice.unclassified_products.length > 0 && (
+                  <span className="text-xs ml-1 opacity-75">
+                    ({engineAdvice.unclassified_products.length} product{engineAdvice.unclassified_products.length !== 1 ? 'en' : ''} niet geclassificeerd)
+                  </span>
+                )}
+                {engineAdvice.weight_exceeded && (
+                  <span className="text-xs ml-1 text-amber-700 font-medium">
+                    — Let op: gewicht overschrijdt maximum
+                  </span>
+                )}
+              </span>
+            </div>
+          </div>
+        )}
+        {engineLoading && (
+          <div className="px-3 pt-2 lg:px-4">
+            <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 rounded-lg text-sm text-muted-foreground">
+              <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
+              <span>Verpakkingsadvies berekenen...</span>
+            </div>
           </div>
         )}
 
@@ -1226,6 +1441,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
                         onReopenBox={() => handleReopenBox(box.id)}
                         onRemoveBox={() => handleRemoveBox(box.id)}
                         onCreateShipment={() => setShowShipmentModal(true)}
+                        onCancelShipment={() => handleCancelShipment(box.id)}
                         onAssignAllProducts={() => handleAssignAllToBox(box.id)}
                         unassignedProductCount={unassignedProducts.length}
                       />
@@ -1408,6 +1624,38 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
                         <p className="text-xs text-muted-foreground">
                           {box.packagingName} · {box.products.length} product{box.products.length !== 1 ? 'en' : ''}
                         </p>
+                        {box.trackingCode && (
+                          <p className="text-xs font-mono text-muted-foreground mt-0.5">
+                            {box.trackingUrl ? (
+                              <a
+                                href={box.trackingUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary hover:underline"
+                              >
+                                {box.trackingCode}
+                              </a>
+                            ) : (
+                              box.trackingCode
+                            )}
+                          </p>
+                        )}
+                        {box.labelUrl && (
+                          <a
+                            href={box.labelUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-0.5"
+                          >
+                            Label openen
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
+                        {box.shippedAt && (
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            Verzonden {new Date(box.shippedAt).toLocaleString('nl-NL', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}
+                          </p>
+                        )}
                       </div>
                     )
                   })}
@@ -1460,6 +1708,49 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
               autoFocus
             />
           </div>
+
+          {/* Engine-advised packagings */}
+          {engineAdvice && engineAdvice.confidence !== 'no_match' && engineAdvice.advice_boxes.length > 0 && !boxSearchQuery.trim() && (
+            <div className="mb-4">
+              <h4 className="text-xs font-medium text-emerald-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5" />
+                Engine advies
+              </h4>
+              <div className="space-y-1">
+                {engineAdvice.advice_boxes.map((adviceBox, idx) => {
+                  const pkg = activePackagings.find((p) => p.idpackaging === adviceBox.idpackaging)
+                  if (!pkg) return null
+                  return (
+                    <button
+                      key={`engine-${adviceBox.idpackaging}-${idx}`}
+                      onClick={() => handleAddBox(pkg)}
+                      className="w-full flex items-center gap-3 p-2 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 transition-colors text-left"
+                    >
+                      <div className="w-10 h-10 bg-emerald-100 rounded flex items-center justify-center flex-shrink-0">
+                        <Sparkles className="w-5 h-5 text-emerald-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm">{adviceBox.packaging_name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {adviceBox.products.map((p) => `${p.quantity}x ${p.shipping_unit_name}`).join(', ')}
+                        </p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-emerald-600" />
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* Divider before tag suggestions */}
+              {suggestedPackagings.length > 0 && (
+                <div className="flex items-center gap-2 mt-4 mb-2">
+                  <div className="flex-1 border-t border-border" />
+                  <span className="text-xs text-muted-foreground">Tag-suggesties</span>
+                  <div className="flex-1 border-t border-border" />
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Suggested packagings based on tags */}
           {suggestedPackagings.length > 0 && !boxSearchQuery.trim() && (

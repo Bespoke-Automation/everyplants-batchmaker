@@ -14,7 +14,7 @@ export async function POST(
   try {
     const { id: sessionId } = await params
     const body = await request.json()
-    const { picqerPackagingId, packagingName, packagingBarcode, boxIndex } = body
+    const { picqerPackagingId, packagingName, packagingBarcode, boxIndex, packagingAdviceId, suggestedPackagingId, suggestedPackagingName } = body
 
     if (!packagingName || boxIndex === undefined) {
       return NextResponse.json(
@@ -28,6 +28,9 @@ export async function POST(
       packaging_name: packagingName,
       packaging_barcode: packagingBarcode,
       box_index: boxIndex,
+      packaging_advice_id: packagingAdviceId,
+      suggested_packaging_id: suggestedPackagingId,
+      suggested_packaging_name: suggestedPackagingName,
     })
 
     return NextResponse.json(box)

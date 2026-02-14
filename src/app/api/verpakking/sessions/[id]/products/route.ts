@@ -27,9 +27,9 @@ export async function POST(
     // B4: Validate product belongs to this picklist
     const session = await getPackingSession(sessionId)
     const picklist = await fetchPicklist(session.picklist_id)
-    const picklistProductIds = picklist.products.map(p => p.idproduct)
+    const picklistProduct = picklist.products.find(p => p.idproduct === picqerProductId)
 
-    if (!picklistProductIds.includes(picqerProductId)) {
+    if (!picklistProduct) {
       return NextResponse.json(
         { error: 'Product niet gevonden in picklist' },
         { status: 400 }
@@ -48,11 +48,14 @@ export async function POST(
 
     // Mark product as picked in Picqer (non-blocking — don't fail if Picqer is down)
     let picqerWarning: string | undefined
-    try {
-      await pickProduct(session.picklist_id, productcode, amount)
-    } catch (pickError) {
-      console.error('[verpakking] Failed to pick product in Picqer:', pickError)
-      picqerWarning = `Product assigned but Picqer pick failed: ${pickError instanceof Error ? pickError.message : 'Unknown error'}. Please pick manually in Picqer.`
+    const amountToPick = Math.min(amount, picklistProduct.amount - picklistProduct.amount_picked)
+    if (amountToPick > 0) {
+      try {
+        await pickProduct(session.picklist_id, picklistProduct.idpicklist_product, amountToPick)
+      } catch (pickError) {
+        console.error('[verpakking] Failed to pick product in Picqer:', pickError)
+        picqerWarning = `Product assigned but Picqer pick failed: ${pickError instanceof Error ? pickError.message : 'Unknown error'}. Please pick manually in Picqer.`
+      }
     }
 
     return NextResponse.json({ ...product, warning: picqerWarning })

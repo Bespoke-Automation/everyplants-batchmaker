@@ -8,7 +8,6 @@ interface ApiTagMapping {
   tag_title: string
   picqer_packaging_id: number
   packaging_name: string
-  priority: number
   is_active: boolean
 }
 
@@ -18,19 +17,8 @@ function transformMapping(raw: ApiTagMapping): TagPackagingMapping {
     tagTitle: raw.tag_title,
     picqerPackagingId: raw.picqer_packaging_id,
     packagingName: raw.packaging_name,
-    priority: raw.priority,
     isActive: raw.is_active,
   }
-}
-
-function toSnakeCase(mapping: Partial<TagPackagingMapping>): Record<string, unknown> {
-  const result: Record<string, unknown> = {}
-  if (mapping.tagTitle !== undefined) result.tag_title = mapping.tagTitle
-  if (mapping.picqerPackagingId !== undefined) result.picqer_packaging_id = mapping.picqerPackagingId
-  if (mapping.packagingName !== undefined) result.packaging_name = mapping.packagingName
-  if (mapping.priority !== undefined) result.priority = mapping.priority
-  if (mapping.isActive !== undefined) result.is_active = mapping.isActive
-  return result
 }
 
 export function useTagMappings() {
@@ -72,7 +60,7 @@ export function useTagMappings() {
         const response = await fetch('/api/verpakking/tag-mappings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(toSnakeCase(mapping)),
+          body: JSON.stringify(mapping),
         })
         if (!response.ok) {
           const errorData = await response.json()
@@ -98,7 +86,7 @@ export function useTagMappings() {
         const response = await fetch('/api/verpakking/tag-mappings', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id, ...toSnakeCase(updates) }),
+          body: JSON.stringify({ id, ...updates }),
         })
         if (!response.ok) {
           const errorData = await response.json()
@@ -157,7 +145,6 @@ export function useTagMappings() {
       const tagSet = new Set(tags.map((t) => t.toLowerCase()))
       return mappings
         .filter((m) => m.isActive && tagSet.has(m.tagTitle.toLowerCase()))
-        .sort((a, b) => a.priority - b.priority)
     },
     [mappings]
   )

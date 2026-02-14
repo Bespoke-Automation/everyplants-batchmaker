@@ -1,4 +1,4 @@
-import { PicqerOrder, PicqerPicklist, PicqerPicklistWithProducts, PicqerProduct, PicqerTag, PicqerShipment, CreateShipmentResult, CancelShipmentResult, GetLabelResult, PicqerPackaging, ShippingMethod, PicqerUser, PicqerPicklistBatch, PicqerBatchPicklist, type MulticolloParcelInput } from './types'
+import { PicqerOrder, PicqerPicklist, PicqerPicklistWithProducts, PicqerProduct, PicqerTag, PicqerShipment, CreateShipmentResult, CancelShipmentResult, GetLabelResult, PicqerPackaging, ShippingMethod, PicqerUser, PicqerPicklistBatch, PicqerBatchPicklist, type MulticolloParcelInput, PicqerProductFull, PicqerCompositionPart } from './types'
 
 const PICQER_SUBDOMAIN = process.env.PICQER_SUBDOMAIN!
 const PICQER_API_KEY = process.env.PICQER_API_KEY!
@@ -1604,4 +1604,233 @@ export async function deleteComment(idcomment: number): Promise<void> {
     console.error(`Picqer API error deleting comment ${idcomment}:`, response.status, errorText)
     throw new Error(`Failed to delete comment: ${response.status} - ${errorText}`)
   }
+}
+
+// ── Product full details & composition parts ──────────────────────────────
+
+/**
+ * Get a single product with full details including custom fields
+ */
+export async function getProductFull(idproduct: number): Promise<PicqerProductFull> {
+  console.log(`Fetching full product details for ${idproduct}...`)
+
+  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/products/${idproduct}`, {
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      'Content-Type': 'application/json',
+    },
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error fetching product ${idproduct}:`, response.status, errorText)
+    throw new Error(`Picqer API error: ${response.status}`)
+  }
+
+  return response.json()
+}
+
+/**
+ * Get a product by productcode (exact match)
+ * Returns first result or null if not found
+ */
+export async function getProductByCode(productcode: string): Promise<PicqerProductFull | null> {
+  console.log(`Fetching product by code "${productcode}"...`)
+
+  const params = new URLSearchParams({
+    productcode: productcode,
+  })
+
+  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/products?${params}`, {
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      'Content-Type': 'application/json',
+    },
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error fetching product by code "${productcode}":`, response.status, errorText)
+    throw new Error(`Picqer API error: ${response.status}`)
+  }
+
+  const products: PicqerProductFull[] = await response.json()
+  return products.length > 0 ? products[0] : null
+}
+
+/**
+ * Update product custom fields
+ */
+export async function updateProductFields(
+  idproduct: number,
+  productfields: { idproductfield: number; value: string }[]
+): Promise<void> {
+  console.log(`Updating product fields for product ${idproduct}...`)
+
+  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/products/${idproduct}`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ productfields }),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error updating product fields for ${idproduct}:`, response.status, errorText)
+    throw new Error(`Failed to update product fields: ${response.status} - ${errorText}`)
+  }
+
+  console.log(`Product fields updated for product ${idproduct}`)
+}
+
+/**
+ * Get composition parts for a product
+ */
+export async function getProductParts(idproduct: number): Promise<PicqerCompositionPart[]> {
+  console.log(`Fetching composition parts for product ${idproduct}...`)
+
+  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/products/${idproduct}/parts`, {
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      'Content-Type': 'application/json',
+    },
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error fetching parts for product ${idproduct}:`, response.status, errorText)
+    throw new Error(`Picqer API error: ${response.status}`)
+  }
+
+  const parts: PicqerCompositionPart[] = await response.json()
+  console.log(`Found ${parts.length} composition parts for product ${idproduct}`)
+  return parts
+}
+
+// ── Order tag operations ──────────────────────────────────────────────────
+
+/**
+ * Get tags for an order
+ */
+export async function getOrderTags(orderId: number): Promise<PicqerTag[]> {
+  console.log(`Fetching tags for order ${orderId}...`)
+
+  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/orders/${orderId}/tags`, {
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      'Content-Type': 'application/json',
+    },
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error fetching tags for order ${orderId}:`, response.status, errorText)
+    throw new Error(`Picqer API error: ${response.status}`)
+  }
+
+  const tags: PicqerTag[] = await response.json()
+  console.log(`Found ${tags.length} tags for order ${orderId}`)
+  return tags
+}
+
+/**
+ * Add a tag to an order
+ */
+export async function addOrderTag(orderId: number, idtag: number): Promise<void> {
+  console.log(`Adding tag ${idtag} to order ${orderId}...`)
+
+  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/orders/${orderId}/tags`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ idtag }),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error adding tag to order ${orderId}:`, response.status, errorText)
+    throw new Error(`Failed to add tag to order: ${response.status} - ${errorText}`)
+  }
+
+  console.log(`Tag ${idtag} added to order ${orderId} successfully`)
+}
+
+/**
+ * Remove a tag from an order
+ */
+export async function removeOrderTag(orderId: number, idtag: number): Promise<void> {
+  console.log(`Removing tag ${idtag} from order ${orderId}...`)
+
+  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/orders/${orderId}/tags/${idtag}`, {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+    },
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error removing tag from order ${orderId}:`, response.status, errorText)
+    throw new Error(`Failed to remove tag from order: ${response.status} - ${errorText}`)
+  }
+
+  console.log(`Tag ${idtag} removed from order ${orderId} successfully`)
+}
+
+// ── Bulk product fetching ─────────────────────────────────────────────────
+
+/**
+ * Get products with pagination and filters
+ */
+export async function getProductsBulk(params: {
+  updatedSince?: string
+  offset?: number
+  limit?: number
+}): Promise<PicqerProductFull[]> {
+  const { updatedSince, offset = 0, limit = 100 } = params
+
+  console.log(`Fetching products bulk (offset: ${offset}, limit: ${limit})...`)
+
+  const queryParams = new URLSearchParams({
+    offset: offset.toString(),
+    limit: limit.toString(),
+  })
+
+  if (updatedSince) {
+    queryParams.set('updated_since', updatedSince)
+  }
+
+  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/products?${queryParams}`, {
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      'Content-Type': 'application/json',
+    },
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error('Picqer API error fetching products bulk:', response.status, errorText)
+    throw new Error(`Picqer API error: ${response.status}`)
+  }
+
+  const products: PicqerProductFull[] = await response.json()
+  console.log(`Fetched ${products.length} products (offset: ${offset})`)
+  return products
 }

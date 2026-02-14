@@ -31,8 +31,15 @@ export interface PackingSessionBox {
   box_index: number
   shipment_id: number | null
   tracking_code: string | null
+  tracking_url: string | null
   label_url: string | null
+  shipped_at: string | null
   status: BoxShipmentStatus
+  packaging_advice_id: string | null
+  suggested_packaging_id: number | null
+  suggested_packaging_name: string | null
+  was_override: boolean
+  error_message: string | null
   created_at: string
   updated_at: string
 }
@@ -74,6 +81,9 @@ export interface AddBoxInput {
   packaging_name: string
   packaging_barcode?: string
   box_index: number
+  packaging_advice_id?: string
+  suggested_packaging_id?: number
+  suggested_packaging_name?: string
 }
 
 export interface AssignProductInput {
@@ -254,6 +264,11 @@ export async function claimPicklist(
  * Add a box to a packing session
  */
 export async function addBox(sessionId: string, input: AddBoxInput): Promise<PackingSessionBox> {
+  // Detect override: advice was given but a different packaging was chosen
+  const wasOverride = input.suggested_packaging_id != null
+    && input.picqer_packaging_id != null
+    && input.picqer_packaging_id !== input.suggested_packaging_id
+
   const { data, error } = await supabase
     .schema('batchmaker')
     .from('packing_session_boxes')
@@ -264,6 +279,10 @@ export async function addBox(sessionId: string, input: AddBoxInput): Promise<Pac
       packaging_barcode: input.packaging_barcode,
       box_index: input.box_index,
       status: 'pending',
+      packaging_advice_id: input.packaging_advice_id ?? null,
+      suggested_packaging_id: input.suggested_packaging_id ?? null,
+      suggested_packaging_name: input.suggested_packaging_name ?? null,
+      was_override: wasOverride,
     })
     .select()
     .single()
@@ -452,7 +471,7 @@ export async function claimBoxForShipping(boxId: string): Promise<boolean> {
     .from('packing_session_boxes')
     .update({ status: 'shipment_created' })
     .eq('id', boxId)
-    .in('status', ['pending', 'open'])
+    .in('status', ['pending', 'open', 'closed'])
     .select('id')
     .maybeSingle()
 

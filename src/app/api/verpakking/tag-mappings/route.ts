@@ -36,7 +36,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { tagTitle, picqerPackagingId, packagingName, priority, isActive } = body
+    const { tagTitle, picqerPackagingId, packagingName, isActive } = body
 
     if (!tagTitle || !picqerPackagingId || !packagingName) {
       return NextResponse.json(
@@ -49,7 +49,6 @@ export async function POST(request: NextRequest) {
       tag_title: tagTitle,
       picqer_packaging_id: picqerPackagingId,
       packaging_name: packagingName,
-      priority,
       is_active: isActive,
     })
 
@@ -84,7 +83,6 @@ export async function PUT(request: NextRequest) {
     if (updates.tagTitle !== undefined) snakeCaseUpdates.tag_title = updates.tagTitle
     if (updates.picqerPackagingId !== undefined) snakeCaseUpdates.picqer_packaging_id = updates.picqerPackagingId
     if (updates.packagingName !== undefined) snakeCaseUpdates.packaging_name = updates.packagingName
-    if (updates.priority !== undefined) snakeCaseUpdates.priority = updates.priority
     if (updates.isActive !== undefined) snakeCaseUpdates.is_active = updates.isActive
 
     const mapping = await updateTagMapping(id, snakeCaseUpdates)
