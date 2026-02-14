@@ -93,6 +93,8 @@ export interface BoxShipmentStatus {
   error?: string
   warning?: string
   sessionCompleted?: boolean
+  outcome?: string
+  deviationType?: string
 }
 
 // Ship-all progress for the ShipmentProgress component

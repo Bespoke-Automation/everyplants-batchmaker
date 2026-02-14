@@ -15,12 +15,17 @@ interface ActualBox {
   products: { productcode: string; amount: number }[]
 }
 
+export interface SessionOutcomeResult {
+  outcome: string
+  deviationType: string
+}
+
 /**
  * Record the outcome of a packing session by comparing
  * actual boxes vs engine-advised boxes.
  * Called when all boxes in a session are shipped (session completed).
  */
-export async function recordSessionOutcome(sessionId: string): Promise<void> {
+export async function recordSessionOutcome(sessionId: string): Promise<SessionOutcomeResult | null> {
   // 1. Fetch the full session (boxes + products)
   const session = await getPackingSession(sessionId)
 
@@ -41,7 +46,7 @@ export async function recordSessionOutcome(sessionId: string): Promise<void> {
 
   if (!adviceId) {
     // No engine advice was used — no comparison needed
-    return
+    return null
   }
 
   // 4. Fetch the advice record
@@ -52,7 +57,7 @@ export async function recordSessionOutcome(sessionId: string): Promise<void> {
     .eq('id', adviceId)
     .single()
 
-  if (!advice) return
+  if (!advice) return null
 
   // 5. Compute outcome
   const adviceBoxes = (advice.advice_boxes as { idpackaging: number }[]) || []
@@ -71,6 +76,8 @@ export async function recordSessionOutcome(sessionId: string): Promise<void> {
     .eq('id', adviceId)
 
   console.log(`[feedbackTracking] Recorded outcome for advice ${adviceId}: ${outcome} (${deviationType})`)
+
+  return { outcome, deviationType }
 }
 
 /**

@@ -1,15 +1,15 @@
 import { NextResponse } from 'next/server'
-import { getActiveShippingUnits } from '@/lib/supabase/shippingUnits'
+import { getActiveShippingUnitsWithCounts } from '@/lib/supabase/shippingUnits'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * GET /api/verpakking/shipping-units
- * Returns all active shipping units ordered by product_type, sort_order
+ * Returns all active shipping units with product counts ordered by product_type, sort_order
  */
 export async function GET() {
   try {
-    const shippingUnits = await getActiveShippingUnits()
+    const shippingUnits = await getActiveShippingUnitsWithCounts()
 
     return NextResponse.json({
       shippingUnits,

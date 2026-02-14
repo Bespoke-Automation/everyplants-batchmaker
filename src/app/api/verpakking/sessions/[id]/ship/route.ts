@@ -215,12 +215,24 @@ export async function POST(
         })
         sessionCompleted = true
 
-        // Record feedback loop data (non-blocking)
+        // Record feedback loop data
+        let outcomeData: { outcome: string; deviationType: string } | null = null
         try {
-          await recordSessionOutcome(sessionId)
+          outcomeData = await recordSessionOutcome(sessionId)
         } catch (feedbackError) {
           console.error('[verpakking] Error recording session outcome:', feedbackError)
         }
+
+        return NextResponse.json({
+          success: true,
+          shipmentId,
+          trackingCode: trackingCode || null,
+          trackingUrl: trackingUrl || null,
+          labelUrl: labelUrl || null,
+          sessionCompleted,
+          ...(closeWarning && { warning: closeWarning }),
+          ...(outcomeData && { outcome: outcomeData.outcome, deviationType: outcomeData.deviationType }),
+        })
       }
     } catch (completionError) {
       console.error('[verpakking] Error checking session completion:', completionError)

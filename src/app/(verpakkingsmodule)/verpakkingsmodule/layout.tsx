@@ -7,6 +7,8 @@ import { Package, LogOut, ArrowLeft } from 'lucide-react'
 const NAV_LINKS = [
   { href: '/verpakkingsmodule', label: 'Wachtrij' },
   { href: '/verpakkingsmodule/geschiedenis', label: 'Geschiedenis' },
+  { href: '/verpakkingsmodule/engine-log', label: 'Engine Log' },
+  { href: '/verpakkingsmodule/dashboard', label: 'Dashboard' },
   { href: '/verpakkingsmodule/instellingen', label: 'Instellingen' },
 ] as const
 

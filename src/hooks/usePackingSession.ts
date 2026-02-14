@@ -606,6 +606,8 @@ export function usePackingSession(sessionId: string | null) {
             labelUrl: data.labelUrl,
             warning: data.warning,
             sessionCompleted: data.sessionCompleted,
+            outcome: data.outcome,
+            deviationType: data.deviationType,
           })
           return next
         })
@@ -756,6 +758,8 @@ export function usePackingSession(sessionId: string | null) {
                 trackingCode: result.trackingCode,
                 labelUrl: result.labelUrl,
                 sessionCompleted: data.sessionCompleted,
+                outcome: data.outcome,
+                deviationType: data.deviationType,
               })
               return next
             })

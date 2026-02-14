@@ -36,6 +36,7 @@ import {
   ScanBarcode,
   ExternalLink,
   Sparkles,
+  Check,
 } from 'lucide-react'
 import Dialog from '@/components/ui/Dialog'
 import { usePackingSession } from '@/hooks/usePackingSession'
@@ -176,6 +177,12 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
   const [activeTab, setActiveTab] = useState<'products' | 'boxes'>('products')
   const [showSessionInfo, setShowSessionInfo] = useState(false)
 
+  // Outcome feedback state
+  const [outcomeFeedback, setOutcomeFeedback] = useState<{
+    outcome: string
+    deviationType: string
+  } | null>(null)
+
   // Fetch picklist when session loads
   useEffect(() => {
     if (!session?.picklistId) return
@@ -313,6 +320,29 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
     }, 8000)
     return () => clearTimeout(timer)
   }, [warnings, dismissWarning])
+
+  // Detect outcome feedback from shipProgress
+  useEffect(() => {
+    if (!shipProgress || shipProgress.size === 0) return
+
+    // Find any box with outcome data
+    for (const progress of shipProgress.values()) {
+      if (progress.outcome && progress.deviationType && !outcomeFeedback) {
+        setOutcomeFeedback({
+          outcome: progress.outcome,
+          deviationType: progress.deviationType,
+        })
+        break
+      }
+    }
+  }, [shipProgress, outcomeFeedback])
+
+  // Auto-dismiss outcome feedback after 15 seconds
+  useEffect(() => {
+    if (!outcomeFeedback) return
+    const timer = setTimeout(() => setOutcomeFeedback(null), 15000)
+    return () => clearTimeout(timer)
+  }, [outcomeFeedback])
 
   // Map picklist products to ProductCardItems (supports split assignments across boxes)
   const productItems: ProductCardItem[] = useMemo(() => {
@@ -1175,6 +1205,55 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
               <button
                 onClick={() => setAutoBoxMessage(null)}
                 className="p-1 -mr-1 rounded hover:bg-emerald-200/50 transition-colors flex-shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Outcome feedback banner (shown when session completes) */}
+        {outcomeFeedback && engineAdvice && (
+          <div className="px-3 pt-2 lg:px-4">
+            <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm ${
+              outcomeFeedback.outcome === 'followed'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                : outcomeFeedback.outcome === 'modified'
+                ? 'bg-blue-50 border-blue-200 text-blue-800'
+                : outcomeFeedback.outcome === 'ignored'
+                ? 'bg-amber-50 border-amber-200 text-amber-800'
+                : 'bg-gray-50 border-gray-200 text-gray-600'
+            }`}>
+              <div className="flex-shrink-0">
+                {outcomeFeedback.outcome === 'followed' ? (
+                  <Check className="w-4 h-4" />
+                ) : outcomeFeedback.outcome === 'modified' ? (
+                  <Info className="w-4 h-4" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4" />
+                )}
+              </div>
+              <span className="flex-1 font-medium">
+                {outcomeFeedback.outcome === 'followed' && 'Engine-advies volledig gevolgd'}
+                {outcomeFeedback.outcome === 'modified' && (
+                  outcomeFeedback.deviationType === 'extra_boxes' ? 'Engine-advies aangepast — extra dozen toegevoegd' :
+                  outcomeFeedback.deviationType === 'fewer_boxes' ? 'Engine-advies aangepast — minder dozen gebruikt' :
+                  outcomeFeedback.deviationType === 'different_packaging' ? 'Engine-advies aangepast — andere verpakking gekozen' :
+                  'Engine-advies aangepast'
+                )}
+                {outcomeFeedback.outcome === 'ignored' && 'Engine-advies niet gevolgd — andere verpakking gebruikt'}
+              </span>
+              <button
+                onClick={() => setOutcomeFeedback(null)}
+                className={`p-1 -mr-1 rounded transition-colors flex-shrink-0 ${
+                  outcomeFeedback.outcome === 'followed'
+                    ? 'hover:bg-emerald-200/50'
+                    : outcomeFeedback.outcome === 'modified'
+                    ? 'hover:bg-blue-200/50'
+                    : outcomeFeedback.outcome === 'ignored'
+                    ? 'hover:bg-amber-200/50'
+                    : 'hover:bg-gray-200/50'
+                }`}
               >
                 <X className="w-4 h-4" />
               </button>

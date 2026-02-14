@@ -12,6 +12,8 @@ import {
   RefreshCw,
   ChevronDown,
   Layers,
+  CheckCircle,
+  AlertTriangle,
 } from 'lucide-react'
 import { useCompartmentRules, useShippingUnits } from '@/hooks/useCompartmentRules'
 import type { CompartmentRule, ShippingUnit } from '@/hooks/useCompartmentRules'
@@ -529,6 +531,11 @@ export default function CompartmentRules() {
     )
   }
 
+  // Coverage calculation
+  const autoAdvicePackagings = packagings.filter((p) => p.useInAutoAdvice)
+  const currentPackagingHasRules = selectedPackagingId && rules.length > 0
+  const selectedPackagingUsesAutoAdvice = selectedPackaging?.useInAutoAdvice ?? false
+
   return (
     <div className="max-w-3xl mx-auto">
       {/* Header */}
@@ -552,6 +559,37 @@ export default function CompartmentRules() {
           <RefreshCw className="w-4 h-4 text-muted-foreground" />
         </button>
       </div>
+
+      {/* Coverage banner - only show when a packaging is selected */}
+      {selectedPackagingId && selectedPackagingUsesAutoAdvice && (
+        <div className={`mb-6 p-4 rounded-lg border ${
+          !currentPackagingHasRules
+            ? 'bg-amber-50 border-amber-200'
+            : 'bg-emerald-50 border-emerald-200'
+        }`}>
+          <div className="flex items-start gap-3">
+            {!currentPackagingHasRules ? (
+              <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            ) : (
+              <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+            )}
+            <div className="flex-1">
+              <p className={`text-sm font-medium ${
+                !currentPackagingHasRules ? 'text-amber-900' : 'text-emerald-900'
+              }`}>
+                {currentPackagingHasRules
+                  ? 'Deze verpakking heeft compartiment-regels geconfigureerd'
+                  : 'Deze verpakking heeft nog geen compartiment-regels'}
+              </p>
+              {!currentPackagingHasRules && (
+                <p className="text-xs text-amber-700 mt-1">
+                  Voeg regelgroepen toe om de verpakkingsadvies-engine te laten werken voor deze doos.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Packaging selector */}
       <div className="mb-6">
