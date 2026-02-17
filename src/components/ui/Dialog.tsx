@@ -27,28 +27,31 @@ export default function Dialog({ open, onClose, title, children, className = '' 
     }
   }, [onClose])
 
+  // Focus + scroll lock: only on open/close
   useEffect(() => {
     if (open) {
       previousActiveElement.current = document.activeElement as HTMLElement
-      document.addEventListener('keydown', handleEscape)
       document.body.style.overflow = 'hidden'
 
-      // Focus the dialog
+      // Focus the dialog on initial open
       setTimeout(() => {
         dialogRef.current?.focus()
       }, 0)
     } else {
-      document.removeEventListener('keydown', handleEscape)
       document.body.style.overflow = ''
-
-      // Restore focus
       previousActiveElement.current?.focus()
     }
 
     return () => {
-      document.removeEventListener('keydown', handleEscape)
       document.body.style.overflow = ''
     }
+  }, [open])
+
+  // Escape handler: separate effect so it doesn't steal focus
+  useEffect(() => {
+    if (!open) return
+    document.addEventListener('keydown', handleEscape)
+    return () => document.removeEventListener('keydown', handleEscape)
   }, [open, handleEscape])
 
   if (!open) return null

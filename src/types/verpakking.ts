@@ -133,6 +133,7 @@ export interface LocalPackaging {
   specificityScore: number
   handlingCost: number
   materialCost: number
+  imageUrl: string | null
   useInAutoAdvice: boolean
   active: boolean
   lastSyncedAt: string

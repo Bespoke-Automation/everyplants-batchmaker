@@ -18,6 +18,7 @@ import {
   FileText,
   XCircle,
   Clock,
+  AlertTriangle,
 } from 'lucide-react'
 
 // Lightweight product type for display within a box
@@ -35,6 +36,8 @@ export interface BoxProductItem {
 export interface BoxCardItem {
   id: string
   packagingName: string
+  packagingImageUrl: string | null
+  picqerPackagingId: number | null
   products: BoxProductItem[]
   isClosed: boolean
   shipmentCreated: boolean
@@ -130,10 +133,18 @@ export default function BoxCard({
     >
       {/* Box header */}
       <div className="flex items-center gap-3 p-3 border-b border-border bg-muted/30">
-        {/* Box icon */}
-        <div className="w-14 h-14 bg-muted rounded flex items-center justify-center flex-shrink-0">
-          <Box className="w-7 h-7 text-muted-foreground" />
-        </div>
+        {/* Box icon / image */}
+        {box.packagingImageUrl ? (
+          <img
+            src={box.packagingImageUrl}
+            alt={box.packagingName}
+            className="w-14 h-14 rounded object-cover flex-shrink-0"
+          />
+        ) : (
+          <div className="w-14 h-14 bg-muted rounded flex items-center justify-center flex-shrink-0">
+            <Box className="w-7 h-7 text-muted-foreground" />
+          </div>
+        )}
 
         {/* Box info */}
         <div className="flex-1 min-w-0">
@@ -152,6 +163,12 @@ export default function BoxCard({
             ) : null}
           </div>
           <p className="text-sm text-muted-foreground">{box.packagingName}</p>
+          {!box.picqerPackagingId && !box.shipmentCreated && (
+            <p className="text-xs text-amber-600 flex items-center gap-1 mt-0.5">
+              <AlertTriangle className="w-3 h-3" />
+              Geen Picqer ID — zending niet mogelijk
+            </p>
+          )}
         </div>
 
         {/* Remove box button (only if empty and not closed) */}

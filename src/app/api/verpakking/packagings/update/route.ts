@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic'
 const PICQER_FIELDS = ['name', 'barcode', 'length', 'width', 'height'] as const
 
 // Fields that only exist in our local Supabase DB (engine-specific)
-const ENGINE_FIELDS = ['max_weight', 'box_category', 'specificity_score', 'handling_cost', 'material_cost', 'use_in_auto_advice'] as const
+const ENGINE_FIELDS = ['max_weight', 'box_category', 'specificity_score', 'handling_cost', 'material_cost', 'use_in_auto_advice', 'image_url'] as const
 
 /**
  * PUT /api/verpakking/packagings/update

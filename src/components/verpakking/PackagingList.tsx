@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import {
   RefreshCw,
   Loader2,
@@ -12,6 +12,8 @@ import {
   X,
   Save,
   Check,
+  Upload,
+  ImageIcon,
 } from 'lucide-react'
 import { useLocalPackagings } from '@/hooks/useLocalPackagings'
 import type { LocalPackaging } from '@/types/verpakking'
@@ -62,6 +64,7 @@ export default function PackagingList() {
     createPackaging,
     updatePackaging,
     deletePackaging,
+    refresh,
   } = useLocalPackagings()
 
   const [showForm, setShowForm] = useState(false)
@@ -74,6 +77,10 @@ export default function PackagingList() {
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [confirmDeletePkg, setConfirmDeletePkg] = useState<LocalPackaging | null>(null)
   const [deleteResult, setDeleteResult] = useState<string | null>(null)
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [isUploadingImage, setIsUploadingImage] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleSync = async () => {
     setSyncResult(null)
@@ -83,6 +90,65 @@ export default function PackagingList() {
     } catch {
       // Error is set by the hook
     }
+  }
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (!file.type.startsWith('image/')) {
+      setFormError('Selecteer een afbeelding (JPG, PNG, etc.)')
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setFormError('Afbeelding is te groot (max 5MB)')
+      return
+    }
+
+    setImageFile(file)
+    setImagePreview(URL.createObjectURL(file))
+  }
+
+  const uploadImage = async (idpackaging: number): Promise<string | null> => {
+    if (!imageFile) return null
+
+    setIsUploadingImage(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', imageFile)
+      formData.append('idpackaging', String(idpackaging))
+
+      const response = await fetch('/api/verpakking/packagings/upload-image', {
+        method: 'POST',
+        body: formData,
+      })
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Upload mislukt')
+      }
+      const data = await response.json()
+      return data.imageUrl as string
+    } catch (err) {
+      console.error('Image upload failed:', err)
+      setFormError(err instanceof Error ? err.message : 'Afbeelding upload mislukt')
+      return null
+    } finally {
+      setIsUploadingImage(false)
+    }
+  }
+
+  const removeImage = async (idpackaging: number) => {
+    try {
+      await fetch('/api/verpakking/packagings/upload-image', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idpackaging }),
+      })
+    } catch {
+      // best effort
+    }
+    setImageFile(null)
+    setImagePreview(null)
   }
 
   const handleDelete = async () => {
@@ -114,6 +180,8 @@ export default function PackagingList() {
     setFormData(emptyFormData)
     setFormError(null)
     setCreateResult(null)
+    setImageFile(null)
+    setImagePreview(null)
     setShowForm(true)
   }
 
@@ -136,6 +204,8 @@ export default function PackagingList() {
     })
     setFormError(null)
     setCreateResult(null)
+    setImageFile(null)
+    setImagePreview(pkg.imageUrl || null)
     setShowForm(true)
   }
 
@@ -144,6 +214,8 @@ export default function PackagingList() {
     setEditingId(null)
     setFormData(emptyFormData)
     setFormError(null)
+    setImageFile(null)
+    setImagePreview(null)
   }
 
   const handleSubmit = async () => {
@@ -176,6 +248,13 @@ export default function PackagingList() {
           payload.new_idpackaging = newId
         }
         await updatePackaging(editingId, payload as Parameters<typeof updatePackaging>[1])
+
+        // Upload image if a new file was selected
+        if (imageFile) {
+          await uploadImage(newId && newId !== editingId ? newId : editingId)
+          await refresh()
+        }
+
         closeForm()
       } else {
         const createPayload: Record<string, unknown> = {
@@ -194,6 +273,13 @@ export default function PackagingList() {
         }
 
         const result = await createPackaging(createPayload as Parameters<typeof createPackaging>[0])
+
+        // Upload image if a file was selected
+        if (imageFile && result.packaging?.idpackaging) {
+          await uploadImage(result.packaging.idpackaging)
+          await refresh()
+        }
+
         if (result.skippedPicqer) {
           setCreateResult(
             `Verpakking "${result.packaging.name}" lokaal aangemaakt (zonder Picqer).`
@@ -390,6 +476,69 @@ export default function PackagingList() {
                   />
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* Section: Foto */}
+          <div className="mb-5">
+            <h4 className="text-sm font-medium text-muted-foreground mb-3">Foto</h4>
+            <div className="flex items-start gap-4">
+              {imagePreview ? (
+                <div className="relative group">
+                  <img
+                    src={imagePreview}
+                    alt="Verpakking"
+                    className="w-24 h-24 rounded-lg object-cover border border-border"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (editingId && !imageFile) {
+                        // Remove existing image from server
+                        removeImage(editingId)
+                      } else {
+                        setImageFile(null)
+                        setImagePreview(null)
+                      }
+                    }}
+                    className="absolute -top-2 -right-2 w-6 h-6 bg-destructive text-destructive-foreground rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Foto verwijderen"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-24 h-24 rounded-lg border-2 border-dashed border-border hover:border-primary/50 flex flex-col items-center justify-center gap-1 text-muted-foreground hover:text-primary transition-colors"
+                >
+                  <Upload className="w-5 h-5" />
+                  <span className="text-[10px]">Upload</span>
+                </button>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleImageSelect}
+                className="hidden"
+              />
+              {imagePreview && (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="text-xs text-primary hover:underline mt-1"
+                >
+                  Andere foto kiezen
+                </button>
+              )}
+              {isUploadingImage && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Uploaden...
+                </div>
+              )}
             </div>
           </div>
 
@@ -597,7 +746,22 @@ export default function PackagingList() {
             <tbody>
               {packagings.map((pkg) => (
                 <tr key={pkg.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
-                  <td className="px-4 py-3 font-medium">{pkg.name}</td>
+                  <td className="px-4 py-3 font-medium">
+                    <div className="flex items-center gap-2">
+                      {pkg.imageUrl ? (
+                        <img
+                          src={pkg.imageUrl}
+                          alt={pkg.name}
+                          className="w-8 h-8 rounded object-cover flex-shrink-0"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded bg-muted flex items-center justify-center flex-shrink-0">
+                          <ImageIcon className="w-4 h-4 text-muted-foreground" />
+                        </div>
+                      )}
+                      {pkg.name}
+                    </div>
+                  </td>
                   <td className="px-3 py-3 text-right">
                     {pkg.idpackaging > 0 ? (
                       <span className="text-muted-foreground">{pkg.idpackaging}</span>

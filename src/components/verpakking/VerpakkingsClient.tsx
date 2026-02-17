@@ -429,6 +429,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
       id: box.id,
       packagingName: box.packagingName,
       packagingImageUrl: (box.picqerPackagingId && packagingImageMap.get(box.picqerPackagingId)) || null,
+      picqerPackagingId: box.picqerPackagingId,
       products: box.products.map((sp): BoxProductItem => {
         // Calculate maxAmount: current amount in this box + unassigned for this product
         const picklistProduct = picklist?.products.find(
@@ -1939,6 +1940,12 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
                       )}
                       {pkg.barcode && (
                         <p className="text-xs text-muted-foreground font-mono">{pkg.barcode}</p>
+                      )}
+                      {!pkg.idpackaging && (
+                        <p className="text-xs text-amber-600 flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" />
+                          Geen Picqer ID — zending niet mogelijk
+                        </p>
                       )}
                     </div>
                     <ChevronRight className="w-4 h-4 text-muted-foreground" />

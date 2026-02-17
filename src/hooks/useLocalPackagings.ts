@@ -16,6 +16,7 @@ interface ApiLocalPackaging {
   specificity_score: number
   handling_cost: number
   material_cost: number
+  image_url: string | null
   use_in_auto_advice: boolean
   active: boolean
   last_synced_at: string
@@ -35,6 +36,7 @@ function transformPackaging(raw: ApiLocalPackaging): LocalPackaging {
     specificityScore: raw.specificity_score,
     handlingCost: raw.handling_cost,
     materialCost: raw.material_cost,
+    imageUrl: raw.image_url,
     useInAutoAdvice: raw.use_in_auto_advice,
     active: raw.active,
     lastSyncedAt: raw.last_synced_at,

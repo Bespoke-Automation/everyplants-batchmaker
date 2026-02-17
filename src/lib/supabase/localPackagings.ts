@@ -15,6 +15,7 @@ export interface LocalPackagingRow {
   specificity_score: number
   handling_cost: number
   material_cost: number
+  image_url: string | null
   use_in_auto_advice: boolean
   active: boolean
   last_synced_at: string
@@ -176,7 +177,7 @@ export async function deleteLocalPackaging(idpackaging: number): Promise<void> {
  */
 export async function updateLocalPackaging(
   idpackaging: number,
-  updates: Partial<Pick<LocalPackagingRow, 'idpackaging' | 'name' | 'barcode' | 'length' | 'width' | 'height' | 'max_weight' | 'box_category' | 'specificity_score' | 'handling_cost' | 'material_cost' | 'use_in_auto_advice'>>
+  updates: Partial<Pick<LocalPackagingRow, 'idpackaging' | 'name' | 'barcode' | 'length' | 'width' | 'height' | 'max_weight' | 'box_category' | 'specificity_score' | 'handling_cost' | 'material_cost' | 'use_in_auto_advice' | 'image_url'>>
 ): Promise<void> {
   const { error } = await supabase
     .schema('batchmaker')
