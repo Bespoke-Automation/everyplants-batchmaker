@@ -172,7 +172,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
 
   // Sidebar expanded panels
-  const [expandedPanels, setExpandedPanels] = useState<Set<string>>(new Set(['delivery', 'details']))
+  const [expandedPanels, setExpandedPanels] = useState<Set<string>>(new Set(['delivery', 'details', 'shipments']))
 
   // Barcode scanner state
   const [scanFeedback, setScanFeedback] = useState<{ message: string; type: 'success' | 'warning' | 'error' } | null>(null)
