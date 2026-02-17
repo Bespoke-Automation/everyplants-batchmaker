@@ -17,7 +17,7 @@ const ENGINE_FIELDS = ['max_weight', 'box_category', 'specificity_score', 'handl
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
-    const { idpackaging } = body
+    const { idpackaging, new_idpackaging } = body
 
     if (!idpackaging) {
       return NextResponse.json(
@@ -38,7 +38,11 @@ export async function PUT(request: NextRequest) {
       if (body[field] !== undefined) engineUpdates[field] = body[field]
     }
 
-    const allLocalUpdates = { ...picqerUpdates, ...engineUpdates }
+    // If new_idpackaging is provided, include it in local updates
+    const allLocalUpdates: Record<string, unknown> = { ...picqerUpdates, ...engineUpdates }
+    if (new_idpackaging !== undefined && typeof new_idpackaging === 'number') {
+      allLocalUpdates.idpackaging = new_idpackaging
+    }
 
     if (Object.keys(allLocalUpdates).length === 0) {
       return NextResponse.json(
@@ -47,9 +51,9 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    // Update Picqer-synced fields in Picqer (if any)
+    // Update Picqer-synced fields in Picqer (only if real Picqer ID, not placeholder)
     let updated = null
-    if (Object.keys(picqerUpdates).length > 0) {
+    if (Object.keys(picqerUpdates).length > 0 && idpackaging > 0) {
       updated = await picqerUpdatePackaging(idpackaging, picqerUpdates as Record<string, string | number | null>)
     }
 

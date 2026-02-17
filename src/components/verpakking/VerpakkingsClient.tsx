@@ -1234,14 +1234,15 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
                 )}
               </div>
               <span className="flex-1 font-medium">
-                {outcomeFeedback.outcome === 'followed' && 'Engine-advies volledig gevolgd'}
-                {outcomeFeedback.outcome === 'modified' && (
-                  outcomeFeedback.deviationType === 'extra_boxes' ? 'Engine-advies aangepast — extra dozen toegevoegd' :
-                  outcomeFeedback.deviationType === 'fewer_boxes' ? 'Engine-advies aangepast — minder dozen gebruikt' :
-                  outcomeFeedback.deviationType === 'different_packaging' ? 'Engine-advies aangepast — andere verpakking gekozen' :
-                  'Engine-advies aangepast'
-                )}
-                {outcomeFeedback.outcome === 'ignored' && 'Engine-advies niet gevolgd — andere verpakking gebruikt'}
+                {outcomeFeedback.outcome === 'followed' ? 'Engine-advies volledig gevolgd'
+                  : outcomeFeedback.outcome === 'modified' ? (
+                    outcomeFeedback.deviationType === 'extra_boxes' ? 'Engine-advies aangepast — extra dozen toegevoegd' :
+                    outcomeFeedback.deviationType === 'fewer_boxes' ? 'Engine-advies aangepast — minder dozen gebruikt' :
+                    outcomeFeedback.deviationType === 'different_packaging' ? 'Engine-advies aangepast — andere verpakking gekozen' :
+                    'Engine-advies aangepast'
+                  )
+                  : outcomeFeedback.outcome === 'ignored' ? 'Engine-advies niet gevolgd — andere verpakking gebruikt'
+                  : 'Sessie voltooid'}
               </span>
               <button
                 onClick={() => setOutcomeFeedback(null)}

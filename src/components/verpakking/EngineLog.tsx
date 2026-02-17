@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment, useCallback } from 'react'
 import { RefreshCw, Sparkles, ChevronDown, ChevronRight, AlertTriangle } from 'lucide-react'
 
 interface AdviceBox {
@@ -53,7 +53,7 @@ export default function EngineLog() {
   const [page, setPage] = useState(0)
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
-  const fetchAdvices = async () => {
+  const fetchAdvices = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
@@ -81,11 +81,11 @@ export default function EngineLog() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [page, confidenceFilter, outcomeFilter])
 
   useEffect(() => {
     fetchAdvices()
-  }, [page, confidenceFilter, outcomeFilter])
+  }, [fetchAdvices])
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
@@ -270,9 +270,8 @@ export default function EngineLog() {
                 </thead>
                 <tbody className="divide-y divide-border">
                   {advices.map((advice) => (
-                    <>
+                    <Fragment key={advice.id}>
                       <tr
-                        key={advice.id}
                         onClick={() => toggleExpand(advice.id)}
                         className="hover:bg-muted/50 cursor-pointer transition-colors"
                       >
@@ -403,7 +402,7 @@ export default function EngineLog() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   ))}
                 </tbody>
               </table>

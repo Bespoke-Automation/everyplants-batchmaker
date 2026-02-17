@@ -302,11 +302,20 @@ export async function POST(
         sessionCompleted = true
 
         // Record feedback loop data (non-blocking)
+        let outcomeData: { outcome: string; deviationType: string } | null = null
         try {
-          await recordSessionOutcome(sessionId)
+          outcomeData = await recordSessionOutcome(sessionId)
         } catch (feedbackError) {
           console.error('[ship-all] Error recording session outcome:', feedbackError)
         }
+
+        return NextResponse.json({
+          boxes: results,
+          multicollo: isMulticollo,
+          sessionCompleted,
+          ...(closeWarning && { warning: closeWarning }),
+          ...(outcomeData && { outcome: outcomeData.outcome, deviationType: outcomeData.deviationType }),
+        })
       }
     } catch (e) {
       console.error('[ship-all] Error checking session completion:', e)

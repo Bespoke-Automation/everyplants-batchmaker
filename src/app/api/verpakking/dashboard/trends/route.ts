@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     const { data: advices, error: advError } = await supabase
       .schema('batchmaker')
       .from('packaging_advice')
-      .select('calculated_at, outcome, confidence, advice_boxes, actual_boxes, shipping_provider_profile_id')
+      .select('calculated_at, outcome, confidence, advice_boxes, actual_boxes, shipping_provider_profile_id, unclassified_products')
       .neq('status', 'invalidated')
       .gte('calculated_at', since)
 
@@ -45,31 +45,41 @@ export async function GET(request: NextRequest) {
         follow_rate: data.total > 0 ? Math.round(((data.followed) / (data.followed + data.modified + data.ignored || 1)) * 100) : 0,
       }))
 
-    // 3. Problem products (most frequently unclassified)
-    const { data: unclassified, error: unclError } = await supabase
-      .schema('batchmaker')
-      .from('product_attributes')
-      .select('productcode, product_name')
-      .eq('classification_status', 'unclassified')
-      .order('productcode')
-
-    if (unclError) throw unclError
-
-    // Count by productcode
-    const prodCounts = new Map<string, { product_name: string; count: number }>()
-    for (const p of unclassified || []) {
-      const entry = prodCounts.get(p.productcode) || { product_name: p.product_name, count: 0 }
-      entry.count++
-      prodCounts.set(p.productcode, entry)
+    // 3. Problem products (count how many orders each unclassified product appears in)
+    // Count from packaging_advice.unclassified_products arrays — this shows impact
+    const prodCounts = new Map<string, number>()
+    for (const a of advices || []) {
+      const unclProducts = (a as Record<string, unknown>).unclassified_products as string[] | null
+      if (!unclProducts || !Array.isArray(unclProducts)) continue
+      for (const pc of unclProducts) {
+        prodCounts.set(pc, (prodCounts.get(pc) || 0) + 1)
+      }
     }
-    const problemProducts = Array.from(prodCounts.entries())
-      .sort((a, b) => b[1].count - a[1].count)
+
+    // Fetch product names for the top unclassified products
+    const topProductcodes = Array.from(prodCounts.entries())
+      .sort((a, b) => b[1] - a[1])
       .slice(0, 15)
-      .map(([productcode, data]) => ({
-        productcode,
-        product_name: data.product_name,
-        times_unclassified: data.count,
-      }))
+      .map(([pc]) => pc)
+
+    let productNames = new Map<string, string>()
+    if (topProductcodes.length > 0) {
+      const { data: prodData } = await supabase
+        .schema('batchmaker')
+        .from('product_attributes')
+        .select('productcode, product_name')
+        .in('productcode', topProductcodes)
+
+      if (prodData) {
+        productNames = new Map(prodData.map(p => [p.productcode, p.product_name]))
+      }
+    }
+
+    const problemProducts = topProductcodes.map(pc => ({
+      productcode: pc,
+      product_name: productNames.get(pc) || pc,
+      times_unclassified: prodCounts.get(pc) || 0,
+    }))
 
     // 4. Cost impact
     // Fetch packagings with costs

@@ -101,6 +101,41 @@ export async function deleteTagMapping(id: string): Promise<void> {
 }
 
 /**
+ * Get tag mapping by picqer_packaging_id
+ */
+export async function getTagMappingByPackagingId(picqerPackagingId: number): Promise<TagPackagingMap | null> {
+  const { data, error } = await supabase
+    .schema('batchmaker')
+    .from('tag_packaging_map')
+    .select()
+    .eq('picqer_packaging_id', picqerPackagingId)
+    .maybeSingle()
+
+  if (error) {
+    console.error('Error fetching tag mapping by packaging id:', error)
+    throw error
+  }
+
+  return data
+}
+
+/**
+ * Delete tag mappings by picqer_packaging_id
+ */
+export async function deleteTagMappingByPackagingId(picqerPackagingId: number): Promise<void> {
+  const { error } = await supabase
+    .schema('batchmaker')
+    .from('tag_packaging_map')
+    .delete()
+    .eq('picqer_packaging_id', picqerPackagingId)
+
+  if (error) {
+    console.error('Error deleting tag mapping by packaging id:', error)
+    throw error
+  }
+}
+
+/**
  * Get tag mappings for specific tag titles
  */
 export async function getTagMappingsByTags(tagTitles: string[]): Promise<TagPackagingMap[]> {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createPackaging as picqerCreatePackaging, createTag } from '@/lib/picqer/client'
 import { insertLocalPackaging } from '@/lib/supabase/localPackagings'
-import { getLocalTags, upsertTagsFromPicqer } from '@/lib/supabase/localTags'
+import { getLocalTags, upsertTagsFromPicqer, updateTagType } from '@/lib/supabase/localTags'
 import { createTagMapping } from '@/lib/supabase/tagMappings'
 
 export const dynamic = 'force-dynamic'
@@ -9,11 +9,12 @@ export const dynamic = 'force-dynamic'
 /**
  * POST /api/verpakking/packagings/create
  * Create packaging in Picqer + local DB + auto-tag + auto-mapping
+ * If skipPicqer=true, only create in local DB (requires idpackaging)
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { name, barcode, length, width, height } = body
+    const { name, barcode, length, width, height, skipPicqer, idpackaging: manualIdpackaging } = body
 
     if (!name || typeof name !== 'string' || !name.trim()) {
       return NextResponse.json(
@@ -21,6 +22,34 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // ── Skip Picqer mode: only insert locally ──────────────────────────
+    if (skipPicqer) {
+      // Use provided ID or generate a temporary placeholder (negative timestamp)
+      const resolvedId = (manualIdpackaging && typeof manualIdpackaging === 'number')
+        ? manualIdpackaging
+        : -Math.floor(Date.now() / 1000)
+
+      const localPackaging = await insertLocalPackaging({
+        idpackaging: resolvedId,
+        name: name.trim(),
+        barcode: barcode || null,
+        length: length || null,
+        width: width || null,
+        height: height || null,
+        use_in_auto_advice: false,
+        active: true,
+      })
+
+      return NextResponse.json({
+        packaging: localPackaging,
+        tag: null,
+        mapping: null,
+        skippedPicqer: true,
+      })
+    }
+
+    // ── Normal mode: create in Picqer + local DB ───────────────────────
 
     // 1. Determine next tag number
     const allTags = await getLocalTags()
@@ -68,7 +97,6 @@ export async function POST(request: NextRequest) {
     }])
 
     // Set the new tag as packaging type
-    const { updateTagType } = await import('@/lib/supabase/localTags')
     await updateTagType(picqerTag.idtag, 'packaging')
 
     // 5. Create mapping

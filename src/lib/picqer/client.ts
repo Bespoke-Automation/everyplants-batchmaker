@@ -1581,6 +1581,31 @@ export async function updatePackaging(
 }
 
 /**
+ * Deactivate a packaging in Picqer (no DELETE endpoint available)
+ */
+export async function deactivatePackaging(idpackaging: number): Promise<PicqerPackaging> {
+  console.log(`Deactivating packaging ${idpackaging} in Picqer...`)
+
+  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/packagings/${idpackaging}`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ active: false }),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error deactivating packaging ${idpackaging}:`, response.status, errorText)
+    throw new Error(`Failed to deactivate packaging: ${response.status} - ${errorText}`)
+  }
+
+  return response.json()
+}
+
+/**
  * Delete a comment
  */
 export async function deleteComment(idcomment: number): Promise<void> {

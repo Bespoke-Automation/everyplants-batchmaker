@@ -8,6 +8,7 @@ import {
   Plus,
   Package,
   Pencil,
+  Trash2,
   X,
   Save,
   Check,
@@ -28,6 +29,9 @@ interface PackagingFormData {
   handlingCost: string
   materialCost: string
   useInAutoAdvice: boolean
+  // Skip Picqer
+  skipPicqer: boolean
+  manualIdpackaging: string
 }
 
 const emptyFormData: PackagingFormData = {
@@ -42,6 +46,8 @@ const emptyFormData: PackagingFormData = {
   handlingCost: '0',
   materialCost: '0',
   useInAutoAdvice: false,
+  skipPicqer: false,
+  manualIdpackaging: '',
 }
 
 const BOX_CATEGORIES = ['single', 'multi', 'save_me', 'fold', 'sale'] as const
@@ -55,6 +61,7 @@ export default function PackagingList() {
     syncFromPicqer,
     createPackaging,
     updatePackaging,
+    deletePackaging,
   } = useLocalPackagings()
 
   const [showForm, setShowForm] = useState(false)
@@ -64,6 +71,9 @@ export default function PackagingList() {
   const [formError, setFormError] = useState<string | null>(null)
   const [syncResult, setSyncResult] = useState<string | null>(null)
   const [createResult, setCreateResult] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [confirmDeletePkg, setConfirmDeletePkg] = useState<LocalPackaging | null>(null)
+  const [deleteResult, setDeleteResult] = useState<string | null>(null)
 
   const handleSync = async () => {
     setSyncResult(null)
@@ -72,6 +82,30 @@ export default function PackagingList() {
       setSyncResult(`${result.synced} verpakkingen gesynchroniseerd (${result.added} nieuw, ${result.updated} bijgewerkt)`)
     } catch {
       // Error is set by the hook
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!confirmDeletePkg) return
+
+    setDeletingId(confirmDeletePkg.idpackaging)
+    setDeleteResult(null)
+
+    try {
+      const result = await deletePackaging(confirmDeletePkg.idpackaging)
+      const parts: string[] = [`Verpakking "${confirmDeletePkg.name}" verwijderd.`]
+      if (result.deletedTagTitle) {
+        parts.push(`Tag "${result.deletedTagTitle}" verwijderd uit Picqer.`)
+      }
+      if (result.warnings?.length) {
+        parts.push(result.warnings.join(' '))
+      }
+      setDeleteResult(parts.join(' '))
+    } catch {
+      // Error is set by the hook
+    } finally {
+      setDeletingId(null)
+      setConfirmDeletePkg(null)
     }
   }
 
@@ -97,6 +131,8 @@ export default function PackagingList() {
       handlingCost: pkg.handlingCost.toString(),
       materialCost: pkg.materialCost.toString(),
       useInAutoAdvice: pkg.useInAutoAdvice,
+      skipPicqer: false,
+      manualIdpackaging: pkg.idpackaging > 0 ? pkg.idpackaging.toString() : '',
     })
     setFormError(null)
     setCreateResult(null)
@@ -120,29 +156,53 @@ export default function PackagingList() {
     setFormError(null)
 
     try {
-      const payload = {
-        name: formData.name.trim(),
-        barcode: formData.barcode.trim() || undefined,
-        length: formData.length ? parseInt(formData.length, 10) : undefined,
-        width: formData.width ? parseInt(formData.width, 10) : undefined,
-        height: formData.height ? parseInt(formData.height, 10) : undefined,
-        // Engine fields (snake_case for API)
-        max_weight: formData.maxWeight ? parseInt(formData.maxWeight, 10) : null,
-        box_category: formData.boxCategory || null,
-        specificity_score: formData.specificityScore ? parseInt(formData.specificityScore, 10) : 50,
-        handling_cost: formData.handlingCost ? parseFloat(formData.handlingCost) : 0,
-        material_cost: formData.materialCost ? parseFloat(formData.materialCost) : 0,
-        use_in_auto_advice: formData.useInAutoAdvice,
-      }
-
       if (editingId) {
-        await updatePackaging(editingId, payload)
+        const payload: Record<string, unknown> = {
+          name: formData.name.trim(),
+          barcode: formData.barcode.trim() || undefined,
+          length: formData.length ? parseInt(formData.length, 10) : undefined,
+          width: formData.width ? parseInt(formData.width, 10) : undefined,
+          height: formData.height ? parseInt(formData.height, 10) : undefined,
+          max_weight: formData.maxWeight ? parseInt(formData.maxWeight, 10) : null,
+          box_category: formData.boxCategory || null,
+          specificity_score: formData.specificityScore ? parseInt(formData.specificityScore, 10) : 50,
+          handling_cost: formData.handlingCost ? parseFloat(formData.handlingCost) : 0,
+          material_cost: formData.materialCost ? parseFloat(formData.materialCost) : 0,
+          use_in_auto_advice: formData.useInAutoAdvice,
+        }
+        // Include new_idpackaging if changed
+        const newId = formData.manualIdpackaging ? parseInt(formData.manualIdpackaging, 10) : null
+        if (newId && newId !== editingId) {
+          payload.new_idpackaging = newId
+        }
+        await updatePackaging(editingId, payload as Parameters<typeof updatePackaging>[1])
         closeForm()
       } else {
-        const result = await createPackaging(payload)
-        setCreateResult(
-          `Verpakking "${result.packaging.name}" aangemaakt. Tag "${result.tag.title}" automatisch aangemaakt en gekoppeld.`
-        )
+        const createPayload: Record<string, unknown> = {
+          name: formData.name.trim(),
+          barcode: formData.barcode.trim() || undefined,
+          length: formData.length ? parseInt(formData.length, 10) : undefined,
+          width: formData.width ? parseInt(formData.width, 10) : undefined,
+          height: formData.height ? parseInt(formData.height, 10) : undefined,
+        }
+
+        if (formData.skipPicqer) {
+          createPayload.skipPicqer = true
+          if (formData.manualIdpackaging) {
+            createPayload.idpackaging = parseInt(formData.manualIdpackaging, 10)
+          }
+        }
+
+        const result = await createPackaging(createPayload as Parameters<typeof createPackaging>[0])
+        if (result.skippedPicqer) {
+          setCreateResult(
+            `Verpakking "${result.packaging.name}" lokaal aangemaakt (zonder Picqer).`
+          )
+        } else {
+          setCreateResult(
+            `Verpakking "${result.packaging.name}" aangemaakt. Tag "${result.tag.title}" automatisch aangemaakt en gekoppeld.`
+          )
+        }
         closeForm()
       }
     } catch (err) {
@@ -223,6 +283,47 @@ export default function PackagingList() {
         </div>
       )}
 
+      {/* Delete result */}
+      {deleteResult && (
+        <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2 text-sm text-amber-800">
+          <Trash2 className="w-4 h-4 shrink-0" />
+          {deleteResult}
+        </div>
+      )}
+
+      {/* Confirm delete dialog */}
+      {confirmDeletePkg && (
+        <div className="mb-4 p-4 bg-destructive/5 border border-destructive/20 rounded-lg">
+          <p className="text-sm font-medium mb-1">
+            Verpakking &quot;{confirmDeletePkg.name}&quot; verwijderen?
+          </p>
+          <p className="text-xs text-muted-foreground mb-3">
+            De bijhorende tag wordt verwijderd uit Picqer en de verpakking wordt gedeactiveerd in Picqer. Deze actie kan niet ongedaan worden gemaakt.
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleDelete}
+              disabled={deletingId !== null}
+              className="flex items-center gap-2 px-3 py-2 text-sm bg-destructive text-destructive-foreground rounded-lg font-medium hover:bg-destructive/90 transition-colors disabled:opacity-50"
+            >
+              {deletingId ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Trash2 className="w-4 h-4" />
+              )}
+              Verwijderen
+            </button>
+            <button
+              onClick={() => setConfirmDeletePkg(null)}
+              disabled={deletingId !== null}
+              className="px-3 py-2 text-sm rounded-lg border border-border hover:bg-muted transition-colors disabled:opacity-50"
+            >
+              Annuleren
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Form */}
       {showForm && (
         <div className="mb-4 p-4 bg-card border border-border rounded-lg">
@@ -291,6 +392,25 @@ export default function PackagingList() {
               </div>
             </div>
           </div>
+
+          {/* Section: Picqer koppeling */}
+          {editingId && (
+            <div className="mb-5">
+              <div>
+                <label className="block text-sm font-medium mb-1">Picqer Packaging ID</label>
+                <input
+                  type="number"
+                  value={formData.manualIdpackaging}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, manualIdpackaging: e.target.value }))}
+                  placeholder="Bijv. 2100"
+                  className="w-48 px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Het Picqer packaging ID. Wijzig alleen als je de koppeling wil aanpassen.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Section: Engine instellingen */}
           {editingId && (
@@ -381,10 +501,38 @@ export default function PackagingList() {
           )}
 
           {!editingId && (
-            <p className="text-xs text-muted-foreground mt-3">
-              Bij aanmaken wordt automatisch een bijpassende tag aangemaakt in Picqer en een koppeling geconfigureerd.
-              Engine instellingen kunnen daarna via bewerken worden ingesteld.
-            </p>
+            <div className="mt-4 pt-4 border-t border-border">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <div className="relative">
+                  <input
+                    type="checkbox"
+                    checked={formData.skipPicqer}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, skipPicqer: e.target.checked }))}
+                    className="sr-only peer"
+                  />
+                  <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/50 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+                </div>
+                <span className="text-sm font-medium">Niet aanmaken in Picqer</span>
+              </label>
+              <p className="text-xs text-muted-foreground mt-1 ml-12">
+                {formData.skipPicqer
+                  ? 'Alleen lokaal opslaan. Je kan het Picqer Packaging ID later nog invullen via bewerken.'
+                  : 'Bij aanmaken wordt automatisch een bijpassende tag en verpakking aangemaakt in Picqer.'}
+              </p>
+
+              {formData.skipPicqer && (
+                <div className="mt-3 ml-12">
+                  <label className="block text-sm font-medium mb-1">Picqer Packaging ID</label>
+                  <input
+                    type="number"
+                    value={formData.manualIdpackaging}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, manualIdpackaging: e.target.value }))}
+                    placeholder="Bijv. 2100"
+                    className="w-48 px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                  />
+                </div>
+              )}
+            </div>
           )}
 
           {formError && (
@@ -436,6 +584,7 @@ export default function PackagingList() {
             <thead>
               <tr className="bg-muted/50 border-b border-border">
                 <th className="text-left px-4 py-3 font-medium">Naam</th>
+                <th className="text-right px-3 py-3 font-medium">Packaging ID</th>
                 <th className="text-left px-4 py-3 font-medium">Barcode</th>
                 <th className="text-left px-4 py-3 font-medium">Afmetingen</th>
                 <th className="text-right px-3 py-3 font-medium">Max (g)</th>
@@ -449,6 +598,13 @@ export default function PackagingList() {
               {packagings.map((pkg) => (
                 <tr key={pkg.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
                   <td className="px-4 py-3 font-medium">{pkg.name}</td>
+                  <td className="px-3 py-3 text-right">
+                    {pkg.idpackaging > 0 ? (
+                      <span className="text-muted-foreground">{pkg.idpackaging}</span>
+                    ) : (
+                      <span className="text-amber-500 text-xs font-medium">Niet ingesteld</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-muted-foreground">
                     {pkg.barcode || '-'}
                   </td>
@@ -482,13 +638,26 @@ export default function PackagingList() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => openEditForm(pkg)}
-                      className="p-2 rounded-lg hover:bg-muted transition-colors"
-                      title="Bewerken"
-                    >
-                      <Pencil className="w-4 h-4 text-muted-foreground" />
-                    </button>
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => openEditForm(pkg)}
+                        className="p-2 rounded-lg hover:bg-muted transition-colors"
+                        title="Bewerken"
+                      >
+                        <Pencil className="w-4 h-4 text-muted-foreground" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setDeleteResult(null)
+                          setConfirmDeletePkg(pkg)
+                        }}
+                        disabled={deletingId !== null}
+                        className="p-2 rounded-lg hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                        title="Verwijderen"
+                      >
+                        <Trash2 className="w-4 h-4 text-muted-foreground hover:text-destructive" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -256,9 +256,14 @@ function SessionDetailPanel({ data }: { data: SessionDetailData }) {
             </div>
 
             {/* Deviation info */}
-            {advice.deviation_type && (
+            {advice.deviation_type && advice.deviation_type !== 'none' && (
               <div className="p-2 bg-muted rounded text-xs text-muted-foreground">
-                <span className="font-medium">Afwijking:</span> {advice.deviation_type}
+                <span className="font-medium">Afwijking:</span>{' '}
+                {advice.deviation_type === 'extra_boxes' ? 'Extra dozen' :
+                 advice.deviation_type === 'fewer_boxes' ? 'Minder dozen' :
+                 advice.deviation_type === 'different_packaging' ? 'Andere verpakking' :
+                 advice.deviation_type === 'mixed' ? 'Gemengde afwijking' :
+                 advice.deviation_type}
               </div>
             )}
 

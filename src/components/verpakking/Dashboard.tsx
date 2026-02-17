@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   BarChart3,
   RefreshCw,
@@ -65,7 +65,7 @@ export default function Dashboard() {
   const [trends, setTrends] = useState<TrendsData | null>(null)
   const [trendsLoading, setTrendsLoading] = useState(true)
 
-  const fetchStats = () => {
+  const fetchStats = useCallback(() => {
     setLoading(true)
     setError(null)
     fetch(`/api/verpakking/dashboard/stats?days=${days}`)
@@ -76,11 +76,11 @@ export default function Dashboard() {
       .then((data) => setStats(data))
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
-  }
+  }, [days])
 
   useEffect(() => {
     fetchStats()
-  }, [days])
+  }, [fetchStats])
 
   useEffect(() => {
     setTrendsLoading(true)
@@ -139,7 +139,6 @@ export default function Dashboard() {
   const followedPct = withOutcome > 0 ? Math.round((outcomes.followed / withOutcome) * 100) : 0
   const modifiedPct = withOutcome > 0 ? Math.round((outcomes.modified / withOutcome) * 100) : 0
   const ignoredPct = withOutcome > 0 ? Math.round((outcomes.ignored / withOutcome) * 100) : 0
-  const pendingPct = withOutcome > 0 ? Math.round((outcomes.pending / totals.total_advices) * 100) : 0
 
   const maxDev = Math.max(
     deviations.extra_boxes,
@@ -226,26 +225,35 @@ export default function Dashboard() {
       <div className="bg-white border border-border rounded-lg p-6 mb-8">
         <h2 className="text-lg font-semibold mb-4">Outcome verdeling</h2>
         <div className="flex h-8 rounded-lg overflow-hidden mb-4">
-          <div
-            className="bg-emerald-500"
-            style={{ width: `${(outcomes.followed / totals.total_advices) * 100}%` }}
-            title="Gevolgd"
-          />
-          <div
-            className="bg-blue-500"
-            style={{ width: `${(outcomes.modified / totals.total_advices) * 100}%` }}
-            title="Gewijzigd"
-          />
-          <div
-            className="bg-amber-500"
-            style={{ width: `${(outcomes.ignored / totals.total_advices) * 100}%` }}
-            title="Genegeerd"
-          />
-          <div
-            className="bg-gray-300"
-            style={{ width: `${(outcomes.pending / totals.total_advices) * 100}%` }}
-            title="Open"
-          />
+          {totals.total_advices > 0 && (
+            <>
+              <div
+                className="bg-emerald-500"
+                style={{ width: `${(outcomes.followed / totals.total_advices) * 100}%` }}
+                title={`Gevolgd: ${outcomes.followed}`}
+              />
+              <div
+                className="bg-blue-500"
+                style={{ width: `${(outcomes.modified / totals.total_advices) * 100}%` }}
+                title={`Gewijzigd: ${outcomes.modified}`}
+              />
+              <div
+                className="bg-amber-500"
+                style={{ width: `${(outcomes.ignored / totals.total_advices) * 100}%` }}
+                title={`Genegeerd: ${outcomes.ignored}`}
+              />
+              <div
+                className="bg-gray-400"
+                style={{ width: `${(outcomes.no_advice / totals.total_advices) * 100}%` }}
+                title={`Geen advies: ${outcomes.no_advice}`}
+              />
+              <div
+                className="bg-gray-200"
+                style={{ width: `${(outcomes.pending / totals.total_advices) * 100}%` }}
+                title={`Open: ${outcomes.pending}`}
+              />
+            </>
+          )}
         </div>
         <div className="flex flex-wrap gap-4 text-sm">
           <div className="flex items-center gap-2">
@@ -264,7 +272,12 @@ export default function Dashboard() {
             <span className="font-medium">{outcomes.ignored}</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-gray-300 rounded-full" />
+            <div className="w-3 h-3 bg-gray-400 rounded-full" />
+            <span className="text-muted-foreground">Geen advies:</span>
+            <span className="font-medium">{outcomes.no_advice}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 bg-gray-200 rounded-full border border-gray-300" />
             <span className="text-muted-foreground">Open:</span>
             <span className="font-medium">{outcomes.pending}</span>
           </div>

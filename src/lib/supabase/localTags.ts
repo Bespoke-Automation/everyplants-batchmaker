@@ -110,6 +110,24 @@ export async function upsertTagsFromPicqer(
   }
 }
 
+// ── Delete operations ────────────────────────────────────────────────────────
+
+/**
+ * Delete a tag from local DB by idtag
+ */
+export async function deleteLocalTag(idtag: number): Promise<void> {
+  const { error } = await supabase
+    .schema('batchmaker')
+    .from('tags')
+    .delete()
+    .eq('idtag', idtag)
+
+  if (error) {
+    console.error('Error deleting local tag:', error)
+    throw error
+  }
+}
+
 // ── Update operations ────────────────────────────────────────────────────────
 
 /**

@@ -105,6 +105,8 @@ export function useLocalPackagings(activeOnly = false) {
     length?: number
     width?: number
     height?: number
+    skipPicqer?: boolean
+    idpackaging?: number
   }) => {
     setError(null)
 
@@ -140,6 +142,7 @@ export function useLocalPackagings(activeOnly = false) {
     handling_cost?: number
     material_cost?: number
     use_in_auto_advice?: boolean
+    new_idpackaging?: number
   }) => {
     setError(null)
 
@@ -163,6 +166,29 @@ export function useLocalPackagings(activeOnly = false) {
     }
   }, [fetchPackagings])
 
+  const deletePackaging = useCallback(async (idpackaging: number) => {
+    setError(null)
+
+    try {
+      const response = await fetch('/api/verpakking/packagings/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idpackaging }),
+      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to delete packaging')
+      }
+      const result = await response.json()
+      await fetchPackagings()
+      return result as { success: boolean; deletedTagTitle: string | null; warnings?: string[] }
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error('Unknown error')
+      setError(error)
+      throw error
+    }
+  }, [fetchPackagings])
+
   const refresh = useCallback(() => fetchPackagings(), [fetchPackagings])
 
   return {
@@ -173,6 +199,7 @@ export function useLocalPackagings(activeOnly = false) {
     syncFromPicqer,
     createPackaging,
     updatePackaging,
+    deletePackaging,
     refresh,
   }
 }

@@ -156,11 +156,27 @@ export async function insertLocalPackaging(packaging: {
 }
 
 /**
+ * Delete a packaging from local DB by idpackaging
+ */
+export async function deleteLocalPackaging(idpackaging: number): Promise<void> {
+  const { error } = await supabase
+    .schema('batchmaker')
+    .from('packagings')
+    .delete()
+    .eq('idpackaging', idpackaging)
+
+  if (error) {
+    console.error('Error deleting local packaging:', error)
+    throw error
+  }
+}
+
+/**
  * Update a packaging in local DB
  */
 export async function updateLocalPackaging(
   idpackaging: number,
-  updates: Partial<Pick<LocalPackagingRow, 'name' | 'barcode' | 'length' | 'width' | 'height' | 'max_weight' | 'box_category' | 'specificity_score' | 'handling_cost' | 'material_cost' | 'use_in_auto_advice'>>
+  updates: Partial<Pick<LocalPackagingRow, 'idpackaging' | 'name' | 'barcode' | 'length' | 'width' | 'height' | 'max_weight' | 'box_category' | 'specificity_score' | 'handling_cost' | 'material_cost' | 'use_in_auto_advice'>>
 ): Promise<void> {
   const { error } = await supabase
     .schema('batchmaker')
