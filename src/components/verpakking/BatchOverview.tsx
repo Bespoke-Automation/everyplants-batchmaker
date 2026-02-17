@@ -1386,11 +1386,25 @@ function ProductPicklistsModal({
       >
         {/* Modal header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <div>
-            <h3 className="font-semibold text-base">Picklijsten</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {product.productcode} — {product.name}
-            </p>
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded border border-border bg-muted/30 flex items-center justify-center shrink-0 overflow-hidden">
+              {product.image ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={product.image}
+                  alt={product.name}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <Package className="w-5 h-5 text-muted-foreground" />
+              )}
+            </div>
+            <div>
+              <h3 className="font-semibold text-base">Picklijsten</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {product.productcode} — {product.name}
+              </p>
+            </div>
           </div>
           <button
             onClick={onClose}
