@@ -1928,9 +1928,17 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
                     onClick={() => handleAddBox(pkg)}
                     className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-muted transition-colors text-left"
                   >
-                    <div className="w-10 h-10 bg-muted rounded flex items-center justify-center flex-shrink-0">
-                      <Box className="w-5 h-5 text-muted-foreground" />
-                    </div>
+                    {packagingImageMap.get(pkg.idpackaging) ? (
+                      <img
+                        src={packagingImageMap.get(pkg.idpackaging)}
+                        alt={pkg.name}
+                        className="w-10 h-10 rounded object-cover flex-shrink-0"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 bg-muted rounded flex items-center justify-center flex-shrink-0">
+                        <Box className="w-5 h-5 text-muted-foreground" />
+                      </div>
+                    )}
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm">{pkg.name}</p>
                       {(pkg.length || pkg.width || pkg.height) && (
@@ -1941,7 +1949,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
                       {pkg.barcode && (
                         <p className="text-xs text-muted-foreground font-mono">{pkg.barcode}</p>
                       )}
-                      {!pkg.idpackaging && (
+                      {(!pkg.idpackaging || pkg.idpackaging < 0) && (
                         <p className="text-xs text-amber-600 flex items-center gap-1">
                           <AlertTriangle className="w-3 h-3" />
                           Geen Picqer ID — zending niet mogelijk

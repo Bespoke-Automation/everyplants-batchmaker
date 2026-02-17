@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ comments: {} })
     }
 
-    const CONCURRENCY = 10
+    const CONCURRENCY = 3
     const allComments: Record<number, unknown[]> = {}
 
     for (let i = 0; i < picklistIds.length; i += CONCURRENCY) {

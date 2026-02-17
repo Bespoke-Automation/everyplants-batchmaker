@@ -160,16 +160,15 @@ export function usePackingSession(sessionId: string | null) {
       const snapshot = sessionRef.current
       previousSessionRef.current = sessionRef.current
 
-      // Compute next box index inside the state updater so it uses the latest
-      // state even when multiple addBox calls run sequentially before React flushes.
       const tempId = `temp-${Date.now()}-${++tempIdCounter}`
-      let computedIndex = 0
+      // Compute index from the ref (synchronously available) to avoid React 18
+      // deferring the setSession updater and leaving computedIndex at 0.
+      const computedIndex = snapshot.boxes.length > 0
+        ? Math.max(...snapshot.boxes.map((b) => b.boxIndex)) + 1
+        : 0
 
       setSession((prev) => {
         if (!prev) return prev
-        computedIndex = prev.boxes.length > 0
-          ? Math.max(...prev.boxes.map((b) => b.boxIndex)) + 1
-          : 0
         const optimisticBox: SessionBox = {
           id: tempId,
           packagingName,

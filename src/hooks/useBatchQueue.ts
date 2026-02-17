@@ -186,15 +186,16 @@ export function useBatchQueue(workerId: number | null) {
     }
   }, [fetchQueue, workerId])
 
-  // Fetch comment counts after batches are loaded
+  // Fetch comment counts after batches are loaded (skip for completed-only view to avoid rate limits)
   useEffect(() => {
     if (!workerId || isLoading || batches.length === 0) return
+    if (statusFilter === 'completed') return // completed batches rarely get new comments
     // Only fetch if we haven't fetched yet (all counts are 0)
     const hasAnyCounts = batches.some((b) => b.totalComments > 0)
     if (!hasAnyCounts && Object.keys(commentCountsRef.current).length === 0) {
       fetchCommentCounts()
     }
-  }, [workerId, isLoading, batches.length, fetchCommentCounts])
+  }, [workerId, isLoading, batches.length, fetchCommentCounts, statusFilter])
 
   // Polling with Page Visibility API
   useEffect(() => {
@@ -206,11 +207,13 @@ export function useBatchQueue(workerId: number | null) {
         fetchQueue()
       }, POLL_INTERVAL)
 
-      // Comment counts poll less frequently
+      // Comment counts poll less frequently (skip for completed batches to save rate limit budget)
       if (commentIntervalRef.current) clearInterval(commentIntervalRef.current)
-      commentIntervalRef.current = setInterval(() => {
-        fetchCommentCounts()
-      }, COMMENT_POLL_INTERVAL)
+      if (statusFilter !== 'completed') {
+        commentIntervalRef.current = setInterval(() => {
+          fetchCommentCounts()
+        }, COMMENT_POLL_INTERVAL)
+      }
     }
 
     const stopPolling = () => {
@@ -229,7 +232,7 @@ export function useBatchQueue(workerId: number | null) {
         stopPolling()
       } else {
         fetchQueue()
-        fetchCommentCounts()
+        if (statusFilter !== 'completed') fetchCommentCounts()
         startPolling()
       }
     }
@@ -241,7 +244,7 @@ export function useBatchQueue(workerId: number | null) {
       stopPolling()
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [fetchQueue, fetchCommentCounts, workerId])
+  }, [fetchQueue, fetchCommentCounts, workerId, statusFilter])
 
   const claimBatch = useCallback(
     async (batchId: number, batchDisplayId: string, totalPicklists: number, workerName: string): Promise<BatchClaimResult> => {

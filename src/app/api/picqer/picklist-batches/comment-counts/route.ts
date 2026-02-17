@@ -17,8 +17,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ counts: {} })
     }
 
-    // Fetch comments for all batches in parallel (max 10 concurrent)
-    const CONCURRENCY = 10
+    // Fetch comments in small batches (Picqer allows 500 req/min, global limiter handles queuing)
+    const CONCURRENCY = 3
     const counts: Record<number, number> = {}
 
     for (let i = 0; i < batchIds.length; i += CONCURRENCY) {

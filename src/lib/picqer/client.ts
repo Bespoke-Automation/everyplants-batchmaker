@@ -8,6 +8,8 @@ const PICQER_BASE_URL = `https://${PICQER_SUBDOMAIN}.picqer.com/api/v1`
 // Rate limiting configuration
 const MAX_RETRIES = 5
 const INITIAL_RETRY_DELAY_MS = 2000
+// Picqer allows 500 req/min. Limit concurrent requests to prevent stampedes.
+const MAX_CONCURRENT_REQUESTS = 3
 
 /**
  * Sleep for a given number of milliseconds
@@ -16,31 +18,59 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
+// Global concurrency limiter for all Picqer API requests
+let activeRequests = 0
+const requestQueue: Array<() => void> = []
+
+function acquireSlot(): Promise<void> {
+  if (activeRequests < MAX_CONCURRENT_REQUESTS) {
+    activeRequests++
+    return Promise.resolve()
+  }
+  return new Promise<void>((resolve) => {
+    requestQueue.push(() => {
+      activeRequests++
+      resolve()
+    })
+  })
+}
+
+function releaseSlot(): void {
+  activeRequests--
+  const next = requestQueue.shift()
+  if (next) next()
+}
+
 /**
- * Make a rate-limited fetch request with retry logic for 429 errors
+ * Make a rate-limited fetch request with retry logic for 429 errors.
+ * Uses a global concurrency limiter to prevent API stampedes.
  */
 async function rateLimitedFetch(url: string, options: RequestInit): Promise<Response> {
-  let lastError: Error | null = null
+  await acquireSlot()
+  try {
+    let lastError: Error | null = null
 
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    const response = await fetch(url, options)
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      const response = await fetch(url, options)
 
-    if (response.status === 429) {
-      // Rate limited - check for Retry-After header or use exponential backoff
-      const retryAfter = response.headers.get('Retry-After')
-      const delayMs = retryAfter
-        ? parseInt(retryAfter, 10) * 1000
-        : INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt)
+      if (response.status === 429) {
+        const retryAfter = response.headers.get('Retry-After')
+        const delayMs = retryAfter
+          ? parseInt(retryAfter, 10) * 1000
+          : INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt)
 
-      console.log(`Rate limited, waiting ${delayMs}ms before retry (attempt ${attempt + 1}/${MAX_RETRIES})...`)
-      await sleep(delayMs)
-      continue
+        console.log(`Rate limited, waiting ${delayMs}ms before retry (attempt ${attempt + 1}/${MAX_RETRIES})...`)
+        await sleep(delayMs)
+        continue
+      }
+
+      return response
     }
 
-    return response
+    throw lastError || new Error('Max retries exceeded due to rate limiting')
+  } finally {
+    releaseSlot()
   }
-
-  throw lastError || new Error('Max retries exceeded due to rate limiting')
 }
 
 interface FetchOrdersOptions {
@@ -1031,8 +1061,9 @@ export async function getPicklistBatches(params?: { status?: string; type?: stri
     }
   }
 
-  console.log(`Total picklist batches fetched: ${allBatches.length}`)
-  return allBatches
+  const result = maxResults ? allBatches.slice(0, maxResults) : allBatches
+  console.log(`Total picklist batches fetched: ${result.length}`)
+  return result
 }
 
 /**
