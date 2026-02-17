@@ -40,6 +40,7 @@ import {
 } from 'lucide-react'
 import Dialog from '@/components/ui/Dialog'
 import { usePackingSession } from '@/hooks/usePackingSession'
+import { useLocalPackagings } from '@/hooks/useLocalPackagings'
 import { useTagMappings } from '@/hooks/useTagMappings'
 import { usePicqerUsers } from '@/hooks/usePicqerUsers'
 import { usePicklistComments, type PicklistComment } from '@/hooks/usePicklistComments'
@@ -115,6 +116,20 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
     cancelBoxShipment,
     dismissWarning,
   } = usePackingSession(sessionId)
+
+  // Local packagings (for image URLs)
+  const { packagings: localPackagings } = useLocalPackagings(true)
+
+  // Build a lookup map: picqerPackagingId -> imageUrl
+  const packagingImageMap = useMemo(() => {
+    const map = new Map<number, string>()
+    for (const lp of localPackagings) {
+      if (lp.imageUrl && lp.idpackaging > 0) {
+        map.set(lp.idpackaging, lp.imageUrl)
+      }
+    }
+    return map
+  }, [localPackagings])
 
   // Picqer users for @ mentions
   const { users: picqerUsers } = usePicqerUsers()
@@ -386,7 +401,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
         amount: pp.amount,
         amountPicked: pp.amount_picked,
         weight: 0,
-        imageUrl: null,
+        imageUrl: pp.image ?? null,
         location: '',
         assignedBoxId,
         amountAssigned,
@@ -413,6 +428,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
     return session.boxes.map((box) => ({
       id: box.id,
       packagingName: box.packagingName,
+      packagingImageUrl: (box.picqerPackagingId && packagingImageMap.get(box.picqerPackagingId)) || null,
       products: box.products.map((sp): BoxProductItem => {
         // Calculate maxAmount: current amount in this box + unassigned for this product
         const picklistProduct = picklist?.products.find(
@@ -435,7 +451,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
           amount: sp.amount,
           maxAmount,
           weight: (sp.weightPerUnit ?? 0) * sp.amount,
-          imageUrl: null,
+          imageUrl: picklistProduct?.image ?? null,
         }
       }),
       isClosed: closedBoxes.has(box.id),
@@ -445,12 +461,29 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
       labelUrl: box.labelUrl,
       shippedAt: box.shippedAt,
     }))
-  }, [session, closedBoxes, picklist])
+  }, [session, closedBoxes, picklist, packagingImageMap])
 
-  // Filtered packagings for the add box modal
+  // Filtered packagings for the add box modal (Picqer + local-only)
   const activePackagings = useMemo(() => {
-    return packagings.filter((p) => p.active)
-  }, [packagings])
+    const picqerActive = packagings.filter((p) => p.active)
+    const picqerIds = new Set(picqerActive.map((p) => p.idpackaging))
+
+    // Include local-only packagings that don't exist in Picqer
+    const localOnly: PicqerPackaging[] = localPackagings
+      .filter((lp) => !picqerIds.has(lp.idpackaging))
+      .map((lp) => ({
+        idpackaging: lp.idpackaging,
+        name: lp.name,
+        barcode: lp.barcode,
+        length: lp.length,
+        width: lp.width,
+        height: lp.height,
+        use_in_auto_advice: lp.useInAutoAdvice,
+        active: lp.active,
+      }))
+
+    return [...picqerActive, ...localOnly]
+  }, [packagings, localPackagings])
 
   const filteredPackagings = useMemo(() => {
     if (!boxSearchQuery.trim()) return activePackagings

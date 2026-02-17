@@ -98,6 +98,7 @@ export interface PicqerPicklistProduct {
   name: string
   amount: number
   amount_picked: number
+  image?: string | null // Enriched from batch products (not in Picqer response)
 }
 
 // Extended picklist with products

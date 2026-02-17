@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { fetchPicklist } from '@/lib/picqer/client'
+import { fetchPicklist, getPicklistBatch } from '@/lib/picqer/client'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,6 +10,27 @@ export async function GET(
   try {
     const { id } = await params
     const picklist = await fetchPicklist(Number(id))
+
+    // Enrich products with images from the batch (picklist products don't include images)
+    if (picklist.idpicklist_batch && picklist.products?.length > 0) {
+      try {
+        const batch = await getPicklistBatch(picklist.idpicklist_batch)
+        const imageMap = new Map<number, string>()
+        for (const bp of batch.products ?? []) {
+          if (bp.image) {
+            imageMap.set(bp.idproduct, bp.image)
+          }
+        }
+        for (const product of picklist.products) {
+          const image = imageMap.get(product.idproduct)
+          if (image) {
+            product.image = image
+          }
+        }
+      } catch {
+        // Non-critical: continue without images
+      }
+    }
 
     return NextResponse.json({
       picklist,
