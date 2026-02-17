@@ -34,6 +34,8 @@ export function useBatchQueue(workerId: number | null) {
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'completed'>('open')
   const [assignedToFilter, setAssignedToFilter] = useState<number | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [completedLimit, setCompletedLimit] = useState(50)
+  const [hasMoreCompleted, setHasMoreCompleted] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const commentIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const isMountedRef = useRef(true)
@@ -48,6 +50,10 @@ export function useBatchQueue(workerId: number | null) {
       const params = new URLSearchParams()
       if (statusFilter !== 'all') {
         params.set('status', statusFilter)
+      }
+      // Limit completed batches to avoid fetching 3000+
+      if (statusFilter === 'completed') {
+        params.set('limit', completedLimit.toString())
       }
       if (typeFilter !== 'all') {
         params.set('type', typeFilter)
@@ -110,11 +116,22 @@ export function useBatchQueue(workerId: number | null) {
         }
       })
 
+      // Client-side status filter as safety net (Picqer should filter server-side, but ensure correctness)
+      const statusFiltered = statusFilter === 'all'
+        ? enriched
+        : enriched.filter((b) => b.status === statusFilter)
+
       if (isMountedRef.current) {
-        batchIdsRef.current = enriched.map((b) => b.idpicklistBatch)
-        setBatches(enriched)
+        batchIdsRef.current = statusFiltered.map((b) => b.idpicklistBatch)
+        setBatches(statusFiltered)
         setError(null)
         setIsLoading(false)
+        // Track whether there are more completed batches to load
+        if (statusFilter === 'completed') {
+          setHasMoreCompleted(rawBatches.length >= completedLimit)
+        } else {
+          setHasMoreCompleted(false)
+        }
       }
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') return
@@ -123,7 +140,7 @@ export function useBatchQueue(workerId: number | null) {
         setIsLoading(false)
       }
     }
-  }, [workerId, typeFilter, statusFilter, assignedToFilter])
+  }, [workerId, typeFilter, statusFilter, assignedToFilter, completedLimit])
 
   // Fetch comment counts for all current batches
   const fetchCommentCounts = useCallback(async () => {
@@ -264,6 +281,19 @@ export function useBatchQueue(workerId: number | null) {
 
   const refetch = useCallback(() => fetchQueue(), [fetchQueue])
 
+  // Load more completed batches (increase limit by 50)
+  const loadMoreCompleted = useCallback(() => {
+    setCompletedLimit((prev) => prev + 50)
+  }, [])
+
+  // Reset completed limit when switching away from completed filter
+  useEffect(() => {
+    if (statusFilter !== 'completed') {
+      setCompletedLimit(50)
+      setHasMoreCompleted(false)
+    }
+  }, [statusFilter])
+
   // Client-side search filter
   const filteredBatches = searchQuery.trim()
     ? batches.filter((b) => {
@@ -291,5 +321,7 @@ export function useBatchQueue(workerId: number | null) {
     setAssignedToFilter,
     searchQuery,
     setSearchQuery,
+    hasMoreCompleted,
+    loadMoreCompleted,
   }
 }

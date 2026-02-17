@@ -62,6 +62,8 @@ export default function BatchQueue({
     setAssignedToFilter,
     searchQuery,
     setSearchQuery,
+    hasMoreCompleted,
+    loadMoreCompleted,
   } = useBatchQueue(worker.iduser)
 
   const { users: picqerUsers } = usePicqerUsers()
@@ -320,9 +322,24 @@ export default function BatchQueue({
                           Singles
                         </span>
                       )}
+                      {batch.status === 'open' && !hasMySession && !batch.isClaimed && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium leading-none bg-gray-100 text-gray-600">
+                          Open
+                        </span>
+                      )}
+                      {batch.status === 'completed' && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium leading-none bg-emerald-100 text-emerald-700">
+                          Afgerond
+                        </span>
+                      )}
                       {hasMySession && (
                         <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium leading-none bg-primary/10 text-primary">
                           Actief
+                        </span>
+                      )}
+                      {!hasMySession && batch.isClaimed && batch.claimedByName && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium leading-none bg-blue-100 text-blue-700">
+                          {batch.claimedByName}
                         </span>
                       )}
                     </div>
@@ -350,6 +367,16 @@ export default function BatchQueue({
                 </button>
               )
             })}
+
+            {/* Load more button for completed batches */}
+            {hasMoreCompleted && statusFilter === 'completed' && (
+              <button
+                onClick={loadMoreCompleted}
+                className="w-full py-3 text-sm text-primary hover:bg-muted/50 transition-colors font-medium"
+              >
+                Meer laden...
+              </button>
+            )}
           </div>
         )}
       </div>
