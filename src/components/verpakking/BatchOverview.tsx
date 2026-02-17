@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState, useRef, useEffect } from 'react'
+import { useCallback, useState, useRef, useEffect, useMemo } from 'react'
 import {
   ArrowLeft,
   Loader2,
@@ -457,7 +457,7 @@ export default function BatchOverview({
             </div>
             <div className="divide-y divide-border">
               {batchSession.products.map((product) => (
-                <ProductRow key={product.idproduct} product={product} batchId={batchSession.batchId} />
+                <ProductRow key={product.idproduct} product={product} batchId={batchSession.batchId} picklistAliases={batchSession.picklists} />
               ))}
             </div>
           </div>
@@ -1222,7 +1222,14 @@ function PicklistProductsModal({
 
 // ── Product Row ─────────────────────────────────────────────────────────────
 
-function ProductRow({ product, batchId }: { product: BatchProduct; batchId: number }) {
+function ProductRow({ product, batchId, picklistAliases }: { product: BatchProduct; batchId: number; picklistAliases: BatchPicklistItem[] }) {
+  const aliasMap = useMemo(() => {
+    const map = new Map<number, string | null>()
+    for (const pl of picklistAliases) {
+      map.set(pl.idpicklist, pl.alias)
+    }
+    return map
+  }, [picklistAliases])
   const [showModal, setShowModal] = useState(false)
 
   return (
@@ -1275,6 +1282,7 @@ function ProductRow({ product, batchId }: { product: BatchProduct; batchId: numb
         <ProductPicklistsModal
           batchId={batchId}
           product={product}
+          aliasMap={aliasMap}
           onClose={() => setShowModal(false)}
         />
       )}
@@ -1319,10 +1327,12 @@ function timeAgoShort(dateString: string): string {
 function ProductPicklistsModal({
   batchId,
   product,
+  aliasMap,
   onClose,
 }: {
   batchId: number
   product: BatchProduct
+  aliasMap: Map<number, string | null>
   onClose: () => void
 }) {
   const [picklists, setPicklists] = useState<ProductPicklistDetail[] | null>(null)
@@ -1418,7 +1428,7 @@ function ProductPicklistsModal({
 
                   return (
                     <tr key={pl.idpicklist} className="hover:bg-muted/30 transition-colors">
-                      <td className="px-4 py-2.5 font-bold text-muted-foreground">{pl.alias || '-'}</td>
+                      <td className="px-4 py-2.5 font-bold text-muted-foreground">{aliasMap.get(pl.idpicklist) ?? pl.alias ?? '-'}</td>
                       <td className="px-4 py-2.5">
                         <span className="font-medium text-primary">{pl.picklistid}</span>
                       </td>
