@@ -124,7 +124,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
   const packagingImageMap = useMemo(() => {
     const map = new Map<number, string>()
     for (const lp of localPackagings) {
-      if (lp.imageUrl && lp.idpackaging > 0) {
+      if (lp.imageUrl && lp.idpackaging !== 0) {
         map.set(lp.idpackaging, lp.imageUrl)
       }
     }
