@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { RefreshCw, TrendingUp, Package, AlertTriangle } from 'lucide-react'
+import { RefreshCw, TrendingUp, Package, AlertTriangle, Send, CheckCircle } from 'lucide-react'
 
 interface StockCacheItem {
   picqer_product_id: number
@@ -50,6 +50,8 @@ export default function FloridayStock() {
   const [syncing, setSyncing] = useState(false)
   const [lastSynced, setLastSynced] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [pushingId, setPushingId] = useState<number | null>(null)
+  const [pushedIds, setPushedIds] = useState<Set<number>>(new Set())
 
   const loadCache = useCallback(async () => {
     try {
@@ -87,6 +89,32 @@ export default function FloridayStock() {
       setError('Netwerkfout tijdens sync')
     } finally {
       setSyncing(false)
+    }
+  }
+
+  const handlePushBatch = async (item: StockCacheItem) => {
+    setPushingId(item.picqer_product_id)
+    setError(null)
+    try {
+      const res = await fetch('/api/floriday/push-batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          picqerProductId: item.picqer_product_id,
+          bulkPickStock: item.bulk_pick_stock,
+          poDetails: item.po_details,
+        }),
+      })
+      const json = await res.json()
+      if (json.success) {
+        setPushedIds(prev => new Set(prev).add(item.picqer_product_id))
+      } else {
+        setError(`${item.name}: ${json.error}`)
+      }
+    } catch {
+      setError(`Netwerkfout bij pushen van ${item.name}`)
+    } finally {
+      setPushingId(null)
     }
   }
 
@@ -176,6 +204,7 @@ export default function FloridayStock() {
                 <th className="text-right px-4 py-3 font-medium text-muted-foreground">Huidig</th>
                 <th className="text-right px-4 py-3 font-medium text-muted-foreground">PO deze week</th>
                 <th className="text-right px-4 py-3 font-medium text-muted-foreground">Weekstock</th>
+                <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -204,6 +233,28 @@ export default function FloridayStock() {
                   </td>
                   <td className="px-4 py-3 text-right">
                     <StockBadge stock={item.week_stock} />
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {pushedIds.has(item.picqer_product_id) ? (
+                      <span className="inline-flex items-center gap-1 text-xs text-emerald-600 font-medium">
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        Gepusht
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handlePushBatch(item)}
+                        disabled={pushingId === item.picqer_product_id || item.week_stock === 0}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white transition-colors"
+                        title={item.week_stock === 0 ? 'Weekstock is 0' : 'Batch aanmaken op Floriday'}
+                      >
+                        {pushingId === item.picqer_product_id ? (
+                          <RefreshCw className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Send className="w-3 h-3" />
+                        )}
+                        Naar Floriday
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

@@ -292,6 +292,10 @@ export async function createBatch(data: unknown): Promise<void> {
   await floridayPost('/batches', data)
 }
 
+export async function cancelBatch(batchId: string): Promise<void> {
+  return floridayPatch(`/batches/${batchId}/cancel`)
+}
+
 // ─── Organizations ───────────────────────────────────────────
 
 export async function getOrganization(organizationId: string): Promise<FloridayOrganization> {
