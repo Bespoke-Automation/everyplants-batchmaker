@@ -1,4 +1,4 @@
-import { PicqerOrder, PicqerPicklist, PicqerPicklistWithProducts, PicqerProduct, PicqerTag, PicqerShipment, CreateShipmentResult, CancelShipmentResult, GetLabelResult, PicqerPackaging, ShippingMethod, PicqerUser, PicqerPicklistBatch, PicqerBatchPicklist, type MulticolloParcelInput, PicqerProductFull, PicqerCompositionPart, PicqerCustomer, CreateOrderInput } from './types'
+import { PicqerOrder, PicqerPicklist, PicqerPicklistWithProducts, PicqerProduct, PicqerTag, PicqerShipment, CreateShipmentResult, CancelShipmentResult, GetLabelResult, PicqerPackaging, ShippingMethod, PicqerUser, PicqerPicklistBatch, PicqerBatchPicklist, type MulticolloParcelInput, PicqerProductFull, PicqerCompositionPart, PicqerCustomer, CreateOrderInput, PicqerProductStock, PicqerPurchaseOrder } from './types'
 
 const PICQER_SUBDOMAIN = process.env.PICQER_SUBDOMAIN!
 const PICQER_API_KEY = process.env.PICQER_API_KEY!
@@ -2034,6 +2034,78 @@ export async function processOrder(orderId: number): Promise<PicqerOrder> {
   const order: PicqerOrder = await response.json()
   console.log(`Order ${orderId} processed → ${order.status}`)
   return order
+}
+
+/**
+ * Haal stock op voor een product in een specifiek warehouse.
+ * Retourneert locaties met type, zodat PPS-locaties gefilterd kunnen worden.
+ */
+export async function getProductStock(
+  idproduct: number,
+  idwarehouse: number
+): Promise<PicqerProductStock> {
+  const response = await rateLimitedFetch(
+    `${PICQER_BASE_URL}/products/${idproduct}/stock/${idwarehouse}`,
+    {
+      method: 'GET',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+        'User-Agent': 'EveryPlants-Batchmaker/2.0',
+        'Content-Type': 'application/json',
+      },
+    }
+  )
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Picqer stock API error for product ${idproduct}: ${response.status} - ${errorText}`)
+  }
+
+  return response.json()
+}
+
+/**
+ * Haal inkooporders op uit Picqer.
+ * Standaard filter: status=purchased (besteld, nog niet ontvangen).
+ */
+export async function getPurchaseOrders(
+  status?: 'concept' | 'purchased' | 'received' | 'cancelled'
+): Promise<PicqerPurchaseOrder[]> {
+  const params = new URLSearchParams()
+  if (status) params.set('status', status)
+
+  const allOrders: PicqerPurchaseOrder[] = []
+  let offset = 0
+  const limit = 100
+
+  while (true) {
+    params.set('offset', String(offset))
+
+    const response = await rateLimitedFetch(
+      `${PICQER_BASE_URL}/purchaseorders?${params}`,
+      {
+        method: 'GET',
+        headers: {
+          'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+          'User-Agent': 'EveryPlants-Batchmaker/2.0',
+          'Content-Type': 'application/json',
+        },
+      }
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`Picqer purchaseorders API error: ${response.status} - ${errorText}`)
+    }
+
+    const batch: PicqerPurchaseOrder[] = await response.json()
+    allOrders.push(...batch)
+
+    if (batch.length < limit) break
+    offset += limit
+  }
+
+  return allOrders
 }
 
 /**

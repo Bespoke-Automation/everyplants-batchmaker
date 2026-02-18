@@ -333,6 +333,47 @@ export interface CreateOrderProductInput {
   price: number
 }
 
+// ─── Stock per warehouse ──────────────────────────────────────
+
+export interface PicqerStockLocation {
+  idlocation: number
+  name: string
+  type: string        // 'BULK', 'PICK', 'PPS', etc.
+  stock: number
+  free_stock: number
+  reserved_picklists: number
+  is_bulk_location: boolean
+}
+
+export interface PicqerProductStock {
+  idproduct: number
+  idwarehouse: number
+  stock: number
+  reserved: number
+  freestock: number
+  locations: PicqerStockLocation[]
+}
+
+// ─── Purchase Orders ──────────────────────────────────────────
+
+export interface PicqerPurchaseOrderProduct {
+  idproduct: number
+  productcode: string
+  name: string
+  amount: number
+  amountreceived: number
+}
+
+export interface PicqerPurchaseOrder {
+  idpurchaseorder: number
+  purchaseorderid: string
+  status: 'concept' | 'purchased' | 'received' | 'cancelled'
+  delivery_date: string | null   // 'YYYY-MM-DD'
+  supplier_name: string | null
+  idwarehouse: number
+  products: PicqerPurchaseOrderProduct[]
+}
+
 // Result for batch creation with shipments
 export interface SingleOrderBatchResult {
   success: boolean

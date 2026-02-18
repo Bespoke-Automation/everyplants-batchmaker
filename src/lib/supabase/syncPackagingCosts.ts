@@ -1,4 +1,4 @@
-import { facturatieSupabase } from './facturatieClient'
+import { getFacturatieSupabase } from './facturatieClient'
 import { supabase } from './client'
 
 export interface SyncResult {
@@ -17,6 +17,7 @@ export interface SyncResult {
  */
 export async function syncPackagingCosts(): Promise<SyncResult> {
   const result: SyncResult = { updated: [], skipped: [], errors: [] }
+  const facturatieSupabase = getFacturatieSupabase()
 
   // Haal alle engine-packagings op
   const { data: packagings, error: packagingsError } = await supabase

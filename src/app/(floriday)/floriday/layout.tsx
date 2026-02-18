@@ -7,6 +7,7 @@ import { Package, LogOut, ArrowLeft } from 'lucide-react'
 const NAV_LINKS = [
   { href: '/floriday', label: 'Dashboard' },
   { href: '/floriday/orders', label: 'Orders' },
+  { href: '/floriday/stock', label: 'Voorraad' },
   { href: '/floriday/logs', label: 'Sync Log' },
 ] as const
 
