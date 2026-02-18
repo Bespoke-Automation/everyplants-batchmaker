@@ -20,6 +20,8 @@ interface ApiLocalPackaging {
   use_in_auto_advice: boolean
   active: boolean
   last_synced_at: string
+  picqer_tag_name: string | null
+  num_shipping_labels: number
 }
 
 function transformPackaging(raw: ApiLocalPackaging): LocalPackaging {
@@ -40,6 +42,8 @@ function transformPackaging(raw: ApiLocalPackaging): LocalPackaging {
     useInAutoAdvice: raw.use_in_auto_advice,
     active: raw.active,
     lastSyncedAt: raw.last_synced_at,
+    picqerTagName: raw.picqer_tag_name,
+    numShippingLabels: raw.num_shipping_labels ?? 1,
   }
 }
 
@@ -145,6 +149,8 @@ export function useLocalPackagings(activeOnly = false) {
     material_cost?: number
     use_in_auto_advice?: boolean
     new_idpackaging?: number
+    picqer_tag_name?: string | null
+    num_shipping_labels?: number
   }) => {
     setError(null)
 

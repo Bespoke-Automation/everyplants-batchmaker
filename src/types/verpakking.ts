@@ -137,6 +137,8 @@ export interface LocalPackaging {
   useInAutoAdvice: boolean
   active: boolean
   lastSyncedAt: string
+  picqerTagName: string | null
+  numShippingLabels: number
 }
 
 // Tag to packaging mapping

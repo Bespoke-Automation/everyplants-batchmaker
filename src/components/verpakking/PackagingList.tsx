@@ -31,6 +31,8 @@ interface PackagingFormData {
   handlingCost: string
   materialCost: string
   useInAutoAdvice: boolean
+  picqerTagName: string
+  numShippingLabels: string
   // Skip Picqer
   skipPicqer: boolean
   manualIdpackaging: string
@@ -48,11 +50,13 @@ const emptyFormData: PackagingFormData = {
   handlingCost: '0',
   materialCost: '0',
   useInAutoAdvice: false,
+  picqerTagName: '',
+  numShippingLabels: '1',
   skipPicqer: false,
   manualIdpackaging: '',
 }
 
-const BOX_CATEGORIES = ['single', 'multi', 'save_me', 'fold', 'sale'] as const
+const BOX_CATEGORIES = ['compartment', 'single', 'multi', 'save_me', 'fold', 'sale'] as const
 
 export default function PackagingList() {
   const {
@@ -199,6 +203,8 @@ export default function PackagingList() {
       handlingCost: pkg.handlingCost.toString(),
       materialCost: pkg.materialCost.toString(),
       useInAutoAdvice: pkg.useInAutoAdvice,
+      picqerTagName: pkg.picqerTagName || '',
+      numShippingLabels: pkg.numShippingLabels.toString(),
       skipPicqer: false,
       manualIdpackaging: pkg.idpackaging > 0 ? pkg.idpackaging.toString() : '',
     })
@@ -241,6 +247,8 @@ export default function PackagingList() {
           handling_cost: formData.handlingCost ? parseFloat(formData.handlingCost) : 0,
           material_cost: formData.materialCost ? parseFloat(formData.materialCost) : 0,
           use_in_auto_advice: formData.useInAutoAdvice,
+          picqer_tag_name: formData.picqerTagName.trim() || null,
+          num_shipping_labels: formData.numShippingLabels ? parseInt(formData.numShippingLabels, 10) : 1,
         }
         // Include new_idpackaging if changed
         const newId = formData.manualIdpackaging ? parseInt(formData.manualIdpackaging, 10) : null
@@ -628,6 +636,35 @@ export default function PackagingList() {
                   </div>
                 </div>
 
+                <div>
+                  <label className="block text-sm font-medium mb-1">Picqer tag naam</label>
+                  <input
+                    type="text"
+                    value={formData.picqerTagName}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, picqerTagName: e.target.value }))}
+                    placeholder="Bijv. 10. Fold box 100"
+                    className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Naam van de Picqer tag die geschreven wordt op orders (bijv. &quot;10. Fold box 100&quot;).
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">Aantal verzendlabels</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={formData.numShippingLabels}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, numShippingLabels: e.target.value }))}
+                    className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Hoeveel verzendlabels er aangemaakt worden voor deze doos.
+                  </p>
+                </div>
+
                 <div className="sm:col-span-2">
                   <label className="flex items-center gap-3 cursor-pointer">
                     <div className="relative">
@@ -733,11 +770,11 @@ export default function PackagingList() {
             <thead>
               <tr className="bg-muted/50 border-b border-border">
                 <th className="text-left px-4 py-3 font-medium">Naam</th>
-                <th className="text-right px-3 py-3 font-medium">Packaging ID</th>
-                <th className="text-left px-4 py-3 font-medium">Barcode</th>
+                <th className="text-left px-3 py-3 font-medium">Picqer tag</th>
+                <th className="text-right px-3 py-3 font-medium">ID</th>
                 <th className="text-left px-4 py-3 font-medium">Afmetingen</th>
                 <th className="text-right px-3 py-3 font-medium">Max (g)</th>
-                <th className="text-left px-3 py-3 font-medium">Categorie</th>
+                <th className="text-center px-3 py-3 font-medium">Labels</th>
                 <th className="text-center px-3 py-3 font-medium">Advies</th>
                 <th className="text-center px-4 py-3 font-medium">Status</th>
                 <th className="text-right px-4 py-3 font-medium w-16"></th>
@@ -762,26 +799,30 @@ export default function PackagingList() {
                       {pkg.name}
                     </div>
                   </td>
+                  <td className="px-3 py-3">
+                    {pkg.picqerTagName ? (
+                      <span className="text-xs font-mono text-muted-foreground">{pkg.picqerTagName}</span>
+                    ) : (
+                      <span className="text-xs text-amber-500">Niet ingesteld</span>
+                    )}
+                  </td>
                   <td className="px-3 py-3 text-right">
                     {pkg.idpackaging > 0 ? (
                       <span className="text-muted-foreground">{pkg.idpackaging}</span>
                     ) : (
-                      <span className="text-amber-500 text-xs font-medium">Niet ingesteld</span>
+                      <span className="text-amber-500 text-xs font-medium">—</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {pkg.barcode || '-'}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
+                  <td className="px-4 py-3 text-muted-foreground text-xs">
                     {pkg.length && pkg.width && pkg.height
-                      ? `${pkg.length} x ${pkg.width} x ${pkg.height} cm`
+                      ? `${pkg.length}×${pkg.width}×${pkg.height}`
                       : '-'}
                   </td>
-                  <td className="px-3 py-3 text-right text-muted-foreground">
+                  <td className="px-3 py-3 text-right text-muted-foreground text-xs">
                     {pkg.maxWeight != null ? pkg.maxWeight.toLocaleString('nl-NL') : '-'}
                   </td>
-                  <td className="px-3 py-3 text-muted-foreground">
-                    {pkg.boxCategory || '-'}
+                  <td className="px-3 py-3 text-center text-muted-foreground text-xs">
+                    {pkg.numShippingLabels ?? 1}
                   </td>
                   <td className="px-3 py-3 text-center">
                     {pkg.useInAutoAdvice ? (

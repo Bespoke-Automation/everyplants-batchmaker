@@ -21,6 +21,8 @@ export interface LocalPackagingRow {
   last_synced_at: string
   created_at: string
   updated_at: string
+  picqer_tag_name: string | null
+  num_shipping_labels: number
 }
 
 // ── Read operations ──────────────────────────────────────────────────────────
