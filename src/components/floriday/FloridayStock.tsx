@@ -93,6 +93,46 @@ function PushButton({
   )
 }
 
+// ─── Sync Trade Items Button ──────────────────────────────────
+
+function SyncTradeItemsButton() {
+  const [syncing, setSyncing] = useState(false)
+  const [result, setResult] = useState<{ upserted?: number; error?: string } | null>(null)
+
+  const handleSync = async () => {
+    setSyncing(true)
+    setResult(null)
+    try {
+      const res = await fetch('/api/floriday/sync-trade-items', { method: 'POST' })
+      const json = await res.json()
+      setResult(json.success ? { upserted: json.upserted } : { error: json.error })
+    } catch {
+      setResult({ error: 'Netwerkfout' })
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  return (
+    <div className="relative">
+      <button
+        onClick={handleSync}
+        disabled={syncing}
+        title="Sync Floriday catalogus voor auto-match van ongemapte producten"
+        className="flex items-center gap-2 px-4 py-2 bg-muted hover:bg-muted/80 disabled:opacity-50 text-foreground text-sm font-medium rounded-lg border border-border transition-colors"
+      >
+        <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+        {syncing ? 'Bezig...' : 'Sync trade items'}
+      </button>
+      {result && (
+        <div className={`absolute right-0 top-full mt-1 z-10 text-xs px-3 py-1.5 rounded-lg whitespace-nowrap shadow-md ${result.error ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+          {result.error ?? `${result.upserted} trade items bijgewerkt`}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Single Product Push Panel ────────────────────────────────
 
 function SingleProductPanel() {
@@ -283,14 +323,17 @@ export default function FloridayStock() {
             Weekstock = huidige voorraad (excl. PPS) + inkooporders deze week
           </p>
         </div>
-        <button
-          onClick={handleSync}
-          disabled={syncing}
-          className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
-        >
-          <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-          {syncing ? 'Bezig...' : 'Alle producten syncen'}
-        </button>
+        <div className="flex gap-2">
+          <SyncTradeItemsButton />
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+            {syncing ? 'Bezig...' : 'Voorraad syncen'}
+          </button>
+        </div>
       </div>
 
       {/* Single product panel */}

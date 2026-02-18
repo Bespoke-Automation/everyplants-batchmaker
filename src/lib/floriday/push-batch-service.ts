@@ -22,6 +22,10 @@ import {
 } from './client'
 import type { FloridayBatchCreate, FloridayPackingConfigurationInput } from './types'
 import { calcBulkPickStock, getThisWeekPOs, type PoDetail } from './stock-service'
+import { findTradeItemByArticleCode } from './sync/trade-item-sync'
+import { getProductFull } from '@/lib/picqer/client'
+
+const PICQER_FIELD_ALTERNATIEVE_SKU = 4875
 
 export interface PushBatchResult {
   success: boolean
@@ -48,6 +52,71 @@ async function getFloridayWarehouseId(): Promise<string> {
   return _warehouseId
 }
 
+// ─── Auto-match: Picqer product → Floriday trade item ─────────
+
+/**
+ * Probeert een Picqer product automatisch te matchen met een Floriday trade item
+ * via de alternatieve SKU (productfield 4875) of als fallback de productcode.
+ * Als een match gevonden wordt, wordt die opgeslagen in product_mapping.
+ * Geeft het tradeItemId terug, of null als geen match gevonden.
+ */
+async function autoMapProduct(picqerProductId: number): Promise<string | null> {
+  // Haal het volledige Picqer product op (met productfields)
+  const product = await getProductFull(picqerProductId)
+
+  // Probeer alternatieve SKU (field 4875) als primaire match-key
+  const altSku = product.productfields?.find(
+    f => f.idproductfield === PICQER_FIELD_ALTERNATIEVE_SKU
+  )?.value
+
+  const searchCodes = [altSku, product.productcode].filter(Boolean) as string[]
+
+  let tradeItem: { trade_item_id: string; name: string | null } | null = null
+  let matchedCode: string | null = null
+
+  for (const code of searchCodes) {
+    tradeItem = await findTradeItemByArticleCode(code)
+    if (tradeItem) {
+      matchedCode = code
+      break
+    }
+  }
+
+  if (!tradeItem) {
+    console.warn(
+      `Auto-match mislukt voor product ${picqerProductId} (${product.productcode}). ` +
+      `Probeerde: ${searchCodes.join(', ')}. ` +
+      `Zorg dat trade items gesynchroniseerd zijn via "Sync trade items".`
+    )
+    return null
+  }
+
+  // Sla de mapping op in product_mapping
+  await supabase
+    .schema('floriday')
+    .from('product_mapping')
+    .upsert(
+      {
+        picqer_product_id: picqerProductId,
+        picqer_product_code: product.productcode,
+        floriday_trade_item_id: tradeItem.trade_item_id,
+        floriday_supplier_article_code: matchedCode,
+        floriday_trade_item_name: tradeItem.name,
+        match_method: 'auto_match',
+        is_active: true,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'floriday_trade_item_id' }
+    )
+
+  console.log(
+    `Auto-match geslaagd: product ${picqerProductId} → trade item ${tradeItem.trade_item_id} ` +
+    `(via "${matchedCode}")`
+  )
+
+  return tradeItem.trade_item_id
+}
+
 // ─── Hoofdfunctie ─────────────────────────────────────────────
 
 export async function pushProductBatch(
@@ -64,18 +133,25 @@ export async function pushProductBatch(
     .eq('is_active', true)
     .single()
 
-  if (mappingError || !mapping?.floriday_trade_item_id) {
+  let tradeItemId: string | null = mapping?.floriday_trade_item_id ?? null
+
+  if (!tradeItemId) {
+    // Probeer auto-match via alternatieve SKU / productcode
+    tradeItemId = await autoMapProduct(picqerProductId)
+  }
+
+  if (!tradeItemId) {
     return {
       success: false,
       batchesCreated: 0,
       batchIds: [],
       tradeItemId: '',
-      error: 'Geen Floriday tradeItemId gevonden voor dit product. Zorg dat het product gemapt is.',
+      error:
+        'Geen Floriday trade item gevonden voor dit product. ' +
+        'Klik eerst op "Sync trade items" om de Floriday catalogus bij te werken.',
     }
   }
-
-  const tradeItemId: string = mapping.floriday_trade_item_id
-  const existingBatchId: string | null = mapping.floriday_batch_id
+  const existingBatchId: string | null = mapping?.floriday_batch_id ?? null
 
   // 2. Haal trade item op voor packingConfiguration
   const tradeItem = await getTradeItem(tradeItemId)
