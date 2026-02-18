@@ -1,4 +1,4 @@
-import { PicqerOrder, PicqerPicklist, PicqerPicklistWithProducts, PicqerProduct, PicqerTag, PicqerShipment, CreateShipmentResult, CancelShipmentResult, GetLabelResult, PicqerPackaging, ShippingMethod, PicqerUser, PicqerPicklistBatch, PicqerBatchPicklist, type MulticolloParcelInput, PicqerProductFull, PicqerCompositionPart } from './types'
+import { PicqerOrder, PicqerPicklist, PicqerPicklistWithProducts, PicqerProduct, PicqerTag, PicqerShipment, CreateShipmentResult, CancelShipmentResult, GetLabelResult, PicqerPackaging, ShippingMethod, PicqerUser, PicqerPicklistBatch, PicqerBatchPicklist, type MulticolloParcelInput, PicqerProductFull, PicqerCompositionPart, PicqerCustomer, CreateOrderInput } from './types'
 
 const PICQER_SUBDOMAIN = process.env.PICQER_SUBDOMAIN!
 const PICQER_API_KEY = process.env.PICQER_API_KEY!
@@ -637,12 +637,12 @@ export async function getPicklistShipments(picklistId: number): Promise<PicqerSh
  * Cancel a shipment (only possible within 5 minutes after creation)
  * Note: Picqer does NOT communicate cancellation to the carrier
  */
-export async function cancelShipment(shipmentId: number): Promise<CancelShipmentResult> {
-  console.log(`Cancelling shipment ${shipmentId}...`)
+export async function cancelShipment(picklistId: number, shipmentId: number): Promise<CancelShipmentResult> {
+  console.log(`Cancelling shipment ${shipmentId} on picklist ${picklistId}...`)
 
   try {
     const response = await rateLimitedFetch(
-      `${PICQER_BASE_URL}/shipments/${shipmentId}`,
+      `${PICQER_BASE_URL}/picklists/${picklistId}/shipments/${shipmentId}`,
       {
         method: 'DELETE',
         headers: {
@@ -1889,4 +1889,176 @@ export async function getProductsBulk(params: {
   const products: PicqerProductFull[] = await response.json()
   console.log(`Fetched ${products.length} products (offset: ${offset})`)
   return products
+}
+
+// ── Customer operations ──────────────────────────────────────────────────
+
+/**
+ * Search customers by name
+ */
+export async function searchCustomers(query: string): Promise<PicqerCustomer[]> {
+  console.log(`Searching customers for "${query}"...`)
+
+  const params = new URLSearchParams({ search: query })
+
+  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/customers?${params}`, {
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      'Content-Type': 'application/json',
+    },
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error('Picqer API error searching customers:', response.status, errorText)
+    throw new Error(`Picqer API error: ${response.status}`)
+  }
+
+  const customers: PicqerCustomer[] = await response.json()
+  console.log(`Found ${customers.length} customers for "${query}"`)
+  return customers
+}
+
+/**
+ * Create a new customer in Picqer
+ */
+export async function createCustomer(input: {
+  name: string
+  address?: string
+  zipcode?: string
+  city?: string
+  country?: string
+  language?: string
+}): Promise<PicqerCustomer> {
+  console.log(`Creating customer "${input.name}" in Picqer...`)
+
+  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/customers`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error('Picqer API error creating customer:', response.status, errorText)
+    throw new Error(`Failed to create customer: ${response.status} - ${errorText}`)
+  }
+
+  const customer: PicqerCustomer = await response.json()
+  console.log(`Customer created: ${customer.idcustomer} - "${customer.name}"`)
+  return customer
+}
+
+// ── Order creation ──────────────────────────────────────────────────────
+
+/**
+ * Create a new order in Picqer
+ */
+export async function createOrder(input: CreateOrderInput): Promise<PicqerOrder> {
+  console.log(`Creating order for customer ${input.idcustomer}...`)
+
+  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/orders`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error('Picqer API error creating order:', response.status, errorText)
+    throw new Error(`Failed to create order: ${response.status} - ${errorText}`)
+  }
+
+  const order: PicqerOrder = await response.json()
+  console.log(`Order created: ${order.idorder} (${order.orderid})`)
+  return order
+}
+
+export async function updateOrderFields(
+  idorder: number,
+  fields: Array<{ idorderfield: number; value: string }>
+): Promise<void> {
+  // Picqer requires one call per orderfield: PUT /orders/{id}/orderfields/{idorderfield}
+  for (const field of fields) {
+    const response = await rateLimitedFetch(
+      `${PICQER_BASE_URL}/orders/${idorder}/orderfields/${field.idorderfield}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+          'User-Agent': 'EveryPlants-Batchmaker/2.0',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ value: field.value }),
+      }
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`Failed to update orderfield ${field.idorderfield} for order ${idorder}: ${response.status} - ${errorText}`)
+    }
+  }
+}
+
+/**
+ * Process an order (move from concept to processing, creates picklist)
+ */
+export async function processOrder(orderId: number): Promise<PicqerOrder> {
+  console.log(`Processing order ${orderId}...`)
+
+  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/orders/${orderId}/process`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      'Content-Type': 'application/json',
+    },
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error processing order ${orderId}:`, response.status, errorText)
+    throw new Error(`Failed to process order: ${response.status} - ${errorText}`)
+  }
+
+  const order: PicqerOrder = await response.json()
+  console.log(`Order ${orderId} processed → ${order.status}`)
+  return order
+}
+
+/**
+ * Search products by custom field value (e.g. Alternatieve SKU)
+ * Uses Picqer's search which searches across productcode, barcode, and custom fields
+ */
+export async function searchProducts(query: string): Promise<PicqerProductFull[]> {
+  console.log(`Searching products for "${query}"...`)
+
+  const params = new URLSearchParams({ search: query })
+
+  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/products?${params}`, {
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      'Content-Type': 'application/json',
+    },
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error('Picqer API error searching products:', response.status, errorText)
+    throw new Error(`Picqer API error: ${response.status}`)
+  }
+
+  return response.json()
 }

@@ -46,7 +46,9 @@ export async function DELETE(
   }
 
   try {
-    const result = await cancelShipment(shipmentId)
+    // Fetch shipment first to get picklistId (needed for Picqer cancel endpoint)
+    const shipment = await getShipment(shipmentId)
+    const result = await cancelShipment(shipment.idpicklist, shipmentId)
 
     if (!result.success) {
       return NextResponse.json(

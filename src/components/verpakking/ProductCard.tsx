@@ -14,6 +14,14 @@ export interface BoxAssignment {
   sessionProductId: string
 }
 
+export interface ProductCustomFields {
+  productType: string | null
+  potSize: number | null
+  height: number | null
+  isFragile: boolean
+  isMixable: boolean
+}
+
 // Lightweight product type for display
 export interface ProductCardItem {
   id: string // unique key (productcode or idproduct-based)
@@ -27,6 +35,7 @@ export interface ProductCardItem {
   assignedBoxId: string | null
   amountAssigned: number
   assignedBoxes: BoxAssignment[]
+  customFields?: ProductCustomFields
 }
 
 // Lightweight box reference for the dropdown
@@ -183,6 +192,36 @@ export default function ProductCard({
             <span className="inline-block px-2 py-0.5 text-[10px] bg-muted rounded mt-1">
               {product.location}
             </span>
+          )}
+          {/* Custom product fields */}
+          {product.customFields && (
+            <div className="flex flex-wrap gap-1 mt-1">
+              {product.customFields.productType && product.customFields.productType !== 'Onbekend' && (
+                <span className="inline-block px-1.5 py-0.5 text-[10px] bg-violet-100 text-violet-700 rounded">
+                  {product.customFields.productType}
+                </span>
+              )}
+              {product.customFields.potSize !== null && (
+                <span className="inline-block px-1.5 py-0.5 text-[10px] bg-sky-100 text-sky-700 rounded">
+                  P{product.customFields.potSize}
+                </span>
+              )}
+              {product.customFields.height !== null && (
+                <span className="inline-block px-1.5 py-0.5 text-[10px] bg-emerald-100 text-emerald-700 rounded">
+                  {product.customFields.height}cm
+                </span>
+              )}
+              {product.customFields.isFragile && (
+                <span className="inline-block px-1.5 py-0.5 text-[10px] bg-red-100 text-red-700 rounded">
+                  Breekbaar
+                </span>
+              )}
+              {!product.customFields.isMixable && (
+                <span className="inline-block px-1.5 py-0.5 text-[10px] bg-orange-100 text-orange-700 rounded">
+                  Niet mixable
+                </span>
+              )}
+            </div>
           )}
           {/* Assignment badges for partially/fully assigned across multiple boxes */}
           {product.assignedBoxes.length > 0 && (

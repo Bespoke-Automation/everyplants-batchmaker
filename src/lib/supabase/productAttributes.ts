@@ -208,7 +208,7 @@ export async function syncProductsBulk(updatedSince?: string): Promise<SyncStats
 /**
  * Sync composition parts for a parent product
  */
-async function syncCompositionParts(
+export async function syncCompositionParts(
   parentProductId: number,
   parts: { idproduct: number; idproduct_part: number; amount: number }[]
 ): Promise<void> {

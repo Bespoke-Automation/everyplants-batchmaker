@@ -10,7 +10,8 @@
  */
 
 import { supabase } from '@/lib/supabase/client'
-import { getOrderTags, addOrderTag, removeOrderTag, getTags } from '@/lib/picqer/client'
+import { getOrderTags, addOrderTag, removeOrderTag, getTags, getProductFull, getProductParts } from '@/lib/picqer/client'
+import { syncProductFromPicqer, classifyProduct, syncCompositionParts } from '@/lib/supabase/productAttributes'
 
 // ── Input / Output types ──────────────────────────────────────────────────
 
@@ -108,6 +109,7 @@ interface PackagingRow {
   id: string
   idpackaging: number
   name: string
+  picqer_tag_name: string | null
   specificity_score: number
   volume: number | null
   handling_cost: number | null
@@ -144,6 +146,54 @@ export async function classifyOrderProducts(
   const attrMap = new Map<number, ProductAttributeRow>()
   for (const row of (attributes || []) as ProductAttributeRow[]) {
     attrMap.set(row.picqer_product_id, row)
+  }
+
+  // ── On-demand classification: fetch missing products from Picqer ──────
+  const missingProductIds = products
+    .filter(p => !attrMap.has(p.picqer_product_id))
+    .map(p => p.picqer_product_id)
+
+  if (missingProductIds.length > 0) {
+    console.log(`[packagingEngine] On-demand: fetching ${missingProductIds.length} products from Picqer`)
+
+    // Process in batches of 5 to respect Picqer rate limits
+    for (let i = 0; i < missingProductIds.length; i += 5) {
+      const batch = missingProductIds.slice(i, i + 5)
+      await Promise.all(batch.map(async (pid) => {
+        try {
+          // 1. Fetch full product from Picqer
+          const fullProduct = await getProductFull(pid)
+
+          // 2. Sync to product_attributes
+          await syncProductFromPicqer(fullProduct)
+
+          // 3. Handle compositions
+          const isComposition = (fullProduct.type || '').includes('composition')
+          if (isComposition) {
+            const parts = await getProductParts(pid)
+            await syncCompositionParts(pid, parts)
+          }
+
+          // 4. Classify against shipping_units
+          await classifyProduct(pid)
+
+          // 5. Re-fetch from DB and add to attrMap
+          const { data: attr } = await supabase
+            .schema('batchmaker')
+            .from('product_attributes')
+            .select('id, picqer_product_id, productcode, product_name, is_composition, weight, is_fragile, is_mixable, shipping_unit_id, classification_status')
+            .eq('picqer_product_id', pid)
+            .single()
+
+          if (attr) attrMap.set(pid, attr as ProductAttributeRow)
+        } catch (err) {
+          console.error(`[packagingEngine] On-demand: failed for product ${pid}:`, err)
+          // Product stays missing → will be unclassified
+        }
+      }))
+    }
+
+    console.log(`[packagingEngine] On-demand: completed, attrMap now has ${attrMap.size} products`)
   }
 
   // Helper: add quantity to the shipping units map
@@ -301,7 +351,7 @@ export async function matchCompartments(
   const { data: packagings, error: pkgError } = await supabase
     .schema('batchmaker')
     .from('packagings')
-    .select('id, idpackaging, name, specificity_score, volume, handling_cost, material_cost, max_weight')
+    .select('id, idpackaging, name, picqer_tag_name, specificity_score, volume, handling_cost, material_cost, max_weight')
     .eq('active', true)
     .eq('use_in_auto_advice', true)
 
@@ -356,7 +406,7 @@ export async function matchCompartments(
       if (matchResult) {
         matches.push({
           packaging_id: pkg.id,
-          packaging_name: pkg.name,
+          packaging_name: pkg.picqer_tag_name || pkg.name,
           idpackaging: pkg.idpackaging,
           rule_group: groupNum,
           covered_units: matchResult.covered,
@@ -390,8 +440,8 @@ function evaluateRuleGroup(
 
   const covered = new Map<string, number>()
 
-  // Separate rules by type
-  const enRules = rules.filter(r => r.operator === 'EN')
+  // Separate rules by type (NULL operator treated as EN for robustness)
+  const enRules = rules.filter(r => r.operator === 'EN' || r.operator == null)
   const ofRules = rules.filter(r => r.operator === 'OF')
   const altRules = rules.filter(r => r.operator === 'ALTERNATIEF')
 
@@ -910,9 +960,85 @@ export async function calculateAdvice(
   const ranked = rankPackagings(matches)
 
   // Step 4: Solve multi-box
-  const { boxes, confidence } = await solveMultiBox(shippingUnits, unclassified, ranked, products)
+  let { boxes, confidence } = await solveMultiBox(shippingUnits, unclassified, ranked, products)
 
-  // Step 4b: Weight validation
+  // Step 4b: Fallback to default packaging per shipping unit
+  if (confidence === 'no_match' && shippingUnits.size > 0) {
+    const unitIds = Array.from(shippingUnits.keys())
+
+    const { data: defaults } = await supabase
+      .schema('batchmaker')
+      .from('shipping_units')
+      .select('id, name, default_packaging_id')
+      .in('id', unitIds)
+      .not('default_packaging_id', 'is', null)
+
+    if (defaults && defaults.length > 0) {
+      const defaultPkgIds = [...new Set(defaults.map(d => d.default_packaging_id))]
+      const { data: pkgs } = await supabase
+        .schema('batchmaker')
+        .from('packagings')
+        .select('id, name, idpackaging')
+        .in('id', defaultPkgIds)
+
+      const pkgMap = new Map((pkgs || []).map((p: { id: string; name: string; idpackaging: number }) => [p.id, p]))
+
+      // Build product → shipping_unit lookup
+      const productUnitMap = new Map<string, string>() // productcode → shipping_unit_id
+      const productIds = products.map(p => p.picqer_product_id)
+      const { data: prodAttrs } = await supabase
+        .schema('batchmaker')
+        .from('product_attributes')
+        .select('picqer_product_id, shipping_unit_id')
+        .in('picqer_product_id', productIds)
+        .not('shipping_unit_id', 'is', null)
+
+      for (const pa of (prodAttrs || [])) {
+        const product = products.find(p => p.picqer_product_id === pa.picqer_product_id)
+        if (product) productUnitMap.set(product.productcode, pa.shipping_unit_id)
+      }
+
+      // Group products by their default packaging
+      const boxMap = new Map<string, { pkg: { id: string; name: string; idpackaging: number }; products: { productcode: string; shipping_unit_name: string; quantity: number }[] }>()
+
+      for (const product of products) {
+        const unitId = productUnitMap.get(product.productcode)
+        if (!unitId) continue
+
+        const def = defaults.find(d => d.id === unitId)
+        if (!def) continue
+
+        const pkg = pkgMap.get(def.default_packaging_id)
+        if (!pkg) continue
+
+        const unitName = shippingUnits.get(unitId)?.name || def.name
+
+        if (!boxMap.has(pkg.id)) {
+          boxMap.set(pkg.id, { pkg, products: [] })
+        }
+        boxMap.get(pkg.id)!.products.push({
+          productcode: product.productcode,
+          shipping_unit_name: unitName,
+          quantity: product.quantity,
+        })
+      }
+
+      if (boxMap.size > 0) {
+        const fallbackBoxes: AdviceBox[] = Array.from(boxMap.values()).map(entry => ({
+          packaging_id: entry.pkg.id,
+          packaging_name: entry.pkg.name,
+          idpackaging: entry.pkg.idpackaging,
+          products: entry.products,
+        }))
+
+        boxes = fallbackBoxes
+        confidence = unclassified.length > 0 ? 'partial_match' : 'full_match'
+        console.log(`[packagingEngine] Default packaging fallback: ${boxes.length} boxes (confidence: ${confidence})`)
+      }
+    }
+  }
+
+  // Step 4c: Weight validation
   const weightExceeded = !(await validateWeightsForBoxes(boxes, products))
 
   // Build detected shipping units array

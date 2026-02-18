@@ -81,6 +81,7 @@ export const ORDERFIELD_IDS = {
   RETAILER_NAME: 3332,
   RETAILER_ORDER_NUMBER: 3333,
   LEVERDAG: 3507,
+  LEVERTIJD: 3506,
 } as const
 
 // Tags to exclude from batch creation
@@ -290,6 +291,46 @@ export interface PicqerCompositionPart {
   amount: number
   productcode_part?: string
   name_part?: string
+}
+
+// Customer types
+export interface PicqerCustomer {
+  idcustomer: number
+  name: string
+  contactname: string | null
+  address: string | null
+  address2: string | null
+  zipcode: string | null
+  city: string | null
+  region: string | null
+  country: string | null
+  emailaddress: string | null
+  telephone: string | null
+  language: string | null
+  created: string
+  updated: string
+}
+
+export interface CreateOrderInput {
+  idcustomer: number
+  idtemplate: number
+  reference?: string
+  preferred_delivery_date?: string
+  deliveryname?: string
+  deliveryaddress?: string
+  deliveryzipcode?: string
+  deliverycity?: string
+  deliverycountry?: string
+  language?: string
+  customer_remarks?: string
+  products: CreateOrderProductInput[]
+  orderfields?: Array<{ idorderfield: number; value: string }>
+}
+
+export interface CreateOrderProductInput {
+  idproduct: number
+  amount: number
+  price: number
 }
 
 // Result for batch creation with shipments

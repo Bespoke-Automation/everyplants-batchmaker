@@ -47,7 +47,7 @@ import { usePicklistComments, type PicklistComment } from '@/hooks/usePicklistCo
 import MentionTextarea from '@/components/verpakking/MentionTextarea'
 import type { PicqerPicklistWithProducts, PicqerPicklistProduct, PicqerPackaging, PicqerOrder } from '@/lib/picqer/types'
 import BarcodeListener from './BarcodeListener'
-import ProductCard, { type ProductCardItem, type BoxRef } from './ProductCard'
+import ProductCard, { type ProductCardItem, type BoxRef, type ProductCustomFields } from './ProductCard'
 import BoxCard, { type BoxCardItem, type BoxProductItem } from './BoxCard'
 import ShipmentProgress from './ShipmentProgress'
 
@@ -64,6 +64,7 @@ interface EngineAdvice {
   order_id: number
   confidence: 'full_match' | 'partial_match' | 'no_match'
   advice_boxes: EngineAdviceBox[]
+  shipping_units_detected: { shipping_unit_id: string; shipping_unit_name: string; quantity: number }[]
   unclassified_products: string[]
   tags_written: string[]
   weight_exceeded?: boolean
@@ -147,10 +148,14 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
   const [packagings, setPackagings] = useState<PicqerPackaging[]>([])
   const [packagingsLoading, setPackagingsLoading] = useState(false)
 
+  // Product custom fields (from Supabase product_attributes)
+  const [productCustomFields, setProductCustomFields] = useState<Map<number, ProductCustomFields>>(new Map())
+
   // Engine packaging advice
   const [engineAdvice, setEngineAdvice] = useState<EngineAdvice | null>(null)
   const [engineLoading, setEngineLoading] = useState(false)
   const engineCalledRef = useRef(false)
+  const [adviceDetailsExpanded, setAdviceDetailsExpanded] = useState(false)
 
   // Tag-to-packaging mappings for suggestions
   const { getMappingsForTags, isLoading: mappingsLoading } = useTagMappings()
@@ -226,6 +231,24 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
 
     return () => { cancelled = true }
   }, [session?.picklistId])
+
+  // Fetch product custom fields when picklist loads
+  useEffect(() => {
+    if (!picklist?.products?.length) return
+
+    const ids = picklist.products.map((p) => p.idproduct).join(',')
+    fetch(`/api/verpakking/product-attributes?ids=${ids}`)
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (!data?.attributes) return
+        const map = new Map<number, ProductCustomFields>()
+        for (const [id, attrs] of Object.entries(data.attributes)) {
+          map.set(parseInt(id, 10), attrs as ProductCustomFields)
+        }
+        setProductCustomFields(map)
+      })
+      .catch(() => {/* non-blocking */})
+  }, [picklist])
 
   // Fetch order when picklist loads (for delivery address)
   useEffect(() => {
@@ -406,9 +429,10 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
         assignedBoxId,
         amountAssigned,
         assignedBoxes: assignments,
+        customFields: productCustomFields.get(pp.idproduct),
       }
     })
-  }, [picklist, session])
+  }, [picklist, session, productCustomFields])
 
   // Build BoxRef array for the ProductCard dropdown
   const boxRefs: BoxRef[] = useMemo(() => {
@@ -1170,22 +1194,34 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
         )}
 
         {/* Engine packaging advice banner */}
-        {engineAdvice && engineAdvice.confidence !== 'no_match' && (
+        {engineAdvice && (
           <div className="px-3 pt-2 lg:px-4">
-            <div
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${
+            <button
+              onClick={() => setAdviceDetailsExpanded(!adviceDetailsExpanded)}
+              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left transition-colors ${
                 engineAdvice.confidence === 'full_match'
-                  ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
-                  : 'bg-blue-50 border border-blue-200 text-blue-800'
+                  ? 'bg-emerald-50 border border-emerald-200 text-emerald-800 hover:bg-emerald-100'
+                  : engineAdvice.confidence === 'partial_match'
+                    ? 'bg-blue-50 border border-blue-200 text-blue-800 hover:bg-blue-100'
+                    : 'bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100'
               }`}
             >
               <Sparkles className={`w-4 h-4 flex-shrink-0 ${
-                engineAdvice.confidence === 'full_match' ? 'text-emerald-600' : 'text-blue-600'
+                engineAdvice.confidence === 'full_match' ? 'text-emerald-600'
+                  : engineAdvice.confidence === 'partial_match' ? 'text-blue-600'
+                    : 'text-amber-600'
               }`} />
               <span className="flex-1">
-                {engineAdvice.confidence === 'full_match' ? 'Advies: ' : 'Gedeeltelijk advies: '}
-                {engineAdvice.advice_boxes.map((b) => b.packaging_name).join(' + ')}
-                {engineAdvice.unclassified_products.length > 0 && (
+                {engineAdvice.confidence === 'full_match' && (
+                  <>Advies: {engineAdvice.advice_boxes.map((b) => b.packaging_name).join(' + ')}</>
+                )}
+                {engineAdvice.confidence === 'partial_match' && (
+                  <>Gedeeltelijk advies: {engineAdvice.advice_boxes.map((b) => b.packaging_name).join(' + ')}</>
+                )}
+                {engineAdvice.confidence === 'no_match' && (
+                  <>Geen verpakkingsadvies beschikbaar</>
+                )}
+                {engineAdvice.unclassified_products.length > 0 && engineAdvice.confidence !== 'no_match' && (
                   <span className="text-xs ml-1 opacity-75">
                     ({engineAdvice.unclassified_products.length} product{engineAdvice.unclassified_products.length !== 1 ? 'en' : ''} niet geclassificeerd)
                   </span>
@@ -1196,7 +1232,46 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
                   </span>
                 )}
               </span>
-            </div>
+              <ChevronDown className={`w-4 h-4 flex-shrink-0 transition-transform ${adviceDetailsExpanded ? 'rotate-180' : ''} ${
+                engineAdvice.confidence === 'full_match' ? 'text-emerald-500'
+                  : engineAdvice.confidence === 'partial_match' ? 'text-blue-500'
+                    : 'text-amber-500'
+              }`} />
+            </button>
+            {adviceDetailsExpanded && (
+              <div className={`mt-1 px-3 py-2 rounded-lg text-xs space-y-1.5 ${
+                engineAdvice.confidence === 'full_match'
+                  ? 'bg-emerald-50/50 border border-emerald-100 text-emerald-700'
+                  : engineAdvice.confidence === 'partial_match'
+                    ? 'bg-blue-50/50 border border-blue-100 text-blue-700'
+                    : 'bg-amber-50/50 border border-amber-100 text-amber-700'
+              }`}>
+                {engineAdvice.shipping_units_detected.length > 0 && (
+                  <div>
+                    <span className="font-medium">Verzendeenheden: </span>
+                    {engineAdvice.shipping_units_detected.map((su) =>
+                      `${su.quantity}x ${su.shipping_unit_name}`
+                    ).join(', ')}
+                  </div>
+                )}
+                {engineAdvice.unclassified_products.length > 0 && (
+                  <div>
+                    <span className="font-medium">Niet geclassificeerd: </span>
+                    {engineAdvice.unclassified_products.join(', ')}
+                  </div>
+                )}
+                {engineAdvice.confidence === 'no_match' && engineAdvice.shipping_units_detected.length > 0 && (
+                  <div className="text-amber-600">
+                    Geen verpakking gevonden die past bij de gedetecteerde verzendeenheden. Compartment rules ontbreken.
+                  </div>
+                )}
+                {engineAdvice.confidence === 'no_match' && engineAdvice.shipping_units_detected.length === 0 && engineAdvice.unclassified_products.length > 0 && (
+                  <div className="text-amber-600">
+                    Geen producten konden geclassificeerd worden. Controleer of de productattributen in Picqer zijn ingevuld.
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
         {engineLoading && (

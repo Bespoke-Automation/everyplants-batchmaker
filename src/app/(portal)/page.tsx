@@ -1,15 +1,15 @@
 import Link from 'next/link'
-import { Package, Box } from 'lucide-react'
+import { Package, Box, Flower2 } from 'lucide-react'
 
 export default function PortalPage() {
   return (
     <main className="flex-1 flex items-center justify-center p-6">
-      <div className="w-full max-w-2xl">
+      <div className="w-full max-w-3xl">
         <div className="text-center mb-8">
           <h2 className="text-2xl font-bold">Welkom bij EveryPlants</h2>
           <p className="text-muted-foreground mt-1">Kies een module om te beginnen</p>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <Link
             href="/batchmaker/batches"
             className="group border border-border rounded-lg p-6 hover:border-primary hover:shadow-md transition-all bg-card"
@@ -36,6 +36,19 @@ export default function PortalPage() {
             <h3 className="text-lg font-semibold">Verpakkingsmodule</h3>
             <p className="text-sm text-muted-foreground mt-1">
               Verpakkingen beheren en toewijzen
+            </p>
+          </Link>
+
+          <Link
+            href="/floriday"
+            className="group border border-border rounded-lg p-6 hover:border-emerald-500 hover:shadow-md transition-all bg-card"
+          >
+            <div className="w-12 h-12 bg-emerald-600/10 rounded-lg flex items-center justify-center mb-4 group-hover:bg-emerald-600/20 transition-colors">
+              <Flower2 className="w-6 h-6 text-emerald-600" />
+            </div>
+            <h3 className="text-lg font-semibold">Floriday Sync</h3>
+            <p className="text-sm text-muted-foreground mt-1">
+              Floriday orders naar Picqer
             </p>
           </Link>
         </div>

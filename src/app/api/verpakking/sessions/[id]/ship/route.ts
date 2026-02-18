@@ -323,8 +323,11 @@ export async function DELETE(
       }
     }
 
+    // Get session for picklist_id (needed for Picqer cancel endpoint)
+    const session = await getPackingSession(sessionId)
+
     // Step 3: Cancel shipment in Picqer
-    const cancelResult = await cancelShipment(box.shipment_id)
+    const cancelResult = await cancelShipment(session.picklist_id, box.shipment_id)
     if (!cancelResult.success) {
       return NextResponse.json(
         { success: false, error: cancelResult.error || 'Failed to cancel shipment in Picqer' },
