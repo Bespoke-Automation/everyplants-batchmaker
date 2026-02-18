@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { pushProductBatch } from '@/lib/floriday/push-batch-service'
+import { pushProductBatchLive } from '@/lib/floriday/push-batch-service'
 
 /**
  * POST /api/floriday/push-batch
- * Body: { picqerProductId, bulkPickStock, poDetails }
+ * Body: { picqerProductId: number }
  *
- * Maakt een Floriday Batch aan voor één product op basis van de weekstock.
+ * Haalt live stock op uit Picqer voor één product en maakt Floriday batch(es) aan.
+ * Werkt onafhankelijk van de stock cache.
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { picqerProductId, bulkPickStock, poDetails } = body
+    const { picqerProductId } = body
 
     if (!picqerProductId || typeof picqerProductId !== 'number') {
       return NextResponse.json(
@@ -19,11 +20,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const result = await pushProductBatch(
-      picqerProductId,
-      bulkPickStock ?? 0,
-      poDetails ?? []
-    )
+    const result = await pushProductBatchLive(picqerProductId)
 
     if (!result.success) {
       return NextResponse.json(result, { status: 422 })

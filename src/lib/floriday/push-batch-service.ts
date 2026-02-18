@@ -21,7 +21,7 @@ import {
   cancelBatch,
 } from './client'
 import type { FloridayBatchCreate, FloridayPackingConfigurationInput } from './types'
-import type { PoDetail } from './stock-service'
+import { calcBulkPickStock, getThisWeekPOs, type PoDetail } from './stock-service'
 
 export interface PushBatchResult {
   success: boolean
@@ -179,5 +179,38 @@ export async function pushProductBatch(
     batchesCreated: batchIds.length,
     batchIds,
     tradeItemId,
+  }
+}
+
+// ─── Live variant (haalt zelf stock + POs op) ─────────────────
+
+export interface PushBatchLiveResult extends PushBatchResult {
+  bulkPickStock: number
+  poQtyThisWeek: number
+  weekStock: number
+}
+
+/**
+ * Haalt live stock op uit Picqer voor één product en pusht direct naar Floriday.
+ * Geen cache nodig — werkt ook voor producten die nog niet in de stock_cache staan.
+ */
+export async function pushProductBatchLive(
+  picqerProductId: number
+): Promise<PushBatchLiveResult> {
+  const [bulkPickStock, poMap] = await Promise.all([
+    calcBulkPickStock(picqerProductId),
+    getThisWeekPOs(),
+  ])
+
+  const poDetails = poMap.get(picqerProductId) ?? []
+  const poQtyThisWeek = poDetails.reduce((sum, p) => sum + p.qty, 0)
+
+  const result = await pushProductBatch(picqerProductId, bulkPickStock, poDetails)
+
+  return {
+    ...result,
+    bulkPickStock,
+    poQtyThisWeek,
+    weekStock: bulkPickStock + poQtyThisWeek,
   }
 }
