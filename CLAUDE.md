@@ -22,7 +22,7 @@ Required in `.env.local`:
 - `PICQER_API_KEY` - Picqer API key
 - `GEMINI_API_KEY` - Google Gemini API key
 - `N8N_BATCH_WEBHOOK_URL` - (optional) n8n webhook for batch creation
-- `PASSWORD` - Password for basic auth protection
+- `APP_PASSWORD` - Password for basic auth protection
 - `FLORIDAY_CLIENT_ID` - Floriday OAuth2 client ID
 - `FLORIDAY_CLIENT_SECRET` - Floriday OAuth2 client secret
 - `FLORIDAY_API_KEY` - Floriday API key
@@ -283,7 +283,7 @@ Syncs sales orders from the Floriday B2B plant marketplace into Picqer. Floriday
 - Uses `batchmaker` schema (not `public`)
 
 **Authentication:**
-Simple cookie-based auth via middleware (`src/middleware.ts`). The `/login` page validates against `PASSWORD` env var and sets an `auth` cookie (7-day expiry, httpOnly, sameSite lax). API routes (`/api/*`) are **not** protected by the middleware — they pass through without auth checks.
+Simple cookie-based auth via middleware (`src/middleware.ts`). The `/login` page validates against `APP_PASSWORD` env var and sets an `auth` cookie (7-day expiry, httpOnly, sameSite lax). API routes (`/api/*`) are **not** protected by the middleware — they pass through without auth checks.
 
 ### Type Definitions
 
