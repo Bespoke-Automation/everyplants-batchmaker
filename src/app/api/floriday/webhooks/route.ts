@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getFulfillmentOrder, floridayGet } from '@/lib/floriday/client'
-import { processFulfillmentOrder } from '@/lib/floriday/sync/order-sync'
-import { refreshWarehouseCache } from '@/lib/floriday/sync/order-sync'
+import { getFulfillmentOrder } from '@/lib/floriday/client'
+import { processFulfillmentOrder, handleCorrectedFO, handleCancelledFO, refreshWarehouseCache } from '@/lib/floriday/sync/order-sync'
 
 /**
  * POST /api/floriday/webhooks
@@ -36,18 +35,28 @@ export async function POST(request: NextRequest) {
 
     // Only process FULFILLMENTORDER events
     if (aggregateType === 'FULFILLMENTORDER') {
-      // Only process ACCEPTED/SUBMITTED events
-      if (eventType !== 'ACCEPTED' && eventType !== 'SUBMITTED') {
-        console.log(`Ignoring FO event: ${eventType} for ${aggregateId}`)
-        return NextResponse.json({ success: true, action: 'ignored', reason: `eventType ${eventType}` })
+      const fo = await getFulfillmentOrder(aggregateId)
+
+      if (eventType === 'ACCEPTED' || eventType === 'SUBMITTED') {
+        await refreshWarehouseCache()
+        const result = await processFulfillmentOrder(fo)
+        return NextResponse.json({ success: true, result, fulfillmentOrderId: aggregateId })
       }
 
-      await refreshWarehouseCache()
+      if (eventType === 'CORRECTED') {
+        await refreshWarehouseCache()
+        const result = await handleCorrectedFO(fo)
+        return NextResponse.json({ success: true, result, fulfillmentOrderId: aggregateId })
+      }
 
-      const fo = await getFulfillmentOrder(aggregateId)
-      const result = await processFulfillmentOrder(fo)
+      if (eventType === 'CANCELLED') {
+        const result = await handleCancelledFO(fo)
+        return NextResponse.json({ success: true, result, fulfillmentOrderId: aggregateId })
+      }
 
-      return NextResponse.json({ success: true, result, fulfillmentOrderId: aggregateId })
+      // REJECTED en overige events: log maar verwerk niet
+      console.log(`Ignoring FO event: ${eventType} for ${aggregateId}`)
+      return NextResponse.json({ success: true, action: 'ignored', reason: `eventType ${eventType}` })
     }
 
     // Ignore other aggregate types (SALESORDER, BATCH, DELIVERYORDER)

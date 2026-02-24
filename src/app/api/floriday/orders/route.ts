@@ -30,7 +30,11 @@ export async function GET(request: NextRequest) {
       .range(offset, offset + limit - 1)
 
     if (status) {
-      ordersQuery = ordersQuery.eq('processing_status', status)
+      if (status === 'cancelled') {
+        ordersQuery = ordersQuery.in('processing_status', ['cancelled', 'cancelled_for_correction'])
+      } else {
+        ordersQuery = ordersQuery.eq('processing_status', status)
+      }
     }
 
     const { data: orders, error: ordersError } = await ordersQuery
@@ -44,11 +48,15 @@ export async function GET(request: NextRequest) {
       .select('processing_status')
       .eq('environment', env)
 
-    const counts = { created: 0, failed: 0, skipped: 0, total: 0 }
+    const counts = { created: 0, failed: 0, skipped: 0, cancelled: 0, total: 0 }
     for (const row of statusCounts || []) {
       counts.total++
-      const s = row.processing_status as keyof typeof counts
-      if (s in counts) counts[s]++
+      const s = row.processing_status as string
+      if (s === 'cancelled' || s === 'cancelled_for_correction') {
+        counts.cancelled++
+      } else if (s in counts) {
+        (counts as Record<string, number>)[s]++
+      }
     }
 
     // 3. Sync state

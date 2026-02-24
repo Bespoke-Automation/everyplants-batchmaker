@@ -34,7 +34,7 @@ interface OrderMapping {
   updated_at: string
 }
 
-type StatusFilter = 'all' | 'created' | 'failed' | 'skipped'
+type StatusFilter = 'all' | 'created' | 'failed' | 'skipped' | 'cancelled'
 
 export default function FloridayOrders() {
   const [orders, setOrders] = useState<OrderMapping[]>([])
@@ -68,6 +68,7 @@ export default function FloridayOrders() {
     { value: 'created', label: 'Aangemaakt' },
     { value: 'failed', label: 'Mislukt' },
     { value: 'skipped', label: 'Overgeslagen' },
+    { value: 'cancelled', label: 'Geannuleerd' },
   ]
 
   return (
@@ -294,6 +295,14 @@ function StatusBadge({ status }: { status: string }) {
         <span className="inline-flex items-center gap-1 text-amber-600 text-xs font-medium">
           <SkipForward className="w-3.5 h-3.5" />
           Overgeslagen
+        </span>
+      )
+    case 'cancelled':
+    case 'cancelled_for_correction':
+      return (
+        <span className="inline-flex items-center gap-1 text-gray-500 text-xs font-medium">
+          <XCircle className="w-3.5 h-3.5" />
+          {status === 'cancelled_for_correction' ? 'Gecorrigeerd' : 'Geannuleerd'}
         </span>
       )
     default:

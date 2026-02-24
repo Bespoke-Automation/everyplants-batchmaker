@@ -19,7 +19,7 @@ import {
   getSalesOrder,
   getWarehouses,
 } from '@/lib/floriday/client'
-import { createOrder, processOrder, addOrderTag, getTags, updateOrderFields } from '@/lib/picqer/client'
+import { createOrder, processOrder, cancelOrder, addOrderTag, getTags, updateOrderFields } from '@/lib/picqer/client'
 import { mapFulfillmentOrderToPicqer } from '@/lib/floriday/mappers/order-mapper'
 import type { FloridaySalesOrder, FloridayFulfillmentOrder } from '@/lib/floriday/types'
 
@@ -297,6 +297,146 @@ export async function processFulfillmentOrder(
     const message = error instanceof Error ? error.message : 'Unknown error'
     console.error(`Error processing FO ${foId}:`, message)
     await upsertOrderMapping(fulfillmentOrder, [], null, 'failed', message)
+    return 'failed'
+  }
+}
+
+// ─── Handle CORRECTED FulfillmentOrder ─────────────────────
+
+/**
+ * Handle a CORRECTED FulfillmentOrder.
+ * Strategy: cancel old Picqer order → create new one from corrected FO data.
+ */
+export async function handleCorrectedFO(
+  fulfillmentOrder: FloridayFulfillmentOrder
+): Promise<'corrected' | 'skipped' | 'failed'> {
+  const env = getFloridayEnv()
+  const foId = fulfillmentOrder.fulfillmentOrderId
+
+  try {
+    // Find existing mapping
+    const { data: existing } = await supabase
+      .schema('floriday')
+      .from('order_mapping')
+      .select('picqer_order_id, picqer_order_number, processing_status')
+      .eq('floriday_fulfillment_order_id', foId)
+      .eq('environment', env)
+      .single()
+
+    if (!existing || !existing.picqer_order_id) {
+      console.log(`FO ${foId} CORRECTED maar geen bestaande Picqer order gevonden, behandel als nieuwe order`)
+      // Treat as new — the FO might not have been processed yet
+      return await processFulfillmentOrder(fulfillmentOrder) === 'created' ? 'corrected' : 'failed'
+    }
+
+    // Cancel old Picqer order
+    console.log(`FO ${foId} CORRECTED → annuleer Picqer order ${existing.picqer_order_number}`)
+    try {
+      await cancelOrder(existing.picqer_order_id)
+    } catch (cancelErr) {
+      const msg = cancelErr instanceof Error ? cancelErr.message : 'Unknown'
+      console.warn(`Kon Picqer order ${existing.picqer_order_number} niet annuleren: ${msg}`)
+      // Continue anyway — order might already be completed/cancelled
+    }
+
+    // Mark old mapping as cancelled
+    await supabase
+      .schema('floriday')
+      .from('order_mapping')
+      .update({
+        processing_status: 'cancelled_for_correction',
+        error_message: `Gecorrigeerd → oud order ${existing.picqer_order_number} geannuleerd`,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('floriday_fulfillment_order_id', foId)
+      .eq('environment', env)
+
+    // Delete mapping so processFulfillmentOrder creates a new one
+    await supabase
+      .schema('floriday')
+      .from('order_mapping')
+      .delete()
+      .eq('floriday_fulfillment_order_id', foId)
+      .eq('environment', env)
+
+    // Create new Picqer order from corrected FO
+    const result = await processFulfillmentOrder(fulfillmentOrder)
+
+    if (result === 'created') {
+      console.log(`FO ${foId} CORRECTED → nieuw Picqer order aangemaakt (vervangt ${existing.picqer_order_number})`)
+      return 'corrected'
+    }
+
+    return 'failed'
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    console.error(`Error handling CORRECTED FO ${foId}:`, message)
+    await upsertOrderMapping(fulfillmentOrder, [], null, 'failed', `CORRECTED handling failed: ${message}`)
+    return 'failed'
+  }
+}
+
+// ─── Handle CANCELLED FulfillmentOrder ─────────────────────
+
+/**
+ * Handle a CANCELLED FulfillmentOrder.
+ * Cancel the corresponding Picqer order if it exists.
+ */
+export async function handleCancelledFO(
+  fulfillmentOrder: FloridayFulfillmentOrder
+): Promise<'cancelled' | 'skipped' | 'failed'> {
+  const env = getFloridayEnv()
+  const foId = fulfillmentOrder.fulfillmentOrderId
+
+  try {
+    // Find existing mapping
+    const { data: existing } = await supabase
+      .schema('floriday')
+      .from('order_mapping')
+      .select('picqer_order_id, picqer_order_number, processing_status')
+      .eq('floriday_fulfillment_order_id', foId)
+      .eq('environment', env)
+      .single()
+
+    if (!existing || !existing.picqer_order_id) {
+      console.log(`FO ${foId} CANCELLED maar geen bestaande Picqer order gevonden`)
+      await upsertOrderMapping(fulfillmentOrder, [], null, 'cancelled', 'FO geannuleerd (geen Picqer order)')
+      return 'skipped'
+    }
+
+    if (existing.processing_status === 'cancelled') {
+      console.log(`FO ${foId} already cancelled, skipping`)
+      return 'skipped'
+    }
+
+    // Cancel Picqer order
+    console.log(`FO ${foId} CANCELLED → annuleer Picqer order ${existing.picqer_order_number}`)
+    try {
+      await cancelOrder(existing.picqer_order_id)
+    } catch (cancelErr) {
+      const msg = cancelErr instanceof Error ? cancelErr.message : 'Unknown'
+      console.warn(`Kon Picqer order ${existing.picqer_order_number} niet annuleren: ${msg}`)
+      // Order might already be shipped/completed — log the error but don't fail
+    }
+
+    // Update mapping
+    await supabase
+      .schema('floriday')
+      .from('order_mapping')
+      .update({
+        processing_status: 'cancelled',
+        floriday_status: 'CANCELLED',
+        error_message: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('floriday_fulfillment_order_id', foId)
+      .eq('environment', env)
+
+    console.log(`FO ${foId} → Picqer order ${existing.picqer_order_number} geannuleerd`)
+    return 'cancelled'
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    console.error(`Error handling CANCELLED FO ${foId}:`, message)
     return 'failed'
   }
 }
