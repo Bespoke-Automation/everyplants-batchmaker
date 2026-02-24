@@ -9,29 +9,29 @@ See: .planning/PROJECT.md (updated 2026-02-24)
 
 ## Current Position
 
-Phase: 1 of 3 (Cost Data Layer)
-Plan: 1 of 2 in current phase
-Status: Executing
-Last activity: 2026-02-24 -- Completed 01-01-PLAN.md
+Phase: 1 of 3 (Cost Data Layer) -- COMPLETE
+Plan: 2 of 2 in current phase
+Status: Phase 1 Complete
+Last activity: 2026-02-24 -- Completed 01-02-PLAN.md
 
-Progress: [██░░░░░░░░] 20%
+Progress: [████░░░░░░] 40%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 1
-- Average duration: 2 min
-- Total execution time: 0.03 hours
+- Total plans completed: 2
+- Average duration: 3 min
+- Total execution time: 0.1 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 1. Cost Data Layer | 1/2 | 2 min | 2 min |
+| 1. Cost Data Layer | 2/2 | 6 min | 3 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (2min)
-- Trend: Starting
+- Last 5 plans: 01-01 (2min), 01-02 (4min)
+- Trend: Consistent
 
 *Updated after each plan completion*
 
@@ -48,6 +48,10 @@ Recent decisions affecting current work:
 - [01-01]: CostEntry re-exported from costProvider, canonical definition in verpakking.ts
 - [01-01]: Country codes normalized to uppercase for consistent cache key matching
 - [01-01]: parseFloat(String(...)) for numeric fields from Supabase
+- [01-02]: countryCode optional on calculateAdvice() for backward compatibility
+- [01-02]: Fingerprint uses 'UNKNOWN' when no country provided
+- [01-02]: Cost data fetched but NOT used for ranking in Phase 1 — only availability flag set
+- [01-02]: VerpakkingsClient engine useEffect depends on [picklist, order] for correct timing
 
 ### Pending Todos
 
@@ -61,5 +65,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-24
-Stopped at: Completed 01-01-PLAN.md
-Resume file: .planning/phases/01-cost-data-layer/01-01-SUMMARY.md
+Stopped at: Completed 01-02-PLAN.md (Phase 1 complete)
+Resume file: .planning/phases/01-cost-data-layer/01-02-SUMMARY.md

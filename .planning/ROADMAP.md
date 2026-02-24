@@ -12,7 +12,7 @@ Dit project breidt de bestaande packaging advice engine uit zodat deze de goedko
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Cost Data Layer** - Kostdata ophalen uit facturatie Supabase, country threading door engine, caching en graceful degradation
+- [x] **Phase 1: Cost Data Layer** - Kostdata ophalen uit facturatie Supabase, country threading door engine, caching en graceful degradation
 - [ ] **Phase 2: Cost-Primary Ranking** - Engine ranking wijzigen naar totale kosten als primaire sortering
 - [ ] **Phase 3: API + UI Integration** - Country parameter in API, kostbreakdown tonen in inpakscherm
 
@@ -32,7 +32,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 Plans:
 - [x] 01-01-PLAN.md — Build costProvider.ts with cached facturatie data access and CostEntry type
-- [ ] 01-02-PLAN.md — Thread countryCode through engine, API route, and VerpakkingsClient + DB migration
+- [x] 01-02-PLAN.md — Thread countryCode through engine, API route, and VerpakkingsClient + DB migration
 
 ### Phase 2: Cost-Primary Ranking
 **Goal**: De engine rankt verpakkingsopties primair op totale kosten (laagste eerst), met specificiteit en volume als tiebreakers
@@ -78,6 +78,6 @@ Phases execute in numeric order: 1 --> 2 --> 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Cost Data Layer | 1/2 | In progress | - |
+| 1. Cost Data Layer | 2/2 | Complete | 2026-02-24 |
 | 2. Cost-Primary Ranking | 0/1 | Not started | - |
 | 3. API + UI Integration | 0/2 | Not started | - |
