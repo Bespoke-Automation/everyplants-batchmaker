@@ -60,7 +60,7 @@ export interface BatchComment {
 
 const POLL_INTERVAL = 5000
 
-export function useBatchSession(batchSessionId: string | null) {
+export function useBatchSession(batchSessionId: string | null, previewBatchId?: number | null) {
   const [batchSession, setBatchSession] = useState<BatchSessionDetail | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
@@ -73,7 +73,83 @@ export function useBatchSession(batchSessionId: string | null) {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const isMountedRef = useRef(true)
 
+  // Helper: map raw Picqer products to BatchProduct[]
+  const mapProducts = (rawProducts: PicqerBatchProduct[]): BatchProduct[] =>
+    rawProducts.map((p) => {
+      const plArray = p.picklists ?? []
+      const totalAmount = plArray.reduce((sum, pl) => sum + (pl.amount ?? 0), 0)
+      const totalPicked = plArray.reduce((sum, pl) => sum + (pl.amount_picked ?? 0), 0)
+      return {
+        idproduct: p.idproduct,
+        productcode: p.productcode ?? '',
+        name: p.name ?? '',
+        image: p.image ?? null,
+        stockLocation: p.stock_location ?? null,
+        amount: totalAmount,
+        amountPicked: totalPicked,
+      }
+    })
+
+  // Helper: map raw Picqer picklists to BatchPicklistItem[] (without session linkage)
+  const mapPicklists = (rawPicklists: PicqerBatchPicklist[]): BatchPicklistItem[] =>
+    rawPicklists.map((pl) => ({
+      idpicklist: pl.idpicklist,
+      picklistid: pl.picklistid,
+      alias: pl.alias ?? null,
+      deliveryname: pl.delivery_name,
+      reference: pl.reference,
+      totalproducts: pl.total_products,
+      status: pl.status,
+      hasNotes: pl.has_notes,
+      hasCustomerRemarks: pl.has_customer_remarks,
+      customerRemarks: pl.customer_remarks,
+    }))
+
   const fetchBatchSession = useCallback(async (signal?: AbortSignal) => {
+    // Preview mode: load only from Picqer without Supabase session
+    if (!batchSessionId && previewBatchId) {
+      try {
+        const batchDetailRes = await fetch(`/api/picqer/picklist-batches/${previewBatchId}`, { signal })
+
+        if (!batchDetailRes.ok) {
+          const errorData = await batchDetailRes.json()
+          throw new Error(errorData.error || 'Failed to fetch batch details')
+        }
+
+        const batchDetail = await batchDetailRes.json()
+        const rawPicklists: PicqerBatchPicklist[] = batchDetail.picklists ?? []
+        const rawProducts: PicqerBatchProduct[] = batchDetail.products ?? []
+
+        const detail: BatchSessionDetail = {
+          id: '',
+          batchId: previewBatchId,
+          batchDisplayId: batchDetail.picklist_batchid || String(previewBatchId),
+          totalPicklists: rawPicklists.length || batchDetail.total_picklists || 0,
+          completedPicklists: 0,
+          totalProducts: batchDetail.total_products ?? 0,
+          batchType: batchDetail.type ?? 'normal',
+          status: 'preview',
+          assignedTo: batchDetail.assigned_to?.iduser ?? 0,
+          assignedToName: batchDetail.assigned_to?.full_name ?? '',
+          picklists: mapPicklists(rawPicklists),
+          products: mapProducts(rawProducts),
+        }
+
+        if (isMountedRef.current) {
+          setBatchSession(detail)
+          setError(null)
+          setIsLoading(false)
+        }
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return
+        if (isMountedRef.current) {
+          setError(err instanceof Error ? err : new Error('Unknown error'))
+          setIsLoading(false)
+        }
+      }
+      return
+    }
+
     if (!batchSessionId) return
 
     try {
@@ -129,21 +205,7 @@ export function useBatchSession(batchSessionId: string | null) {
         }
       })
 
-      // Map products — aggregate amounts from nested picklists array
-      const products: BatchProduct[] = rawProducts.map((p) => {
-        const plArray = p.picklists ?? []
-        const totalAmount = plArray.reduce((sum, pl) => sum + (pl.amount ?? 0), 0)
-        const totalPicked = plArray.reduce((sum, pl) => sum + (pl.amount_picked ?? 0), 0)
-        return {
-          idproduct: p.idproduct,
-          productcode: p.productcode ?? '',
-          name: p.name ?? '',
-          image: p.image ?? null,
-          stockLocation: p.stock_location ?? null,
-          amount: totalAmount,
-          amountPicked: totalPicked,
-        }
-      })
+      const products = mapProducts(rawProducts)
 
       // Use live Picqer count (rawPicklists.length or total_picklists) — Supabase value may be stale
       const actualTotalPicklists = rawPicklists.length || picqerTotalPicklists || sessionData.total_picklists
@@ -175,11 +237,11 @@ export function useBatchSession(batchSessionId: string | null) {
         setIsLoading(false)
       }
     }
-  }, [batchSessionId])
+  }, [batchSessionId, previewBatchId])
 
   // Initial fetch
   useEffect(() => {
-    if (!batchSessionId) {
+    if (!batchSessionId && !previewBatchId) {
       setBatchSession(null)
       setIsLoading(false)
       return
@@ -193,11 +255,11 @@ export function useBatchSession(batchSessionId: string | null) {
       isMountedRef.current = false
       abortController.abort()
     }
-  }, [fetchBatchSession, batchSessionId])
+  }, [fetchBatchSession, batchSessionId, previewBatchId])
 
   // Polling
   useEffect(() => {
-    if (!batchSessionId) return
+    if (!batchSessionId && !previewBatchId) return
 
     const startPolling = () => {
       if (intervalRef.current) clearInterval(intervalRef.current)
@@ -229,7 +291,7 @@ export function useBatchSession(batchSessionId: string | null) {
       stopPolling()
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [fetchBatchSession, batchSessionId])
+  }, [fetchBatchSession, batchSessionId, previewBatchId])
 
   /**
    * Start a picklist within this batch: create a packing session linked to the batch session
@@ -596,6 +658,44 @@ export function useBatchSession(batchSessionId: string | null) {
     [batchSession, fetchBatchSession]
   )
 
+  /**
+   * Unassign the batch: remove user in Picqer + mark Supabase session as completed
+   */
+  const unassignBatch = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
+    if (!batchSession) return { success: false, error: 'No batch session' }
+
+    try {
+      // Unassign in Picqer (send null userId)
+      const response = await fetch(
+        `/api/picqer/picklist-batches/${batchSession.batchId}/assign`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: null }),
+        }
+      )
+
+      if (!response.ok) {
+        const data = await response.json()
+        return { success: false, error: data.error || 'Failed to unassign batch in Picqer' }
+      }
+
+      // Mark Supabase session as completed (releases claim)
+      if (batchSessionId) {
+        await fetch(`/api/verpakking/batch-sessions/${batchSessionId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'completed' }),
+        })
+      }
+
+      return { success: true }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      return { success: false, error: message }
+    }
+  }, [batchSession, batchSessionId])
+
   const refetch = useCallback(() => fetchBatchSession(), [fetchBatchSession])
 
   // Auto-fetch picklist comments when batch session loads
@@ -619,6 +719,7 @@ export function useBatchSession(batchSessionId: string | null) {
     removePicklist,
     deleteBatch,
     reassignBatch,
+    unassignBatch,
     comments,
     isLoadingComments,
     fetchComments,

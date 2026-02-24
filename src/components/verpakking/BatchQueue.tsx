@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState, useEffect, useRef } from 'react'
+import { useCallback } from 'react'
 import {
   Layers,
   RefreshCw,
@@ -38,12 +38,14 @@ function timeAgo(dateString: string): string {
 interface BatchQueueProps {
   worker: Worker
   onClearWorker: () => void
+  onBatchPreview: (batchId: number) => void
   onBatchClaimed: (batchSessionId: string) => void
 }
 
 export default function BatchQueue({
   worker,
   onClearWorker,
+  onBatchPreview,
   onBatchClaimed,
 }: BatchQueueProps) {
   const {
@@ -51,8 +53,6 @@ export default function BatchQueue({
     totalBatches,
     isLoading,
     error,
-    isClaiming,
-    claimBatch,
     refetch,
     typeFilter,
     setTypeFilter,
@@ -68,48 +68,18 @@ export default function BatchQueue({
 
   const { users: picqerUsers } = usePicqerUsers()
 
-  // Error feedback state
-  const [openError, setOpenError] = useState<string | null>(null)
-  const openErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // Auto-dismiss error after 5 seconds
-  useEffect(() => {
-    if (openError) {
-      openErrorTimerRef.current = setTimeout(() => {
-        setOpenError(null)
-      }, 5000)
-    }
-    return () => {
-      if (openErrorTimerRef.current) {
-        clearTimeout(openErrorTimerRef.current)
-        openErrorTimerRef.current = null
-      }
-    }
-  }, [openError])
-
   const handleOpen = useCallback(
-    async (batch: QueueBatch) => {
+    (batch: QueueBatch) => {
+      // Already claimed by me → go directly to batch overview
       if (batch.batchSessionId) {
         onBatchClaimed(batch.batchSessionId)
         return
       }
 
-      setOpenError(null)
-
-      const result = await claimBatch(
-        batch.idpicklistBatch,
-        batch.batchDisplayId,
-        batch.totalPicklists,
-        worker.fullName
-      )
-
-      if (result.success && result.batchSessionId) {
-        onBatchClaimed(result.batchSessionId)
-      } else if (!result.success) {
-        setOpenError(result.error || 'Onbekende fout bij het openen')
-      }
+      // Open in preview mode (no claim, no Picqer assignment)
+      onBatchPreview(batch.idpicklistBatch)
     },
-    [claimBatch, worker.fullName, onBatchClaimed]
+    [onBatchClaimed, onBatchPreview]
   )
 
   return (
@@ -230,21 +200,6 @@ export default function BatchQueue({
         </div>
       </div>
 
-      {/* Error banner */}
-      {openError && (
-        <div className="mx-4 mt-3 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          <AlertCircle className="w-4 h-4 shrink-0" />
-          <span className="flex-1 font-medium">{openError}</span>
-          <button
-            onClick={() => setOpenError(null)}
-            className="shrink-0 p-1 rounded hover:bg-destructive/20 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
-            aria-label="Sluiten"
-          >
-            &times;
-          </button>
-        </div>
-      )}
-
       {/* Content area */}
       <div className="flex-1 overflow-y-auto">
         {/* Error state */}
@@ -295,8 +250,7 @@ export default function BatchQueue({
                 <button
                   key={batch.idpicklistBatch}
                   onClick={() => handleOpen(batch)}
-                  disabled={isClaiming}
-                  className={`w-full flex items-center gap-4 px-5 py-4 text-left transition-colors min-h-[64px] disabled:opacity-50 ${
+                  className={`w-full flex items-center gap-4 px-5 py-4 text-left transition-colors min-h-[64px] ${
                     hasMySession
                       ? 'bg-primary/5 hover:bg-primary/10'
                       : 'hover:bg-muted/50'
@@ -359,11 +313,7 @@ export default function BatchQueue({
                   </div>
 
                   {/* Arrow */}
-                  {isClaiming ? (
-                    <Loader2 className="w-5 h-5 animate-spin text-muted-foreground shrink-0" />
-                  ) : (
-                    <ChevronRight className="w-5 h-5 text-muted-foreground shrink-0" />
-                  )}
+                  <ChevronRight className="w-5 h-5 text-muted-foreground shrink-0" />
                 </button>
               )
             })}

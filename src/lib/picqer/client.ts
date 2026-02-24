@@ -1093,8 +1093,8 @@ export async function getPicklistBatch(batchId: number): Promise<PicqerPicklistB
 /**
  * Assign a picklist batch to a user
  */
-export async function assignPicklistBatch(batchId: number, userId: number): Promise<PicqerPicklistBatch> {
-  console.log(`Assigning picklist batch ${batchId} to user ${userId}...`)
+export async function assignPicklistBatch(batchId: number, userId: number | null): Promise<PicqerPicklistBatch> {
+  console.log(`${userId ? `Assigning` : `Unassigning`} picklist batch ${batchId}${userId ? ` to user ${userId}` : ''}...`)
 
   const response = await rateLimitedFetch(
     `${PICQER_BASE_URL}/picklists/batches/${batchId}/assign`,
@@ -1111,12 +1111,12 @@ export async function assignPicklistBatch(batchId: number, userId: number): Prom
 
   if (!response.ok) {
     const errorText = await response.text()
-    console.error(`Picqer API error assigning batch ${batchId}:`, response.status, errorText)
-    throw new Error(`Failed to assign batch: ${response.status} - ${errorText}`)
+    console.error(`Picqer API error ${userId ? 'assigning' : 'unassigning'} batch ${batchId}:`, response.status, errorText)
+    throw new Error(`Failed to ${userId ? 'assign' : 'unassign'} batch: ${response.status} - ${errorText}`)
   }
 
   const result = await response.json()
-  console.log(`Batch ${batchId} assigned to user ${userId} successfully`)
+  console.log(`Batch ${batchId} ${userId ? `assigned to user ${userId}` : 'unassigned'} successfully`)
   return result
 }
 

@@ -24,6 +24,9 @@ export default function VerpakkingsmodulePage() {
     return null
   })
 
+  // Preview mode: batch opened but not yet claimed (not persisted — refresh returns to queue)
+  const [previewBatchId, setPreviewBatchId] = useState<number | null>(null)
+
   useEffect(() => {
     if (activeBatchSessionId) {
       sessionStorage.setItem('verpakking_active_batch_session', activeBatchSessionId)
@@ -54,14 +57,15 @@ export default function VerpakkingsmodulePage() {
     )
   }
 
-  // Step 2: No active batch → show Batch Queue
-  if (!activeBatchSessionId) {
+  // Step 2: No active batch and no preview → show Batch Queue
+  if (!activeBatchSessionId && !previewBatchId) {
     return (
       <main className="flex-1 flex flex-col overflow-hidden">
         <div className="w-full flex-1 flex flex-col overflow-y-auto px-6">
           <BatchQueue
             worker={selectedWorker}
             onClearWorker={clearWorker}
+            onBatchPreview={(batchId) => setPreviewBatchId(batchId)}
             onBatchClaimed={(batchSessionId) => setActiveBatchSessionId(batchSessionId)}
           />
         </div>
@@ -69,16 +73,24 @@ export default function VerpakkingsmodulePage() {
     )
   }
 
-  // Step 3: Batch active, no picklist session → show Batch Overview
+  // Step 3: Preview or claimed batch, no picklist session → show Batch Overview
   if (!activeSessionId) {
     return (
       <main className="flex-1 flex flex-col overflow-hidden">
         <div className="w-full flex-1 flex flex-col overflow-y-auto px-6">
           <BatchOverview
             batchSessionId={activeBatchSessionId}
+            previewBatchId={previewBatchId}
             worker={selectedWorker}
             onPicklistStarted={(sessionId) => setActiveSessionId(sessionId)}
-            onBack={() => setActiveBatchSessionId(null)}
+            onBatchClaimed={(batchSessionId) => {
+              setActiveBatchSessionId(batchSessionId)
+              setPreviewBatchId(null)
+            }}
+            onBack={() => {
+              setActiveBatchSessionId(null)
+              setPreviewBatchId(null)
+            }}
           />
         </div>
       </main>

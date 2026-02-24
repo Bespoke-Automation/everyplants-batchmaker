@@ -29,16 +29,20 @@ import MentionTextarea from '@/components/verpakking/MentionTextarea'
 import type { Worker, BatchPicklistItem, BatchProduct } from '@/types/verpakking'
 
 interface BatchOverviewProps {
-  batchSessionId: string
+  batchSessionId?: string | null
+  previewBatchId?: number | null
   worker: Worker
   onPicklistStarted: (sessionId: string) => void
+  onBatchClaimed?: (batchSessionId: string) => void
   onBack: () => void
 }
 
 export default function BatchOverview({
   batchSessionId,
+  previewBatchId,
   worker,
   onPicklistStarted,
+  onBatchClaimed,
   onBack,
 }: BatchOverviewProps) {
   const {
@@ -53,6 +57,7 @@ export default function BatchOverview({
     removePicklist,
     deleteBatch,
     reassignBatch,
+    unassignBatch,
     comments,
     isLoadingComments,
     fetchComments,
@@ -60,7 +65,11 @@ export default function BatchOverview({
     deleteBatchComment,
     picklistComments,
     refetch,
-  } = useBatchSession(batchSessionId)
+  } = useBatchSession(batchSessionId ?? null, previewBatchId)
+
+  const isPreview = !batchSessionId && !!previewBatchId
+  const [isClaiming, setIsClaiming] = useState(false)
+  const [claimError, setClaimError] = useState<string | null>(null)
 
   const { users: picqerUsers } = usePicqerUsers()
 
@@ -74,6 +83,7 @@ export default function BatchOverview({
   const [commentsLoaded, setCommentsLoaded] = useState(false)
   const [showReassign, setShowReassign] = useState(false)
   const [isReassigning, setIsReassigning] = useState(false)
+  const [isUnassigning, setIsUnassigning] = useState(false)
   const reassignRef = useRef<HTMLDivElement>(null)
 
   // Close reassign dropdown on click outside
@@ -97,6 +107,51 @@ export default function BatchOverview({
       setShowReassign(false)
     }
   }, [reassignBatch])
+
+  const handleUnassignBatch = useCallback(async () => {
+    setIsUnassigning(true)
+    try {
+      const result = await unassignBatch()
+      if (result.success) {
+        onBack()
+      }
+    } finally {
+      setIsUnassigning(false)
+    }
+  }, [unassignBatch, onBack])
+
+  const handleClaimBatch = useCallback(async () => {
+    if (!batchSession || !previewBatchId) return
+
+    setIsClaiming(true)
+    setClaimError(null)
+    try {
+      const response = await fetch('/api/verpakking/batch-sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          batchId: previewBatchId,
+          batchDisplayId: batchSession.batchDisplayId,
+          totalPicklists: batchSession.totalPicklists,
+          assignedTo: worker.iduser,
+          assignedToName: worker.fullName,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        setClaimError(data.error || 'Kon batch niet claimen')
+        return
+      }
+
+      onBatchClaimed?.(data.id)
+    } catch (err) {
+      setClaimError(err instanceof Error ? err.message : 'Onbekende fout')
+    } finally {
+      setIsClaiming(false)
+    }
+  }, [batchSession, previewBatchId, worker.iduser, worker.fullName, onBatchClaimed])
 
   // Load comments once when batchSession is available
   useEffect(() => {
@@ -227,8 +282,8 @@ export default function BatchOverview({
               Batch PDF
             </button>
 
-            {/* Annuleer Batch button */}
-            {!isCompleted && (
+            {/* Annuleer Batch button (hidden in preview mode) */}
+            {!isCompleted && !isPreview && (
               <button
                 onClick={() => setShowDeleteConfirm(true)}
                 className="flex items-center gap-1.5 px-3 py-2 border border-destructive/30 text-destructive rounded-lg hover:bg-destructive/10 transition-colors text-sm font-medium min-h-[44px]"
@@ -254,11 +309,15 @@ export default function BatchOverview({
           <div className="flex items-center gap-2.5">
             <h2 className="font-bold text-xl">Batch #{batchSession.batchDisplayId}</h2>
             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium leading-none ${
-              isCompleted
-                ? 'bg-emerald-100 text-emerald-700'
-                : 'bg-blue-100 text-blue-700'
+              isPreview
+                ? 'bg-amber-100 text-amber-700'
+                : isCompleted
+                  ? 'bg-emerald-100 text-emerald-700'
+                  : 'bg-blue-100 text-blue-700'
             }`}>
-              {isCompleted ? (
+              {isPreview ? (
+                'Voorbeeld'
+              ) : isCompleted ? (
                 <>
                   <CheckCircle2 className="w-3 h-3" />
                   Afgerond
@@ -273,56 +332,106 @@ export default function BatchOverview({
               </span>
             )}
           </div>
-          <div className="relative mt-1" ref={reassignRef}>
-            <button
-              onClick={() => setShowReassign(!showReassign)}
-              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Toegewezen aan <span className="font-medium text-foreground">{batchSession.assignedToName}</span>
-              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showReassign ? 'rotate-180' : ''}`} />
-            </button>
-            {showReassign && (
-              <div className="absolute top-full left-0 mt-1 bg-card border border-border rounded-lg shadow-lg z-20 w-56 max-h-48 overflow-y-auto">
-                {picqerUsers.map((user) => (
-                  <button
-                    key={user.iduser}
-                    onClick={() => handleReassign(user)}
-                    disabled={isReassigning}
-                    className={`w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors disabled:opacity-50 first:rounded-t-lg last:rounded-b-lg ${
-                      user.iduser === batchSession.assignedTo ? 'font-medium text-primary' : ''
-                    }`}
-                  >
-                    {user.fullName}
-                    {user.iduser === batchSession.assignedTo && ' (huidig)'}
-                  </button>
-                ))}
-              </div>
+          {isPreview ? (
+            <p className="text-sm text-muted-foreground mt-1">
+              {batchSession.assignedToName
+                ? <>Gepickt door <span className="font-medium text-foreground">{batchSession.assignedToName}</span></>
+                : 'Niet toegewezen'}
+            </p>
+          ) : (
+            <div className="relative mt-1 flex items-center gap-2" ref={reassignRef}>
+              <button
+                onClick={() => setShowReassign(!showReassign)}
+                className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Toegewezen aan <span className="font-medium text-foreground">{batchSession.assignedToName}</span>
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showReassign ? 'rotate-180' : ''}`} />
+              </button>
+              <button
+                onClick={handleUnassignBatch}
+                disabled={isUnassigning}
+                className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
+                title="Toewijzing verwijderen"
+              >
+                {isUnassigning ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <X className="w-3.5 h-3.5" />
+                )}
+              </button>
+              {showReassign && (
+                <div className="absolute top-full left-0 mt-1 bg-card border border-border rounded-lg shadow-lg z-20 w-56 max-h-48 overflow-y-auto">
+                  {picqerUsers.map((user) => (
+                    <button
+                      key={user.iduser}
+                      onClick={() => handleReassign(user)}
+                      disabled={isReassigning}
+                      className={`w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors disabled:opacity-50 first:rounded-t-lg last:rounded-b-lg ${
+                        user.iduser === batchSession.assignedTo ? 'font-medium text-primary' : ''
+                      }`}
+                    >
+                      {user.fullName}
+                      {user.iduser === batchSession.assignedTo && ' (huidig)'}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Preview claim banner */}
+        {isPreview && (
+          <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm text-amber-800">
+                Je bekijkt deze batch zonder claim. Claim om picklijsten te verwerken.
+              </p>
+              <button
+                onClick={handleClaimBatch}
+                disabled={isClaiming}
+                className="shrink-0 flex items-center gap-1.5 px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium text-sm hover:bg-primary/90 transition-colors min-h-[40px] disabled:opacity-50"
+              >
+                {isClaiming ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4" />
+                )}
+                Claim batch
+              </button>
+            </div>
+            {claimError && (
+              <p className="text-xs text-destructive mt-2">{claimError}</p>
             )}
           </div>
-        </div>
+        )}
 
         {/* Green summary banner */}
-        <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2.5">
-          <p className="text-sm text-emerald-800 font-medium">
-            Batch aangemaakt met {totalProductAmount} producten en {batchSession.totalPicklists} picklijst{batchSession.totalPicklists !== 1 ? 'en' : ''}
-          </p>
-        </div>
+        {!isPreview && (
+          <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2.5">
+            <p className="text-sm text-emerald-800 font-medium">
+              Batch aangemaakt met {totalProductAmount} producten en {batchSession.totalPicklists} picklijst{batchSession.totalPicklists !== 1 ? 'en' : ''}
+            </p>
+          </div>
+        )}
 
-        {/* Progress bar */}
-        <div className="mt-3">
-          <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-            <span>{batchSession.completedPicklists}/{batchSession.totalPicklists} picklijsten verwerkt</span>
-            <span>{progressPercent}%</span>
+        {/* Progress bar (hidden in preview mode) */}
+        {!isPreview && (
+          <div className="mt-3">
+            <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+              <span>{batchSession.completedPicklists}/{batchSession.totalPicklists} picklijsten verwerkt</span>
+              <span>{progressPercent}%</span>
+            </div>
+            <div className="w-full bg-muted rounded-full h-2">
+              <div
+                className={`h-2 rounded-full transition-all duration-500 ${
+                  isCompleted ? 'bg-emerald-500' : 'bg-primary'
+                }`}
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
           </div>
-          <div className="w-full bg-muted rounded-full h-2">
-            <div
-              className={`h-2 rounded-full transition-all duration-500 ${
-                isCompleted ? 'bg-emerald-500' : 'bg-primary'
-              }`}
-              style={{ width: `${progressPercent}%` }}
-            />
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Delete confirmation dialog */}
@@ -389,7 +498,7 @@ export default function BatchOverview({
               Verwerk {batchSession.picklists.length} picklijst{batchSession.picklists.length !== 1 ? 'en' : ''}
             </h3>
             <div className="flex items-center gap-2">
-              {!isCompleted && (
+              {!isCompleted && !isPreview && (
                 <button
                   onClick={() => setShowAddPicklist(true)}
                   className="flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-lg hover:bg-muted transition-colors text-sm font-medium min-h-[36px]"
@@ -433,6 +542,7 @@ export default function BatchOverview({
                   key={item.idpicklist}
                   item={item}
                   isStartingPicklist={isStartingPicklist}
+                  isPreview={isPreview}
                   onStart={handleStartPicklist}
                   onRemove={removePicklist}
                   batchId={batchSession.batchId}
@@ -864,6 +974,7 @@ function AddPicklistForm({
 function PicklistRow({
   item,
   isStartingPicklist,
+  isPreview,
   onStart,
   onRemove,
   batchId,
@@ -872,6 +983,7 @@ function PicklistRow({
 }: {
   item: BatchPicklistItem
   isStartingPicklist: boolean
+  isPreview: boolean
   onStart: (item: BatchPicklistItem) => void
   onRemove: (picklistId: number) => Promise<{ success: boolean; error?: string }>
   batchId: number
@@ -880,7 +992,6 @@ function PicklistRow({
 }) {
   const isItemCompleted = item.sessionStatus === 'completed'
   const isClosed = item.status === 'closed'
-  const canStart = !isItemCompleted && !isClosed
 
   // Combine all comment bodies into a single string (like Picqer does)
   const combinedComments = comments.map((c) => c.body).join(' ')
@@ -912,14 +1023,9 @@ function PicklistRow({
         {/* Content */}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => onStart(item)}
-              disabled={isStartingPicklist}
-              className={`font-semibold text-base hover:underline text-left ${isItemCompleted ? 'text-emerald-600' : 'text-primary'}`}
-            >
+            <span className={`font-semibold text-base ${isItemCompleted ? 'text-emerald-600' : 'text-primary'}`}>
               {item.picklistid}
-            </button>
+            </span>
             {item.hasCustomerRemarks && (
               <MessageSquare className="w-4 h-4 text-amber-500 shrink-0" />
             )}
@@ -960,10 +1066,12 @@ function PicklistRow({
               <CheckCircle2 className="w-4 h-4" />
               Klaar
             </span>
-          ) : canStart ? (
+          ) : isClosed ? (
+            <span className="text-sm text-muted-foreground px-2">Dicht</span>
+          ) : (
             <button
               onClick={() => onStart(item)}
-              disabled={isStartingPicklist}
+              disabled={isStartingPicklist || isPreview}
               className="inline-flex items-center gap-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors min-h-[40px] disabled:opacity-50"
             >
               {isStartingPicklist ? (
@@ -972,8 +1080,6 @@ function PicklistRow({
                 'Verwerk'
               )}
             </button>
-          ) : (
-            <span className="text-sm text-muted-foreground px-2">Dicht</span>
           )}
 
           {/* More dropdown */}
@@ -982,6 +1088,7 @@ function PicklistRow({
             batchId={batchId}
             onRemove={() => onRemove(item.idpicklist)}
             isCompleted={isItemCompleted || isClosed}
+            isPreview={isPreview}
           />
         </div>
       </div>
@@ -996,11 +1103,13 @@ function MoreDropdown({
   batchId,
   onRemove,
   isCompleted,
+  isPreview,
 }: {
   picklistId: number
   batchId: number
   onRemove: () => Promise<{ success: boolean; error?: string }>
   isCompleted?: boolean
+  isPreview?: boolean
 }) {
   const [isOpen, setIsOpen] = useState(false)
   const [isRemoving, setIsRemoving] = useState(false)
@@ -1076,7 +1185,7 @@ function MoreDropdown({
             <Eye className="w-4 h-4" />
             Producten
           </button>
-          {!isCompleted && (
+          {!isCompleted && !isPreview && (
             <button
               onClick={handleRemove}
               disabled={isRemoving}

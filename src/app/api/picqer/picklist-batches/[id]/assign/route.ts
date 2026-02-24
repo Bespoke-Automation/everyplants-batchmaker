@@ -21,8 +21,8 @@ export async function POST(
 
     const { userId } = await request.json()
 
-    if (!userId || typeof userId !== 'number') {
-      return NextResponse.json({ error: 'userId (number) is required' }, { status: 400 })
+    if (userId !== null && (typeof userId !== 'number' || !Number.isInteger(userId))) {
+      return NextResponse.json({ error: 'userId must be a number or null' }, { status: 400 })
     }
 
     const result = await assignPicklistBatch(batchId, userId)
