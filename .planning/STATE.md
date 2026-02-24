@@ -5,32 +5,33 @@
 See: .planning/PROJECT.md (updated 2026-02-24)
 
 **Core value:** De engine adviseert altijd de verpakkingsoptie met de laagste totaalkosten (doos + transport) per bestemmingsland.
-**Current focus:** Phase 1: Cost Data Layer
+**Current focus:** Phase 2: Cost-Primary Ranking
 
 ## Current Position
 
-Phase: 1 of 3 (Cost Data Layer) -- COMPLETE
-Plan: 2 of 2 in current phase
-Status: Phase 1 Complete
-Last activity: 2026-02-24 -- Completed 01-02-PLAN.md
+Phase: 2 of 3 (Cost-Primary Ranking) -- COMPLETE
+Plan: 1 of 1 in current phase
+Status: Phase 2 Complete
+Last activity: 2026-02-24 -- Completed 02-01-PLAN.md
 
-Progress: [████░░░░░░] 40%
+Progress: [██████░░░░] 60%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 2
+- Total plans completed: 3
 - Average duration: 3 min
-- Total execution time: 0.1 hours
+- Total execution time: 0.15 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1. Cost Data Layer | 2/2 | 6 min | 3 min |
+| 2. Cost-Primary Ranking | 1/1 | 3 min | 3 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (2min), 01-02 (4min)
+- Last 5 plans: 01-01 (2min), 01-02 (4min), 02-01 (3min)
 - Trend: Consistent
 
 *Updated after each plan completion*
@@ -52,6 +53,9 @@ Recent decisions affecting current work:
 - [01-02]: Fingerprint uses 'UNKNOWN' when no country provided
 - [01-02]: Cost data fetched but NOT used for ranking in Phase 1 — only availability flag set
 - [01-02]: VerpakkingsClient engine useEffect depends on [picklist, order] for correct timing
+- [02-01]: enrichWithCosts excludes matches with barcode but no cost entry (no preferred route)
+- [02-01]: Matches without barcode kept with original total_cost (not excluded, not zero-cost)
+- [02-01]: Cost fields on AdviceBox use || undefined to convert 0 from non-enriched to undefined
 
 ### Pending Todos
 
@@ -65,5 +69,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-24
-Stopped at: Completed 01-02-PLAN.md (Phase 1 complete)
-Resume file: .planning/phases/01-cost-data-layer/01-02-SUMMARY.md
+Stopped at: Completed 02-01-PLAN.md (Phase 2 complete)
+Resume file: .planning/phases/02-cost-primary-ranking/02-01-SUMMARY.md

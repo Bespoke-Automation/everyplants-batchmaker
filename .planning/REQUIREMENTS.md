@@ -82,7 +82,7 @@
 | DATA-01 | Phase 1: Cost Data Layer | Complete |
 | DATA-02 | Phase 1: Cost Data Layer | Complete |
 | DATA-03 | Phase 1: Cost Data Layer | Complete |
-| ENG-01 | Phase 2: Cost-Primary Ranking | Pending |
+| ENG-01 | Phase 2: Cost-Primary Ranking | Complete |
 | ENG-02 | Phase 1: Cost Data Layer | Complete |
 | API-01 | Phase 3: API + UI Integration | Pending |
 | UI-01 | Phase 3: API + UI Integration | Pending |
