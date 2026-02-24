@@ -19,7 +19,7 @@ import {
   getSalesOrder,
   getWarehouses,
 } from '@/lib/floriday/client'
-import { createOrder, processOrder, cancelOrder, addOrderTag, getTags, updateOrderFields } from '@/lib/picqer/client'
+import { createOrder, processOrder, cancelOrder, addOrderTag, addComment, getTags, updateOrderFields } from '@/lib/picqer/client'
 import { mapFulfillmentOrderToPicqer } from '@/lib/floriday/mappers/order-mapper'
 import type { FloridaySalesOrder, FloridayFulfillmentOrder } from '@/lib/floriday/types'
 
@@ -331,12 +331,24 @@ export async function handleCorrectedFO(
 
     // Cancel old Picqer order
     console.log(`FO ${foId} CORRECTED → annuleer Picqer order ${existing.picqer_order_number}`)
+    let cancelFailed = false
     try {
       await cancelOrder(existing.picqer_order_id)
     } catch (cancelErr) {
+      cancelFailed = true
       const msg = cancelErr instanceof Error ? cancelErr.message : 'Unknown'
       console.warn(`Kon Picqer order ${existing.picqer_order_number} niet annuleren: ${msg}`)
       // Continue anyway — order might already be completed/cancelled
+    }
+
+    // Add comment to old Picqer order
+    try {
+      const commentBody = cancelFailed
+        ? `⚠️ FLORIDAY CORRECTIE: Dit order is gecorrigeerd in Floriday (FO ${foId}). Annuleren is mislukt — controleer handmatig. Er wordt een nieuw order aangemaakt met de gecorrigeerde data.`
+        : `FLORIDAY CORRECTIE: Dit order is geannuleerd vanwege een correctie in Floriday (FO ${foId}). Er wordt een nieuw order aangemaakt met de gecorrigeerde data.`
+      await addComment('orders', existing.picqer_order_id, commentBody)
+    } catch (commentErr) {
+      console.warn(`Kon geen comment plaatsen op order ${existing.picqer_order_number}:`, commentErr)
     }
 
     // Mark old mapping as cancelled
@@ -411,12 +423,24 @@ export async function handleCancelledFO(
 
     // Cancel Picqer order
     console.log(`FO ${foId} CANCELLED → annuleer Picqer order ${existing.picqer_order_number}`)
+    let cancelFailed = false
     try {
       await cancelOrder(existing.picqer_order_id)
     } catch (cancelErr) {
+      cancelFailed = true
       const msg = cancelErr instanceof Error ? cancelErr.message : 'Unknown'
       console.warn(`Kon Picqer order ${existing.picqer_order_number} niet annuleren: ${msg}`)
       // Order might already be shipped/completed — log the error but don't fail
+    }
+
+    // Add comment to Picqer order
+    try {
+      const commentBody = cancelFailed
+        ? `⚠️ FLORIDAY ANNULERING: Dit order is geannuleerd in Floriday (FO ${foId}). Automatisch annuleren is mislukt — controleer handmatig.`
+        : `FLORIDAY ANNULERING: Dit order is geannuleerd in Floriday (FO ${foId}).`
+      await addComment('orders', existing.picqer_order_id, commentBody)
+    } catch (commentErr) {
+      console.warn(`Kon geen comment plaatsen op order ${existing.picqer_order_number}:`, commentErr)
     }
 
     // Update mapping

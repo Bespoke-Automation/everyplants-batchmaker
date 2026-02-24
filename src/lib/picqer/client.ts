@@ -1405,7 +1405,7 @@ export async function getComments(
  * Add a comment to a picklist or picklist batch
  */
 export async function addComment(
-  resourceType: 'picklists' | 'picklists/batches',
+  resourceType: 'picklists' | 'picklists/batches' | 'orders',
   resourceId: number,
   body: string
 ): Promise<PicqerComment> {
