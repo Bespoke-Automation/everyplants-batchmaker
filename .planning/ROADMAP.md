@@ -31,7 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 2 plans in 2 waves
 
 Plans:
-- [ ] 01-01-PLAN.md — Build costProvider.ts with cached facturatie data access and CostEntry type
+- [x] 01-01-PLAN.md — Build costProvider.ts with cached facturatie data access and CostEntry type
 - [ ] 01-02-PLAN.md — Thread countryCode through engine, API route, and VerpakkingsClient + DB migration
 
 ### Phase 2: Cost-Primary Ranking
@@ -78,6 +78,6 @@ Phases execute in numeric order: 1 --> 2 --> 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Cost Data Layer | 0/2 | Not started | - |
+| 1. Cost Data Layer | 1/2 | In progress | - |
 | 2. Cost-Primary Ranking | 0/1 | Not started | - |
 | 3. API + UI Integration | 0/2 | Not started | - |
