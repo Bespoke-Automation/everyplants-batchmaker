@@ -9,6 +9,7 @@ import {
   Clock,
   Play,
   Database,
+  Ban,
 } from 'lucide-react'
 
 interface SyncState {
@@ -31,7 +32,7 @@ interface SyncLog {
 
 interface DashboardData {
   orders: unknown[]
-  counts: { created: number; failed: number; skipped: number; total: number }
+  counts: { created: number; failed: number; skipped: number; cancelled: number; total: number }
   syncStates: SyncState[]
   recentLogs: SyncLog[]
 }
@@ -91,7 +92,7 @@ export default function FloridayDashboard() {
     )
   }
 
-  const counts = data?.counts || { created: 0, failed: 0, skipped: 0, total: 0 }
+  const counts = data?.counts || { created: 0, failed: 0, skipped: 0, cancelled: 0, total: 0 }
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -120,7 +121,7 @@ export default function FloridayDashboard() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
         <KpiCard
           label="Totaal"
           value={counts.total}
@@ -144,6 +145,12 @@ export default function FloridayDashboard() {
           value={counts.skipped}
           icon={<SkipForward className="w-5 h-5 text-amber-500" />}
           color="amber"
+        />
+        <KpiCard
+          label="Geannuleerd"
+          value={counts.cancelled}
+          icon={<Ban className="w-5 h-5 text-gray-500" />}
+          color="gray"
         />
       </div>
 
