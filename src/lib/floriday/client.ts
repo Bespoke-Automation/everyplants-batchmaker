@@ -318,6 +318,23 @@ export async function getWarehouses(): Promise<FloridayWarehouse[]> {
   return floridayGet<FloridayWarehouse[]>('/warehouses')
 }
 
+// ─── Webhooks ───────────────────────────────────────────────
+
+export async function subscribeWebhook(callbackUrl: string): Promise<void> {
+  await floridayPost('/webhooks/subscriptions', { callbackUrl })
+}
+
+export async function deleteWebhook(callbackUrl: string): Promise<void> {
+  const response = await floridayFetch('/webhooks/subscriptions', {
+    method: 'DELETE',
+    body: JSON.stringify({ callbackUrl }),
+  })
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Floriday webhook delete error: ${response.status} - ${errorText}`)
+  }
+}
+
 // ─── Media Upload ────────────────────────────────────────────
 
 export async function uploadMedia(

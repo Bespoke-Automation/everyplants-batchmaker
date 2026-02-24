@@ -14,22 +14,23 @@ import {
 
 interface OrderMapping {
   id: number
-  floriday_sales_order_id: string
-  floriday_sales_channel: string | null
+  floriday_fulfillment_order_id: string
+  floriday_sales_order_ids: string[]
   floriday_status: string | null
-  floriday_number_of_pieces: number | null
-  floriday_price_per_piece: number | null
+  floriday_sequence_number: number
   floriday_customer_org_id: string | null
   floriday_delivery_date: string | null
   floriday_order_date: string | null
+  num_sales_orders: number
+  num_plates: number
+  load_carrier_type: string | null
+  num_load_carriers: number | null
+  reference: string | null
+  customer_name: string | null
   picqer_order_id: number | null
   picqer_order_number: string | null
   processing_status: string
   error_message: string | null
-  reference: string | null
-  customer_name: string | null
-  load_carrier_type: string | null
-  num_load_carriers: number | null
   updated_at: string
 }
 
@@ -160,7 +161,7 @@ function OrderRow({
     setRetrying(true)
     setRetryResult(null)
     try {
-      const res = await fetch(`/api/floriday/orders/${order.floriday_sales_order_id}/retry`, {
+      const res = await fetch(`/api/floriday/orders/${order.floriday_fulfillment_order_id}/retry`, {
         method: 'POST',
       })
       const data = await res.json()
@@ -215,12 +216,12 @@ function OrderRow({
         <tr className="bg-muted/20">
           <td colSpan={7} className="p-4">
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
-              <Detail label="Floriday Order ID" value={order.floriday_sales_order_id} mono />
-              <Detail label="Sales Channel" value={order.floriday_sales_channel} />
+              <Detail label="Fulfillment Order ID" value={order.floriday_fulfillment_order_id} mono />
               <Detail label="Floriday Status" value={order.floriday_status} />
-              <Detail label="Aantal stuks" value={order.floriday_number_of_pieces?.toString()} />
+              <Detail label="Sales Orders" value={order.num_sales_orders?.toString()} />
               <Detail label="Dragertype" value={order.load_carrier_type} />
               <Detail label="Aantal dragers" value={order.num_load_carriers?.toString()} />
+              <Detail label="Platen" value={order.num_plates?.toString()} />
               {order.picqer_order_id && (
                 <div>
                   <p className="text-xs text-muted-foreground">Picqer</p>
@@ -233,6 +234,14 @@ function OrderRow({
                     {order.picqer_order_number}
                     <ExternalLink className="w-3 h-3" />
                   </a>
+                </div>
+              )}
+              {order.floriday_sales_order_ids?.length > 0 && (
+                <div className="col-span-full">
+                  <p className="text-xs text-muted-foreground">Gekoppelde Sales Order IDs</p>
+                  <p className="font-mono text-xs mt-0.5 text-muted-foreground">
+                    {order.floriday_sales_order_ids.join(', ')}
+                  </p>
                 </div>
               )}
               {order.error_message && (
