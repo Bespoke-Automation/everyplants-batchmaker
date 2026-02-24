@@ -2222,3 +2222,35 @@ export async function getRecentProducts(days: number): Promise<PicqerProductFull
   console.log(`Fetched ${recentProducts.length} Picqer products created in last ${days} days`)
   return recentProducts
 }
+
+export async function getAllActiveProducts(): Promise<PicqerProductFull[]> {
+  const allProducts: PicqerProductFull[] = []
+  let offset = 0
+
+  while (true) {
+    const response = await rateLimitedFetch(`${PICQER_BASE_URL}/products?active=true&offset=${offset}`, {
+      headers: {
+        'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+        'User-Agent': 'EveryPlants-Batchmaker/2.0',
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store',
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`Picqer API error at offset ${offset}: ${response.status} - ${errorText}`)
+    }
+
+    const batch: PicqerProductFull[] = await response.json()
+    if (batch.length === 0) break
+
+    allProducts.push(...batch)
+    offset += batch.length
+
+    if (batch.length < 100) break
+  }
+
+  console.log(`Fetched ${allProducts.length} active Picqer products`)
+  return allProducts
+}

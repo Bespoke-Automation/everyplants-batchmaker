@@ -2,19 +2,18 @@
 // Product Resolver: supplierArticleCode → Picqer idproduct
 // ══════════════════════════════════════════════════════════════
 //
-// Zoekstrategie (waterdicht):
+// Zoekstrategie:
 //   1. Check product_mapping cache (bestaande koppeling)
-//   2. Check picqer_product_index tabel (alt_sku → product)
-//   3. Als niet gevonden: on-demand sync van relevante Picqer
-//      producten (Floriday tag + recent aangemaakt, alleen met alt_sku)
-//   4. Retry lookup na sync
+//   2. Check picqer_product_index tabel (alt_sku of productcode)
+//   3. Direct Picqer API search als fallback (zoekt op productcode/naam/barcode)
+//   4. Als niet in index: on-demand full sync + retry
 //
 // Picqer's search API doorzoekt GEEN custom productfields.
-// Daarom houden we een database index bij.
+// Daarom houden we een database index bij met alt_sku mapping.
 
 import { supabase } from '@/lib/supabase/client'
 import { getFloridayEnv } from '@/lib/floriday/config'
-import { getProductsByTag, getRecentProducts } from '@/lib/picqer/client'
+import { searchProducts, getAllActiveProducts } from '@/lib/picqer/client'
 
 const PICQER_FIELD_ALTERNATIEVE_SKU = 4875
 
@@ -24,14 +23,12 @@ interface ResolvedProduct {
   name: string
 }
 
-// Throttle: max 1 sync per 5 minuten
+// Throttle: max 1 full sync per 30 minuten
 let lastSyncTime = 0
-const SYNC_COOLDOWN_MS = 5 * 60 * 1000
+const SYNC_COOLDOWN_MS = 30 * 60 * 1000
 
 /**
- * On-demand sync: haal relevante Picqer producten op en update de index.
- * Scope: producten met Floriday tag + producten aangemaakt in laatste 60 dagen.
- * Alleen producten met ingevulde Alternatieve SKU worden opgeslagen.
+ * Full sync: haal ALLE actieve Picqer producten op en update de index.
  */
 export async function syncProductIndex(): Promise<{ synced: number }> {
   const now = Date.now()
@@ -41,49 +38,37 @@ export async function syncProductIndex(): Promise<{ synced: number }> {
   }
   lastSyncTime = now
 
-  console.log('Syncing picqer_product_index...')
+  console.log('Syncing picqer_product_index (alle actieve producten)...')
 
-  // 1. Producten met "Floriday product" tag (product-tag, niet de order-tag "Floriday")
-  const floridayProducts = await getProductsByTag('Floriday product')
+  const allProducts = await getAllActiveProducts()
 
-  // 2. Recent aangemaakte producten (laatste 60 dagen)
-  const recentProducts = await getRecentProducts(60)
-
-  // Combineer en dedup op idproduct
-  const seen = new Set<number>()
-  const allProducts = [...floridayProducts, ...recentProducts].filter(p => {
-    if (seen.has(p.idproduct)) return false
-    seen.add(p.idproduct)
-    return true
+  const rows = allProducts.map(p => {
+    const altSku = p.productfields?.find(
+      f => f.idproductfield === PICQER_FIELD_ALTERNATIEVE_SKU
+    )?.value || null
+    return {
+      picqer_product_id: p.idproduct,
+      productcode: p.productcode,
+      alt_sku: altSku,
+      name: p.name,
+      synced_at: new Date().toISOString(),
+    }
   })
 
-  // 3. Bouw index rows — producten MET alt_sku + producten zonder (voor productcode match)
-  const rows = allProducts
-    .map(p => {
-      const altSku = p.productfields?.find(
-        f => f.idproductfield === PICQER_FIELD_ALTERNATIEVE_SKU
-      )?.value || null
-      return {
-        picqer_product_id: p.idproduct,
-        productcode: p.productcode,
-        alt_sku: altSku,
-        name: p.name,
-        synced_at: new Date().toISOString(),
-      }
-    })
-
-  if (rows.length > 0) {
+  // Upsert in batches van 500
+  for (let i = 0; i < rows.length; i += 500) {
+    const batch = rows.slice(i, i + 500)
     const { error } = await supabase
       .schema('floriday')
       .from('picqer_product_index')
-      .upsert(rows, { onConflict: 'picqer_product_id' })
+      .upsert(batch, { onConflict: 'picqer_product_id' })
 
     if (error) {
-      console.error('Error upserting picqer_product_index:', error)
+      console.error(`Error upserting picqer_product_index batch ${i}:`, error)
     }
   }
 
-  console.log(`Product index gesynchroniseerd: ${rows.length} producten met alt_sku (van ${allProducts.length} totaal)`)
+  console.log(`Product index gesynchroniseerd: ${rows.length} producten`)
   return { synced: rows.length }
 }
 
@@ -102,12 +87,17 @@ export async function resolveProduct(
   // 2. Check picqer_product_index op alt_sku
   let match = await lookupByAltSku(supplierArticleCode)
 
-  // 3. Fallback: check op productcode (oude-stijl producten)
+  // 3. Fallback: check op productcode
   if (!match) {
     match = await lookupByProductcode(supplierArticleCode)
   }
 
-  // 4. Niet gevonden → trigger on-demand sync en retry
+  // 4. Direct Picqer API search (zoekt op productcode/naam/barcode)
+  if (!match) {
+    match = await searchPicqerDirect(supplierArticleCode)
+  }
+
+  // 5. Niet gevonden → trigger full sync en retry
   if (!match) {
     const { synced } = await syncProductIndex()
     if (synced > 0) {
@@ -123,7 +113,7 @@ export async function resolveProduct(
     return null
   }
 
-  // 5. Cache in product_mapping voor volgende keer
+  // 6. Cache in product_mapping voor volgende keer
   await cacheMapping(supplierArticleCode, match, tradeItemId, productName)
 
   return match
@@ -160,6 +150,50 @@ async function lookupByProductcode(code: string): Promise<ResolvedProduct | null
     idproduct: data.picqer_product_id,
     productcode: data.productcode,
     name: data.name,
+  }
+}
+
+/**
+ * Direct Picqer API search als fallback.
+ * Zoekt op productcode (Picqer search doorzoekt name, productcode, barcode).
+ * Als gevonden: voeg toe aan index voor volgende keer.
+ */
+async function searchPicqerDirect(articleCode: string): Promise<ResolvedProduct | null> {
+  console.log(`Direct Picqer search voor "${articleCode}"...`)
+  const results = await searchProducts(articleCode)
+
+  // Exacte match op productcode of alt_sku
+  const exact = results.find(p => {
+    if (p.productcode === articleCode) return true
+    const altSku = p.productfields?.find(
+      f => f.idproductfield === PICQER_FIELD_ALTERNATIEVE_SKU
+    )?.value
+    return altSku === articleCode
+  })
+
+  if (!exact) return null
+
+  // Voeg toe aan index
+  const altSku = exact.productfields?.find(
+    f => f.idproductfield === PICQER_FIELD_ALTERNATIEVE_SKU
+  )?.value || null
+
+  await supabase
+    .schema('floriday')
+    .from('picqer_product_index')
+    .upsert({
+      picqer_product_id: exact.idproduct,
+      productcode: exact.productcode,
+      alt_sku: altSku,
+      name: exact.name,
+      synced_at: new Date().toISOString(),
+    }, { onConflict: 'picqer_product_id' })
+
+  console.log(`Product gevonden via Picqer search: ${exact.productcode} → ${exact.name}`)
+  return {
+    idproduct: exact.idproduct,
+    productcode: exact.productcode,
+    name: exact.name,
   }
 }
 
