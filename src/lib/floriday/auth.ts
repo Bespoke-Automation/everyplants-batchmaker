@@ -8,19 +8,32 @@
 
 import { getFloridayConfig, type FloridayEnv } from './config'
 
-const SCOPES = [
-  'role:app',
-  'organization:read',
-  'catalog:read',
-  'catalog:write',
-  'supply:read',
-  'supply:write',
-  'sales-order:read',
-  'sales-order:write',
-  'fulfillment:read',
-  'fulfillment:write',
-  'webhooks:write',
-].join(' ')
+// Staging heeft alle scopes; live mist supply:write, sales-order:write, fulfillment:write
+const SCOPES_BY_ENV: Record<FloridayEnv, string> = {
+  staging: [
+    'role:app',
+    'organization:read',
+    'catalog:read',
+    'catalog:write',
+    'supply:read',
+    'supply:write',
+    'sales-order:read',
+    'sales-order:write',
+    'fulfillment:read',
+    'fulfillment:write',
+    'webhooks:write',
+  ].join(' '),
+  live: [
+    'role:app',
+    'organization:read',
+    'catalog:read',
+    'catalog:write',
+    'supply:read',
+    'sales-order:read',
+    'fulfillment:read',
+    'webhooks:write',
+  ].join(' '),
+}
 
 // Token safety margin: vernieuw 5 min voor verloop
 const TOKEN_SAFETY_MARGIN_MS = 5 * 60 * 1000
@@ -55,7 +68,7 @@ export async function getFloridayToken(): Promise<string> {
     grant_type: 'client_credentials',
     client_id: config.clientId,
     client_secret: config.clientSecret,
-    scope: SCOPES,
+    scope: SCOPES_BY_ENV[config.env],
   })
 
   const response = await fetch(config.authUrl, {
