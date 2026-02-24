@@ -58,11 +58,10 @@ Plans:
   2. VerpakkingsClient/usePackingSession stuurt automatisch het bestemmingsland van de Picqer order mee bij het berekenen van verpakkingsadvies -- de medewerker hoeft dit niet handmatig in te vullen
   3. Het advies-panel in het inpakscherm toont per voorgestelde doos: dooskosten, transportkosten en totaalkosten
   4. Wanneer kostdata niet beschikbaar was (`cost_data_available: false`), toont de UI een waarschuwing dat het advies op basis van specificiteit is gegeven in plaats van kosten
-**Plans**: TBD
+**Plans**: 1 plan in 1 wave
 
 Plans:
-- [ ] 03-01: TBD
-- [ ] 03-02: TBD
+- [ ] 03-01-PLAN.md — Cost display in advice UI + API country code verification
 
 ## Phase Ordering Rationale
 
@@ -81,4 +80,4 @@ Phases execute in numeric order: 1 --> 2 --> 3
 |-------|----------------|--------|-----------|
 | 1. Cost Data Layer | 2/2 | Complete | 2026-02-24 |
 | 2. Cost-Primary Ranking | 2/2 | Complete | 2026-02-24 |
-| 3. API + UI Integration | 0/2 | Not started | - |
+| 3. API + UI Integration | 0/1 | Not started | - |
