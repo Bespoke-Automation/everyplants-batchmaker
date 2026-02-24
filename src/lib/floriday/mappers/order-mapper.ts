@@ -141,10 +141,15 @@ export async function mapFulfillmentOrderToPicqer(
           }
         }
 
+        // Prijs uit SalesOrder: pricePerPiece × piecesPerPackage (stuks per collo)
+        const pricePerPiece = so.pricePerPiece?.value || 0
+        const piecesPerPackage = so.packingConfiguration?.piecesPerPackage || 1
+        const pricePerPackage = pricePerPiece * piecesPerPackage
+
         products.push({
           idproduct: product.idproduct,
           amount: item.numberOfPackages,
-          price: 0,
+          price: pricePerPackage,
         })
 
         productNames.push(product.name)
