@@ -43,8 +43,8 @@ export async function syncProductIndex(): Promise<{ synced: number }> {
 
   console.log('Syncing picqer_product_index...')
 
-  // 1. Producten met Floriday tag
-  const floridayProducts = await getProductsByTag('Floriday')
+  // 1. Producten met "Floriday product" tag (product-tag, niet de order-tag "Floriday")
+  const floridayProducts = await getProductsByTag('Floriday product')
 
   // 2. Recent aangemaakte producten (laatste 60 dagen)
   const recentProducts = await getRecentProducts(60)
@@ -57,13 +57,12 @@ export async function syncProductIndex(): Promise<{ synced: number }> {
     return true
   })
 
-  // 3. Filter: alleen producten met ingevulde Alternatieve SKU
+  // 3. Bouw index rows — producten MET alt_sku + producten zonder (voor productcode match)
   const rows = allProducts
     .map(p => {
       const altSku = p.productfields?.find(
         f => f.idproductfield === PICQER_FIELD_ALTERNATIEVE_SKU
-      )?.value
-      if (!altSku) return null
+      )?.value || null
       return {
         picqer_product_id: p.idproduct,
         productcode: p.productcode,
@@ -72,13 +71,6 @@ export async function syncProductIndex(): Promise<{ synced: number }> {
         synced_at: new Date().toISOString(),
       }
     })
-    .filter(Boolean) as Array<{
-      picqer_product_id: number
-      productcode: string
-      alt_sku: string
-      name: string
-      synced_at: string
-    }>
 
   if (rows.length > 0) {
     const { error } = await supabase

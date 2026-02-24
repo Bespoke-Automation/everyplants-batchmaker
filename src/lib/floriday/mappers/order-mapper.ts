@@ -20,7 +20,7 @@ import { getFloridayEnv } from '@/lib/floriday/config'
 import type { CreateOrderInput, CreateOrderProductInput } from '@/lib/picqer/types'
 import { ORDERFIELD_IDS } from '@/lib/picqer/types'
 import type { FloridaySalesOrder, FloridayFulfillmentOrder } from '@/lib/floriday/types'
-import { getTradeItem } from '@/lib/floriday/client'
+import { getTradeItem, getOrganization } from '@/lib/floriday/client'
 import { resolveProduct } from './product-resolver'
 import { resolveCustomer } from './customer-resolver'
 
@@ -85,9 +85,16 @@ export async function mapFulfillmentOrderToPicqer(
     // 1. Resolve customer (same for all SOs in the FO)
     const customer = await resolveCustomer(firstSO.customerOrganizationId)
 
-    // 2. Resolve delivery address from FO destination GLN
+    // 2. Resolve delivery address from FO destination
+    //    Probeer eerst warehouse cache (onze eigen locaties), dan organization API (klantlocaties)
     const deliveryGln = fulfillmentOrder.destination?.location?.gln
-    const delivery = deliveryGln ? await resolveWarehouseAddress(deliveryGln) : null
+    let delivery = deliveryGln ? await resolveWarehouseAddress(deliveryGln) : null
+    if (!delivery && fulfillmentOrder.destination?.organizationId) {
+      delivery = await resolveOrganizationAddress(
+        fulfillmentOrder.destination.organizationId,
+        deliveryGln
+      )
+    }
 
     // 3. Build product lines — per loadCarrier (trolley + producten)
     const products: CreateOrderProductInput[] = []
@@ -136,7 +143,7 @@ export async function mapFulfillmentOrderToPicqer(
 
         products.push({
           idproduct: product.idproduct,
-          amount: so.numberOfPieces,
+          amount: item.numberOfPackages,
           price: 0,
         })
 
@@ -249,5 +256,41 @@ async function resolveWarehouseAddress(gln: string): Promise<{
     postalCode: data.postal_code || '',
     city: data.city || '',
     countryCode: data.country_code || 'NL',
+  }
+}
+
+async function resolveOrganizationAddress(
+  organizationId: string,
+  gln?: string | null
+): Promise<{
+  name: string
+  addressLine: string
+  postalCode: string
+  city: string
+  countryCode: string
+} | null> {
+  try {
+    const org = await getOrganization(organizationId)
+    // Find location matching GLN, or use first location with address
+    const location = gln
+      ? org.locations?.find(l => l.gln === gln)
+      : org.locations?.[0]
+
+    const addr = location?.address
+    if (!addr) {
+      console.warn(`Geen adres gevonden voor organization ${organizationId}`)
+      return null
+    }
+
+    return {
+      name: org.name,
+      addressLine: addr.addressLine || '',
+      postalCode: addr.postalCode || '',
+      city: addr.city || '',
+      countryCode: addr.countryCode || 'NL',
+    }
+  } catch (error) {
+    console.warn(`Organization lookup mislukt voor ${organizationId}:`, error)
+    return null
   }
 }
