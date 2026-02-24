@@ -203,6 +203,7 @@ export async function processFulfillmentOrder(
 ): Promise<'created' | 'skipped' | 'failed'> {
   const env = getFloridayEnv()
   const foId = fulfillmentOrder.fulfillmentOrderId
+  let lockAcquired = false
 
   try {
     // Check if already processed
@@ -224,6 +225,47 @@ export async function processFulfillmentOrder(
       await upsertOrderMapping(fulfillmentOrder, [], null, 'skipped', `FO status is ${fulfillmentOrder.status}`)
       return 'skipped'
     }
+
+    // ── Acquire processing lock (prevents webhook + cron from creating duplicate Picqer orders)
+    const { error: lockError } = await supabase
+      .schema('floriday')
+      .from('order_processing_lock')
+      .insert({ fulfillment_order_id: foId, environment: env })
+
+    if (lockError) {
+      if (lockError.code === '23505') {
+        // Lock held by another process — check if stale (> 5 min)
+        const { data: lock } = await supabase
+          .schema('floriday')
+          .from('order_processing_lock')
+          .select('claimed_at')
+          .eq('fulfillment_order_id', foId)
+          .eq('environment', env)
+          .single()
+
+        if (lock) {
+          const lockAgeMs = Date.now() - new Date(lock.claimed_at).getTime()
+          if (lockAgeMs > 5 * 60 * 1000) {
+            console.log(`FO ${foId} stale lock (${Math.round(lockAgeMs / 1000)}s old), cleaning up for next cycle`)
+            await supabase
+              .schema('floriday')
+              .from('order_processing_lock')
+              .delete()
+              .eq('fulfillment_order_id', foId)
+              .eq('environment', env)
+          } else {
+            console.log(`FO ${foId} locked by another process (${Math.round(lockAgeMs / 1000)}s ago), skipping`)
+          }
+        }
+        return 'skipped'
+      }
+      // Non-constraint error — log but continue without lock (graceful degradation)
+      console.warn(`Lock acquisition failed for FO ${foId}:`, lockError.message)
+    } else {
+      lockAcquired = true
+    }
+
+    // ── Process with lock held ──
 
     // Extract all salesOrderIds from loadCarrierItems
     const salesOrderIds = new Set<string>()
@@ -298,6 +340,16 @@ export async function processFulfillmentOrder(
     console.error(`Error processing FO ${foId}:`, message)
     await upsertOrderMapping(fulfillmentOrder, [], null, 'failed', message)
     return 'failed'
+  } finally {
+    // Always release lock
+    if (lockAcquired) {
+      await supabase
+        .schema('floriday')
+        .from('order_processing_lock')
+        .delete()
+        .eq('fulfillment_order_id', foId)
+        .eq('environment', env)
+    }
   }
 }
 
