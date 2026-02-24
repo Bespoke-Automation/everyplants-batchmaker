@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { syncPackagingCosts } from '@/lib/supabase/syncPackagingCosts'
+import { invalidateCostCache } from '@/lib/engine/costProvider'
 
 export async function POST() {
   try {
@@ -7,6 +8,7 @@ export async function POST() {
     // Na de sync gebruikt rankPackagings() in de engine automatisch de juiste kosten
     // bij gelijke specificity en volume (specifiekst → kleinst → goedkoopst)
     const costSync = await syncPackagingCosts()
+    invalidateCostCache()
 
     return NextResponse.json({
       success: true,
