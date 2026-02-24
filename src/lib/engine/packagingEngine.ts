@@ -700,7 +700,7 @@ export async function solveMultiBox(
     // Re-match with only the mixable remaining units
     const mixableMatches = allMatches.length > 0
       ? recalculateMatchesForRemaining(allMatches, mixableRemaining)
-      : await matchCompartments(mixableRemaining)
+      : enrichWithCosts(await matchCompartments(mixableRemaining), costMap)
 
     const ranked = rankPackagings(mixableMatches, costDataAvailable)
 
