@@ -270,20 +270,18 @@ async function resolveOrganizationAddress(
   countryCode: string
 } | null> {
   try {
-    const org = await getOrganization(organizationId)
-    // Find location matching GLN, or use first location with address
-    const location = gln
-      ? org.locations?.find(l => l.gln === gln)
-      : org.locations?.[0]
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const org: any = await getOrganization(organizationId)
+    // Organization API retourneert physicalAddress/mailingAddress op top-level
+    const addr = org.physicalAddress || org.mailingAddress
 
-    const addr = location?.address
     if (!addr) {
       console.warn(`Geen adres gevonden voor organization ${organizationId}`)
       return null
     }
 
     return {
-      name: org.name,
+      name: org.name || '',
       addressLine: addr.addressLine || '',
       postalCode: addr.postalCode || '',
       city: addr.city || '',
