@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-24)
 
 **Core value:** De engine adviseert altijd de verpakkingsoptie met de laagste totaalkosten (doos + transport) per bestemmingsland.
-**Current focus:** Phase 2: Cost-Primary Ranking
+**Current focus:** Phase 3: API + UI Integration -- COMPLETE
 
 ## Current Position
 
-Phase: 2 of 3 (Cost-Primary Ranking) -- COMPLETE
-Plan: 2 of 2 in current phase
-Status: Phase 2 Complete (all plans)
-Last activity: 2026-02-24 -- Completed 02-02-PLAN.md
+Phase: 3 of 3 (API + UI Integration) -- COMPLETE
+Plan: 1 of 1 in current phase
+Status: All Phases Complete (v1 requirements fulfilled)
+Last activity: 2026-02-24 -- Completed 03-01-PLAN.md
 
-Progress: [████████░░] 80%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4
+- Total plans completed: 5
 - Average duration: 3 min
-- Total execution time: 0.17 hours
+- Total execution time: 0.20 hours
 
 **By Phase:**
 
@@ -29,9 +29,10 @@ Progress: [████████░░] 80%
 |-------|-------|-------|----------|
 | 1. Cost Data Layer | 2/2 | 6 min | 3 min |
 | 2. Cost-Primary Ranking | 2/2 | 4 min | 2 min |
+| 3. API + UI Integration | 1/1 | 3 min | 3 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (2min), 01-02 (4min), 02-01 (3min), 02-02 (1min)
+- Last 5 plans: 01-01 (2min), 01-02 (4min), 02-01 (3min), 02-02 (1min), 03-01 (3min)
 - Trend: Consistent
 
 *Updated after each plan completion*
@@ -57,6 +58,9 @@ Recent decisions affecting current work:
 - [02-01]: Matches without barcode kept with original total_cost (not excluded, not zero-cost)
 - [02-01]: Cost fields on AdviceBox use || undefined to convert 0 from non-enriched to undefined
 - [02-02]: Single-line fix sufficient: only the mixable fallback branch was missing enrichWithCosts
+- [03-01]: Cost display gated per-section, not per-banner -- advice still useful without costs
+- [03-01]: EUR formatting via formatCost helper with undefined check (no EUR 0.00 for missing data)
+- [03-01]: No cost fields on BoxCard/session boxes -- costs live on engine advice only
 
 ### Pending Todos
 
@@ -70,5 +74,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-24
-Stopped at: Completed 02-02-PLAN.md (Phase 2 fully complete, all plans done)
-Resume file: .planning/phases/02-cost-primary-ranking/02-02-SUMMARY.md
+Stopped at: Completed 03-01-PLAN.md (All phases complete, v1 requirements fulfilled)
+Resume file: .planning/phases/03-api-ui-integration/03-01-SUMMARY.md

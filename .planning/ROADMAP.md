@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Cost Data Layer** - Kostdata ophalen uit facturatie Supabase, country threading door engine, caching en graceful degradation
 - [x] **Phase 2: Cost-Primary Ranking** - Engine ranking wijzigen naar totale kosten als primaire sortering
-- [ ] **Phase 3: API + UI Integration** - Country parameter in API, kostbreakdown tonen in inpakscherm
+- [x] **Phase 3: API + UI Integration** - Country parameter in API, kostbreakdown tonen in inpakscherm
 
 ## Phase Details
 
@@ -61,7 +61,7 @@ Plans:
 **Plans**: 1 plan in 1 wave
 
 Plans:
-- [ ] 03-01-PLAN.md — Cost display in advice UI + API country code verification
+- [x] 03-01-PLAN.md — Cost display in advice UI + API country code verification
 
 ## Phase Ordering Rationale
 
@@ -80,4 +80,4 @@ Phases execute in numeric order: 1 --> 2 --> 3
 |-------|----------------|--------|-----------|
 | 1. Cost Data Layer | 2/2 | Complete | 2026-02-24 |
 | 2. Cost-Primary Ranking | 2/2 | Complete | 2026-02-24 |
-| 3. API + UI Integration | 0/1 | Not started | - |
+| 3. API + UI Integration | 1/1 | Complete | 2026-02-24 |
