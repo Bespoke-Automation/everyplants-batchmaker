@@ -13,6 +13,7 @@ import { supabase } from '@/lib/supabase/client'
 import { getOrderTags, addOrderTag, removeOrderTag, getTags, getProductFull, getProductParts } from '@/lib/picqer/client'
 import { syncProductFromPicqer, classifyProduct, syncCompositionParts } from '@/lib/supabase/productAttributes'
 import { getAllCostsForCountry } from './costProvider'
+import type { CostEntry } from './costProvider'
 
 // ── Input / Output types ──────────────────────────────────────────────────
 
@@ -37,11 +38,14 @@ export interface PackagingMatch {
   packaging_id: string   // packagings.id (uuid)
   packaging_name: string
   idpackaging: number    // Picqer ID
+  barcode: string | null // from packagings.barcode, used as cost lookup key
   rule_group: number
   covered_units: Map<string, number>  // shipping_unit_id -> qty consumed
   leftover_units: Map<string, number> // shipping_unit_id -> qty remaining
   specificity_score: number
   volume: number
+  box_cost: number       // from CostEntry.boxCost (0 if not enriched)
+  transport_cost: number // from CostEntry.transportCost (0 if not enriched)
   total_cost: number
   max_weight: number
 }
@@ -51,6 +55,9 @@ export interface AdviceBox {
   packaging_name: string
   idpackaging: number
   products: { productcode: string; shipping_unit_name: string; quantity: number }[]
+  box_cost?: number        // from selected PackagingMatch
+  transport_cost?: number  // from selected PackagingMatch
+  total_cost?: number      // from selected PackagingMatch
 }
 
 export interface PackagingAdviceResult {
@@ -111,6 +118,7 @@ interface PackagingRow {
   id: string
   idpackaging: number
   name: string
+  barcode: string | null  // join key for cost provider lookup
   picqer_tag_name: string | null
   specificity_score: number
   volume: number | null
@@ -353,7 +361,7 @@ export async function matchCompartments(
   const { data: packagings, error: pkgError } = await supabase
     .schema('batchmaker')
     .from('packagings')
-    .select('id, idpackaging, name, picqer_tag_name, specificity_score, volume, handling_cost, material_cost, max_weight')
+    .select('id, idpackaging, name, barcode, picqer_tag_name, specificity_score, volume, handling_cost, material_cost, max_weight')
     .eq('active', true)
     .eq('use_in_auto_advice', true)
 
@@ -410,11 +418,14 @@ export async function matchCompartments(
           packaging_id: pkg.id,
           packaging_name: pkg.picqer_tag_name || pkg.name,
           idpackaging: pkg.idpackaging,
+          barcode: pkg.barcode ?? null,
           rule_group: groupNum,
           covered_units: matchResult.covered,
           leftover_units: matchResult.leftover,
           specificity_score: pkg.specificity_score ?? 50,
           volume: pkg.volume ?? Infinity,
+          box_cost: 0,
+          transport_cost: 0,
           total_cost: (pkg.handling_cost ?? 0) + (pkg.material_cost ?? 0),
           max_weight: pkg.max_weight ?? Infinity,
         })
@@ -515,19 +526,64 @@ function evaluateRuleGroup(
   return { covered, leftover }
 }
 
+// ── 2b. enrichWithCosts ─────────────────────────────────────────────────
+
+/**
+ * Enrich packaging matches with cost data from the cost provider.
+ * - Matches whose barcode has a cost entry: overwrite box_cost, transport_cost, total_cost
+ * - Matches whose barcode has NO cost entry: EXCLUDED (no preferred route for this country)
+ * - Matches without barcode: kept with original total_cost (can't look up, but not excluded)
+ * - If costMap is null (no cost data): return matches unchanged (graceful degradation)
+ */
+function enrichWithCosts(
+  matches: PackagingMatch[],
+  costMap: Map<string, CostEntry> | null
+): PackagingMatch[] {
+  if (!costMap) return matches  // No cost data → keep original costs
+
+  return matches
+    .map(match => {
+      if (!match.barcode) return match  // No barcode → can't look up, keep as-is
+
+      const cost = costMap.get(match.barcode)
+      if (!cost) return null  // No preferred route for this country → EXCLUDE
+
+      return {
+        ...match,
+        box_cost: cost.boxCost,
+        transport_cost: cost.transportCost,
+        total_cost: cost.boxCost + cost.transportCost,
+      }
+    })
+    .filter((m): m is PackagingMatch => m !== null)
+}
+
 // ── 3. rankPackagings ─────────────────────────────────────────────────────
 
-export function rankPackagings(matches: PackagingMatch[]): PackagingMatch[] {
+export function rankPackagings(
+  matches: PackagingMatch[],
+  costDataAvailable: boolean = false
+): PackagingMatch[] {
   return [...matches].sort((a, b) => {
-    // 1. specificity_score DESC (most specific first)
+    if (costDataAvailable) {
+      // PRIMARY: total_cost ASC (cheapest first)
+      if (a.total_cost !== b.total_cost) {
+        return a.total_cost - b.total_cost
+      }
+      // TIEBREAKER 1: specificity_score DESC (most specific first)
+      if (b.specificity_score !== a.specificity_score) {
+        return b.specificity_score - a.specificity_score
+      }
+      // TIEBREAKER 2: volume ASC (smallest box first)
+      return a.volume - b.volume
+    }
+    // Fallback: original ranking (no cost data)
     if (b.specificity_score !== a.specificity_score) {
       return b.specificity_score - a.specificity_score
     }
-    // 2. volume ASC (smallest box first)
     if (a.volume !== b.volume) {
       return a.volume - b.volume
     }
-    // 3. total cost ASC (cheapest first)
     return a.total_cost - b.total_cost
   })
 }
