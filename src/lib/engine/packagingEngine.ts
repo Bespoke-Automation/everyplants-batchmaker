@@ -594,7 +594,9 @@ export async function solveMultiBox(
   shippingUnits: Map<string, ShippingUnitEntry>,
   unclassified: string[],
   allMatches: PackagingMatch[],
-  products: OrderProduct[]
+  products: OrderProduct[],
+  costMap: Map<string, CostEntry> | null = null,
+  costDataAvailable: boolean = false
 ): Promise<{ boxes: AdviceBox[]; confidence: 'full_match' | 'partial_match' | 'no_match' }> {
   // If nothing to pack, no advice needed
   if (shippingUnits.size === 0 && unclassified.length === 0) {
@@ -663,7 +665,8 @@ export async function solveMultiBox(
     singleUnit.set(nm.shipping_unit_id, { id: nm.shipping_unit_id, name: nm.shipping_unit_name, quantity: 1 })
 
     const singleMatches = await matchCompartments(singleUnit)
-    const ranked = rankPackagings(singleMatches)
+    const enrichedSingle = enrichWithCosts(singleMatches, costMap)
+    const ranked = rankPackagings(enrichedSingle, costDataAvailable)
 
     // Find a perfect match (no leftovers)
     const perfectMatch = ranked.find(m => m.leftover_units.size === 0)
@@ -678,6 +681,9 @@ export async function solveMultiBox(
           shipping_unit_name: nm.shipping_unit_name,
           quantity: 1,
         }],
+        box_cost: perfectMatch.box_cost || undefined,
+        transport_cost: perfectMatch.transport_cost || undefined,
+        total_cost: perfectMatch.total_cost || undefined,
       })
     } else {
       // No packaging found for this non-mixable product
@@ -696,7 +702,7 @@ export async function solveMultiBox(
       ? recalculateMatchesForRemaining(allMatches, mixableRemaining)
       : await matchCompartments(mixableRemaining)
 
-    const ranked = rankPackagings(mixableMatches)
+    const ranked = rankPackagings(mixableMatches, costDataAvailable)
 
     // Try single-box solution first: does any packaging match ALL remaining units?
     const singleBoxMatch = ranked.find(m => m.leftover_units.size === 0)
@@ -709,6 +715,9 @@ export async function solveMultiBox(
         packaging_name: singleBoxMatch.packaging_name,
         idpackaging: singleBoxMatch.idpackaging,
         products: boxProducts,
+        box_cost: singleBoxMatch.box_cost || undefined,
+        transport_cost: singleBoxMatch.transport_cost || undefined,
+        total_cost: singleBoxMatch.total_cost || undefined,
       })
     } else {
       // Greedy multi-box split
@@ -725,7 +734,8 @@ export async function solveMultiBox(
 
         // Re-match for remaining pool
         const poolMatches = await matchCompartments(pool)
-        const poolRanked = rankPackagings(poolMatches)
+        const enrichedPool = enrichWithCosts(poolMatches, costMap)
+        const poolRanked = rankPackagings(enrichedPool, costDataAvailable)
 
         if (poolRanked.length === 0) {
           // Can't place remaining units — no_match
@@ -742,6 +752,9 @@ export async function solveMultiBox(
           packaging_name: bestMatch.packaging_name,
           idpackaging: bestMatch.idpackaging,
           products: boxProducts,
+          box_cost: bestMatch.box_cost || undefined,
+          transport_cost: bestMatch.transport_cost || undefined,
+          total_cost: bestMatch.total_cost || undefined,
         })
 
         // Remove covered units from pool
@@ -1018,11 +1031,13 @@ export async function calculateAdvice(
   // Step 2: Match compartments
   const matches = await matchCompartments(shippingUnits)
 
-  // Step 2b: Cost data availability check
+  // Step 2b: Cost data enrichment
   let costDataAvailable = false
+  let costMap: Map<string, CostEntry> | null = null
+
   if (countryCode) {
-    const costs = await getAllCostsForCountry(countryCode)
-    costDataAvailable = costs !== null
+    costMap = await getAllCostsForCountry(countryCode)
+    costDataAvailable = costMap !== null
     if (!costDataAvailable) {
       console.warn(`[packagingEngine] Cost data unavailable for ${countryCode}, using specificity ranking`)
     }
@@ -1030,11 +1045,17 @@ export async function calculateAdvice(
     console.warn(`[packagingEngine] No countryCode provided, cost data not available`)
   }
 
-  // Step 3: Rank
-  const ranked = rankPackagings(matches)
+  // Step 2c: Enrich matches with cost data + filter unavailable routes
+  const enrichedMatches = enrichWithCosts(matches, costMap)
 
-  // Step 4: Solve multi-box
-  let { boxes, confidence } = await solveMultiBox(shippingUnits, unclassified, ranked, products)
+  // Step 3: Rank (with cost-primary if available)
+  const ranked = rankPackagings(enrichedMatches, costDataAvailable)
+
+  // Step 4: Solve multi-box (pass cost context through)
+  let { boxes, confidence } = await solveMultiBox(
+    shippingUnits, unclassified, ranked, products,
+    costMap, costDataAvailable
+  )
 
   // Step 4b: Fallback to default packaging per shipping unit
   if (confidence === 'no_match' && shippingUnits.size > 0) {
