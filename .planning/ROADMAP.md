@@ -28,11 +28,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Voor elke doos/land combinatie selecteert de provider de preferred carrier (`is_preferred = true`) en negeert niet-beschikbare routes (`is_available = false`)
   4. Wanneer de facturatie database onbereikbaar is, retourneert de engine een resultaat met `cost_data_available: false` en valt terug op de bestaande specificiteit-ranking, zonder crash
   5. `calculateAdvice()` accepteert een `countryCode` parameter (vereist, geen silent default) afkomstig uit Picqer order `deliveryaddress.country`
-**Plans**: TBD
+**Plans**: 2 plans in 2 waves
 
 Plans:
-- [ ] 01-01: TBD
-- [ ] 01-02: TBD
+- [ ] 01-01-PLAN.md — Build costProvider.ts with cached facturatie data access and CostEntry type
+- [ ] 01-02-PLAN.md — Thread countryCode through engine, API route, and VerpakkingsClient + DB migration
 
 ### Phase 2: Cost-Primary Ranking
 **Goal**: De engine rankt verpakkingsopties primair op totale kosten (laagste eerst), met specificiteit en volume als tiebreakers
