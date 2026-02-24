@@ -1,21 +1,23 @@
 // ══════════════════════════════════════════════════════════════
-// Order Mapper: Floriday SalesOrder → Picqer Order
+// Order Mapper: Floriday FulfillmentOrder → Picqer Order
 // ══════════════════════════════════════════════════════════════
 //
-// Transformeert een Floriday SalesOrder + FulfillmentOrder
-// naar een Picqer CreateOrderInput payload.
+// Transformeert een Floriday FulfillmentOrder + gelinkte SalesOrders
+// naar een enkele Picqer CreateOrderInput payload.
 //
 // Beslissingen:
-// - 1 SalesOrder = 1 Picqer Order
+// - 1 FulfillmentOrder = 1 Picqer Order (meerdere sales orders gecombineerd)
 // - Prijs altijd €0
 // - Template 9102
-// - Load carrier als apart product (Deense kar / Veiling kar)
-// - Afleveradres uit warehouse GLN lookup
-// - Referenties uit fulfillment order (deliveryNoteCode + Letter)
+// - Load carriers als aparte productregels (1 per carrier)
+// - Platen (100000011) op basis van numberOfAdditionalLayers
+// - Afleveradres uit FO destination GLN
+// - Referentie uit FO.deliveryNoteCodes (zonder letter)
+// - Producten geordend per loadCarrier (trolley → producten)
 
 import { supabase } from '@/lib/supabase/client'
 import { getFloridayEnv } from '@/lib/floriday/config'
-import type { CreateOrderInput } from '@/lib/picqer/types'
+import type { CreateOrderInput, CreateOrderProductInput } from '@/lib/picqer/types'
 import { ORDERFIELD_IDS } from '@/lib/picqer/types'
 import type { FloridaySalesOrder, FloridayFulfillmentOrder } from '@/lib/floriday/types'
 import { getTradeItem } from '@/lib/floriday/client'
@@ -41,6 +43,8 @@ const LOAD_CARRIER_PRODUCTS: Record<string, { idproduct: number; productcode: st
   AUCTION_TROLLEY: { idproduct: 38535557, productcode: '100000013' },
 }
 
+const PLATES_PRODUCT = { idproduct: 38075137, productcode: '100000011' }
+
 // ─── Types ──────────────────────────────────────────────────
 
 export interface OrderMapResult {
@@ -49,11 +53,13 @@ export interface OrderMapResult {
   metadata?: {
     customerName: string
     customerIsNew: boolean
-    productName: string
+    productNames: string[]
     loadCarrierType: string | null
     numLoadCarriers: number
+    numPlates: number
     reference: string
     deliveryDate: string
+    salesOrderCount: number
   }
   error?: string
 }
@@ -61,65 +67,103 @@ export interface OrderMapResult {
 // ─── Main Mapper ────────────────────────────────────────────
 
 /**
- * Map a Floriday SalesOrder + optional FulfillmentOrder to a Picqer order payload.
+ * Map a Floriday FulfillmentOrder + its linked SalesOrders to a single Picqer order payload.
+ * All sales orders within the FO become product lines in one Picqer order.
  */
-export async function mapSalesOrderToPicqer(
-  salesOrder: FloridaySalesOrder,
-  fulfillmentOrder?: FloridayFulfillmentOrder
+export async function mapFulfillmentOrderToPicqer(
+  fulfillmentOrder: FloridayFulfillmentOrder,
+  salesOrders: FloridaySalesOrder[]
 ): Promise<OrderMapResult> {
   try {
-    // 1. Resolve product
-    const tradeItem = await getTradeItem(salesOrder.tradeItemId)
-    const product = await resolveProduct(
-      tradeItem.supplierArticleCode,
-      tradeItem.tradeItemId,
-      tradeItem.tradeItemName?.nl
-    )
-
-    if (!product) {
-      return {
-        success: false,
-        error: `Product niet gevonden voor artikelcode "${tradeItem.supplierArticleCode}"`,
-      }
+    if (salesOrders.length === 0) {
+      return { success: false, error: 'Geen sales orders gevonden voor dit fulfillment order' }
     }
 
-    // 2. Resolve customer
-    const customer = await resolveCustomer(salesOrder.customerOrganizationId)
+    // Use the first sales order for customer and delivery info
+    const firstSO = salesOrders[0]
 
-    // 3. Resolve delivery address from warehouse GLN
-    const deliveryGln = salesOrder.delivery?.location?.gln
+    // 1. Resolve customer (same for all SOs in the FO)
+    const customer = await resolveCustomer(firstSO.customerOrganizationId)
+
+    // 2. Resolve delivery address from FO destination GLN
+    const deliveryGln = fulfillmentOrder.destination?.location?.gln
     const delivery = deliveryGln ? await resolveWarehouseAddress(deliveryGln) : null
 
-    // 4. Extract fulfillment data (references + carrier count)
-    const fulfillmentData = extractFulfillmentData(salesOrder.salesOrderId, fulfillmentOrder)
+    // 3. Build product lines — per loadCarrier (trolley + producten)
+    const products: CreateOrderProductInput[] = []
+    const productNames: string[] = []
+    let totalPlates = 0
 
-    // 5. Build product lines
-    const products: CreateOrderInput['products'] = [
-      {
-        idproduct: product.idproduct,
-        amount: salesOrder.numberOfPieces,
-        price: 0,
-      },
-    ]
+    // Build salesOrderId → SalesOrder lookup
+    const soById = new Map<string, FloridaySalesOrder>()
+    for (const so of salesOrders) {
+      soById.set(so.salesOrderId, so)
+    }
 
-    // Add load carrier product if applicable
-    // Use fulfillment's loadCarrierType (e.g. DANISH_TROLLEY) — sales order uses codes like CC
-    const loadCarrierType = fulfillmentData.loadCarrierType
-    if (loadCarrierType && LOAD_CARRIER_PRODUCTS[loadCarrierType] && fulfillmentData.numLoadCarriers > 0) {
+    for (const lc of fulfillmentOrder.loadCarriers || []) {
+      // Add load carrier product (1 per carrier)
+      const carrierProduct = LOAD_CARRIER_PRODUCTS[lc.loadCarrierType]
+      if (carrierProduct) {
+        products.push({
+          idproduct: carrierProduct.idproduct,
+          amount: 1,
+          price: 0,
+        })
+      }
+
+      // Add products for each item on this carrier
+      for (const item of lc.loadCarrierItems || []) {
+        const so = soById.get(item.salesOrderId)
+        if (!so) {
+          console.warn(`Sales order ${item.salesOrderId} niet gevonden voor FO ${fulfillmentOrder.fulfillmentOrderId}`)
+          continue
+        }
+
+        // Resolve product from trade item
+        const tradeItem = await getTradeItem(item.tradeItemId)
+        const product = await resolveProduct(
+          tradeItem.supplierArticleCode,
+          tradeItem.tradeItemId,
+          tradeItem.tradeItemName?.nl
+        )
+
+        if (!product) {
+          return {
+            success: false,
+            error: `Product niet gevonden voor artikelcode "${tradeItem.supplierArticleCode}" (trade item: ${tradeItem.tradeItemName?.nl || item.tradeItemId})`,
+          }
+        }
+
+        products.push({
+          idproduct: product.idproduct,
+          amount: so.numberOfPieces,
+          price: 0,
+        })
+
+        productNames.push(product.name)
+      }
+
+      // Count additional layers (plates)
+      totalPlates += lc.numberOfAdditionalLayers || 0
+    }
+
+    // Add plates product if any
+    if (totalPlates > 0) {
       products.push({
-        idproduct: LOAD_CARRIER_PRODUCTS[loadCarrierType].idproduct,
-        amount: fulfillmentData.numLoadCarriers,
+        idproduct: PLATES_PRODUCT.idproduct,
+        amount: totalPlates,
         price: 0,
       })
     }
 
-    // 6. Build delivery date
-    const deliveryDate = salesOrder.delivery?.latestDeliveryDateTime
-      ? salesOrder.delivery.latestDeliveryDateTime.split('T')[0]
-      : undefined
+    // 4. Build reference from FO-level deliveryNoteCodes
+    const reference = (fulfillmentOrder.deliveryNoteCodes || []).join(', ')
 
-    // 7. Build order fields (Leverdag + Levertijd)
-    const deliveryDateTime = salesOrder.delivery?.latestDeliveryDateTime
+    // 5. Build delivery date/time
+    const deliveryDateTime = fulfillmentOrder.latestDeliveryDateTime || firstSO.delivery?.latestDeliveryDateTime
+    const deliveryDate = deliveryDateTime ? deliveryDateTime.split('T')[0] : undefined
+
+    // 6. Build order fields (Leverdag + Levertijd)
     const orderfields: CreateOrderInput['orderfields'] = deliveryDateTime
       ? [
           { idorderfield: ORDERFIELD_IDS.LEVERDAG, value: extractDeliveryDay(deliveryDateTime) },
@@ -127,11 +171,21 @@ export async function mapSalesOrderToPicqer(
         ]
       : undefined
 
-    // 8. Build Picqer payload
+    // 7. Collect delivery remarks from all sales orders
+    const remarks = salesOrders
+      .map(so => so.deliveryRemarks)
+      .filter(Boolean)
+      .join('; ')
+
+    // 8. Detect load carrier type (for metadata)
+    const detectedCarrierType = (fulfillmentOrder.loadCarriers || [])[0]?.loadCarrierType || null
+    const numLoadCarriers = (fulfillmentOrder.loadCarriers || []).length
+
+    // 9. Build Picqer payload
     const payload: CreateOrderInput = {
       idcustomer: customer.idcustomer,
       idtemplate: PICQER_TEMPLATE_ID,
-      reference: fulfillmentData.reference || undefined,
+      reference: reference || undefined,
       preferred_delivery_date: deliveryDate,
       invoicename: customer.name,
       deliveryname: customer.name,
@@ -140,7 +194,7 @@ export async function mapSalesOrderToPicqer(
       deliverycity: delivery?.city,
       deliverycountry: delivery?.countryCode,
       language: 'nl',
-      customer_remarks: salesOrder.deliveryRemarks || undefined,
+      customer_remarks: remarks || undefined,
       products,
       orderfields,
     }
@@ -151,11 +205,13 @@ export async function mapSalesOrderToPicqer(
       metadata: {
         customerName: customer.name,
         customerIsNew: customer.isNew,
-        productName: product.name,
-        loadCarrierType: loadCarrierType || null,
-        numLoadCarriers: fulfillmentData.numLoadCarriers,
-        reference: fulfillmentData.reference,
+        productNames,
+        loadCarrierType: detectedCarrierType,
+        numLoadCarriers,
+        numPlates: totalPlates,
+        reference,
         deliveryDate: deliveryDate || '',
+        salesOrderCount: salesOrders.length,
       },
     }
   } catch (error) {
@@ -165,60 +221,6 @@ export async function mapSalesOrderToPicqer(
 }
 
 // ─── Helpers ────────────────────────────────────────────────
-
-function extractFulfillmentData(
-  salesOrderId: string,
-  fulfillmentOrder?: FloridayFulfillmentOrder
-): { reference: string; numLoadCarriers: number; loadCarrierType: string | null } {
-  if (!fulfillmentOrder) {
-    return { reference: '', numLoadCarriers: 0, loadCarrierType: null }
-  }
-
-  const refs: string[] = []
-  let carrierCount = 0
-  let detectedCarrierType: string | null = null
-
-  for (const lc of fulfillmentOrder.loadCarriers || []) {
-    // Check if this carrier has items for our sales order
-    const relevantItems = lc.loadCarrierItems?.filter(
-      item => item.salesOrderId === salesOrderId
-    ) || []
-
-    if (relevantItems.length > 0) {
-      carrierCount++
-      // Capture the load carrier type from the fulfillment (e.g. DANISH_TROLLEY)
-      if (!detectedCarrierType && lc.loadCarrierType) {
-        detectedCarrierType = lc.loadCarrierType
-      }
-      // Item-level codes (meest specifiek, bijv. 'F2AC98A' = code + letter)
-      const itemCodes: string[] = []
-      for (const item of relevantItems) {
-        if (item.deliveryNoteCode) {
-          const ref = item.deliveryNoteCode + (item.deliveryNoteLetter || '')
-          if (ref && !refs.includes(ref)) itemCodes.push(ref)
-        }
-      }
-      if (itemCodes.length > 0) {
-        // Item-level codes beschikbaar: gebruik die (meest specifiek)
-        refs.push(...itemCodes)
-      } else {
-        // Geen item-level codes: fallback naar carrier-niveau (bijv. '50000A' voor klokkopen)
-        if (lc.documentReference && !refs.includes(lc.documentReference)) {
-          refs.push(lc.documentReference)
-        }
-        for (const code of lc.deliveryNoteCodes || []) {
-          if (!refs.includes(code)) refs.push(code)
-        }
-      }
-    }
-  }
-
-  return {
-    reference: refs.join(', '),
-    numLoadCarriers: carrierCount,
-    loadCarrierType: detectedCarrierType,
-  }
-}
 
 async function resolveWarehouseAddress(gln: string): Promise<{
   name: string

@@ -237,6 +237,7 @@ export interface FloridayFulfillmentOrder {
 export interface FloridayLoadCarrierFull {
   loadCarrierType: string // e.g. 'DANISH_TROLLEY', 'AUCTION_TROLLEY'
   loadCarrierItems: FloridayLoadCarrierItem[]
+  numberOfAdditionalLayers: number // Extra platen bovenop basislaag
   documentReference: string | null
   deliveryNoteCodes: string[]
   sortIndex: number
@@ -286,6 +287,25 @@ export type FloridayBatchEventType =
   | 'CREATED'
   | 'QUANTITY_CHANGED'
   | 'CANCELLED'
+
+export type FloridayFulfillmentOrderEventType =
+  | 'SUBMITTED'
+  | 'ACCEPTED'
+  | 'REJECTED'
+  | 'CORRECTED'
+  | 'CANCELLED'
+
+export type FloridayDeliveryOrderEventType =
+  | 'CREATED'
+  | 'REQUEST_CHANGED'
+  | 'FULFILLMENT_CHANGED'
+  | 'CANCELLED'
+
+export interface FloridayWebhookEvent {
+  aggregateType: FloridayAggregateType
+  eventType: string
+  aggregateId: string
+}
 
 export interface FloridayWebhookSubscription {
   callbackUrl: string
