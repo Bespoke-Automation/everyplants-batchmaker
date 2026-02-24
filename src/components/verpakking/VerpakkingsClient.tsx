@@ -57,6 +57,9 @@ interface EngineAdviceBox {
   packaging_name: string
   idpackaging: number
   products: { productcode: string; shipping_unit_name: string; quantity: number }[]
+  box_cost?: number
+  transport_cost?: number
+  total_cost?: number
 }
 
 interface EngineAdvice {
@@ -68,6 +71,12 @@ interface EngineAdvice {
   unclassified_products: string[]
   tags_written: string[]
   weight_exceeded?: boolean
+  cost_data_available?: boolean
+}
+
+function formatCost(value: number | undefined): string {
+  if (value === undefined) return '-'
+  return `\u20AC${value.toFixed(2)}`
 }
 
 // Shared status translation map (English -> Dutch)
@@ -1215,10 +1224,24 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
               }`} />
               <span className="flex-1">
                 {engineAdvice.confidence === 'full_match' && (
-                  <>Advies: {engineAdvice.advice_boxes.map((b) => b.packaging_name).join(' + ')}</>
+                  <>
+                    Advies: {engineAdvice.advice_boxes.map((b) => b.packaging_name).join(' + ')}
+                    {engineAdvice.cost_data_available !== false && engineAdvice.advice_boxes.some(b => b.total_cost !== undefined) && (
+                      <span className="ml-1 font-medium">
+                        ({formatCost(engineAdvice.advice_boxes.reduce((sum, b) => sum + (b.total_cost ?? 0), 0))} totaal)
+                      </span>
+                    )}
+                  </>
                 )}
                 {engineAdvice.confidence === 'partial_match' && (
-                  <>Gedeeltelijk advies: {engineAdvice.advice_boxes.map((b) => b.packaging_name).join(' + ')}</>
+                  <>
+                    Gedeeltelijk advies: {engineAdvice.advice_boxes.map((b) => b.packaging_name).join(' + ')}
+                    {engineAdvice.cost_data_available !== false && engineAdvice.advice_boxes.some(b => b.total_cost !== undefined) && (
+                      <span className="ml-1 font-medium">
+                        ({formatCost(engineAdvice.advice_boxes.reduce((sum, b) => sum + (b.total_cost ?? 0), 0))} totaal)
+                      </span>
+                    )}
+                  </>
                 )}
                 {engineAdvice.confidence === 'no_match' && (
                   <>Geen verpakkingsadvies beschikbaar</>
@@ -1270,6 +1293,29 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
                 {engineAdvice.confidence === 'no_match' && engineAdvice.shipping_units_detected.length === 0 && engineAdvice.unclassified_products.length > 0 && (
                   <div className="text-amber-600">
                     Geen producten konden geclassificeerd worden. Controleer of de productattributen in Picqer zijn ingevuld.
+                  </div>
+                )}
+                {engineAdvice.cost_data_available !== false && engineAdvice.advice_boxes.some(b => b.total_cost !== undefined) && (
+                  <div>
+                    <span className="font-medium">Kosten per doos:</span>
+                    <div className="mt-0.5 space-y-0.5">
+                      {engineAdvice.advice_boxes.map((box, idx) => (
+                        box.total_cost !== undefined ? (
+                          <div key={idx} className="flex items-center justify-between">
+                            <span>{box.packaging_name}</span>
+                            <span className="tabular-nums">
+                              {formatCost(box.box_cost)} doos + {formatCost(box.transport_cost)} transport = <strong>{formatCost(box.total_cost)}</strong>
+                            </span>
+                          </div>
+                        ) : null
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {engineAdvice.cost_data_available === false && (
+                  <div className="flex items-center gap-1.5 text-amber-700">
+                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>Advies op basis van specificiteit — kostdata niet beschikbaar</span>
                   </div>
                 )}
               </div>
@@ -1925,6 +1971,11 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
                         <p className="text-xs text-muted-foreground">
                           {adviceBox.products.map((p) => `${p.quantity}x ${p.shipping_unit_name}`).join(', ')}
                         </p>
+                        {adviceBox.total_cost !== undefined && (
+                          <p className="text-xs text-emerald-700 font-medium mt-0.5">
+                            {formatCost(adviceBox.box_cost)} doos + {formatCost(adviceBox.transport_cost)} transport = {formatCost(adviceBox.total_cost)}
+                          </p>
+                        )}
                       </div>
                       <ChevronRight className="w-4 h-4 text-emerald-600" />
                     </button>
