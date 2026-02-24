@@ -10,28 +10,28 @@ See: .planning/PROJECT.md (updated 2026-02-24)
 ## Current Position
 
 Phase: 2 of 3 (Cost-Primary Ranking) -- COMPLETE
-Plan: 1 of 1 in current phase
-Status: Phase 2 Complete
-Last activity: 2026-02-24 -- Completed 02-01-PLAN.md
+Plan: 2 of 2 in current phase
+Status: Phase 2 Complete (all plans)
+Last activity: 2026-02-24 -- Completed 02-02-PLAN.md
 
-Progress: [██████░░░░] 60%
+Progress: [████████░░] 80%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3
+- Total plans completed: 4
 - Average duration: 3 min
-- Total execution time: 0.15 hours
+- Total execution time: 0.17 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1. Cost Data Layer | 2/2 | 6 min | 3 min |
-| 2. Cost-Primary Ranking | 1/1 | 3 min | 3 min |
+| 2. Cost-Primary Ranking | 2/2 | 4 min | 2 min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (2min), 01-02 (4min), 02-01 (3min)
+- Last 5 plans: 01-01 (2min), 01-02 (4min), 02-01 (3min), 02-02 (1min)
 - Trend: Consistent
 
 *Updated after each plan completion*
@@ -56,6 +56,7 @@ Recent decisions affecting current work:
 - [02-01]: enrichWithCosts excludes matches with barcode but no cost entry (no preferred route)
 - [02-01]: Matches without barcode kept with original total_cost (not excluded, not zero-cost)
 - [02-01]: Cost fields on AdviceBox use || undefined to convert 0 from non-enriched to undefined
+- [02-02]: Single-line fix sufficient: only the mixable fallback branch was missing enrichWithCosts
 
 ### Pending Todos
 
@@ -69,5 +70,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-24
-Stopped at: Completed 02-01-PLAN.md (Phase 2 complete)
-Resume file: .planning/phases/02-cost-primary-ranking/02-01-SUMMARY.md
+Stopped at: Completed 02-02-PLAN.md (Phase 2 fully complete, all plans done)
+Resume file: .planning/phases/02-cost-primary-ranking/02-02-SUMMARY.md
