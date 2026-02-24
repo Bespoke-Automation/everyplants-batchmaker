@@ -43,10 +43,10 @@ Plans:
   2. Een `enrichWithCosts()` stap verrijkt elke `PackagingMatch` met `box_cost`, `transport_cost` en `total_cost` velden voordat ranking plaatsvindt
   3. Bij multi-box advies (meerdere dozen per order) worden de kosten per doos correct geaggregeerd naar een totaalprijs voor de complete oplossing
   4. Dozen waarvoor geen preferred route bestaat voor het bestemmingsland worden uitgesloten als kandidaat (niet als zero-cost behandeld)
-**Plans**: TBD
+**Plans**: 1 plan in 1 wave
 
 Plans:
-- [ ] 02-01: TBD
+- [ ] 02-01-PLAN.md — Enrich matches with cost data, cost-primary rankPackagings sort, thread cost map through solveMultiBox, cost fields on AdviceBox
 
 ### Phase 3: API + UI Integration
 **Goal**: Medewerkers zien bij het inpakken per geadviseerde doos de kostenopbouw (doos + transport + totaal) en het bestemmingsland wordt automatisch meegegeven vanuit de order
