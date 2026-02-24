@@ -247,6 +247,17 @@ export interface BatchPicklistItem {
   sessionStatus?: string  // Status of the packing session
 }
 
+// ── Cost types (engine cost provider) ────────────────────────────────────────
+
+export interface CostEntry {
+  boxSku: string           // packaging_costs.sku (e.g., '55_949')
+  boxName: string          // packaging_costs.name (e.g., 'Surprise box')
+  boxCost: number          // packaging_costs.total_purchase_price
+  transportCost: number    // shipping_rates.shipping_cost
+  carrier: string          // shipping_rates.carrier (e.g., 'PostNL', 'DPD')
+  totalCost: number        // boxCost + transportCost
+}
+
 // Ship box request/response
 export interface ShipBoxRequest {
   boxId: string
