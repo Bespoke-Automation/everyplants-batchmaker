@@ -316,6 +316,7 @@ export interface CreateOrderInput {
   idtemplate: number
   reference?: string
   preferred_delivery_date?: string
+  invoicename?: string
   deliveryname?: string
   deliveryaddress?: string
   deliveryzipcode?: string

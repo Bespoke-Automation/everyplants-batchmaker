@@ -2134,3 +2134,91 @@ export async function searchProducts(query: string): Promise<PicqerProductFull[]
 
   return response.json()
 }
+
+/**
+ * Haal alle Picqer producten op met een specifieke tag (gepagineerd).
+ */
+export async function getProductsByTag(tag: string): Promise<PicqerProductFull[]> {
+  const allProducts: PicqerProductFull[] = []
+  let offset = 0
+
+  while (true) {
+    const params = new URLSearchParams({ tag, offset: String(offset) })
+    const response = await rateLimitedFetch(`${PICQER_BASE_URL}/products?${params}`, {
+      headers: {
+        'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+        'User-Agent': 'EveryPlants-Batchmaker/2.0',
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store',
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`Picqer API error fetching products by tag "${tag}" at offset ${offset}: ${response.status} - ${errorText}`)
+    }
+
+    const batch: PicqerProductFull[] = await response.json()
+    if (batch.length === 0) break
+
+    allProducts.push(...batch)
+    offset += batch.length
+
+    if (batch.length < 100) break
+  }
+
+  console.log(`Fetched ${allProducts.length} Picqer products with tag "${tag}"`)
+  return allProducts
+}
+
+/**
+ * Haal recent aangemaakte Picqer producten op (laatste N dagen).
+ * Picqer API heeft geen created_after filter, dus we pagineren en filteren client-side.
+ * Stopt zodra we producten tegenkomen ouder dan de cutoff.
+ */
+export async function getRecentProducts(days: number): Promise<PicqerProductFull[]> {
+  const cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() - days)
+  const cutoffStr = cutoff.toISOString()
+
+  const recentProducts: PicqerProductFull[] = []
+  let offset = 0
+
+  while (true) {
+    const response = await rateLimitedFetch(`${PICQER_BASE_URL}/products?offset=${offset}`, {
+      headers: {
+        'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+        'User-Agent': 'EveryPlants-Batchmaker/2.0',
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store',
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`Picqer API error at offset ${offset}: ${response.status} - ${errorText}`)
+    }
+
+    const batch: PicqerProductFull[] = await response.json()
+    if (batch.length === 0) break
+
+    // Filter op aanmaakdatum
+    let hasOlderProducts = false
+    for (const p of batch) {
+      if (p.created && p.created >= cutoffStr) {
+        recentProducts.push(p)
+      } else {
+        hasOlderProducts = true
+      }
+    }
+
+    offset += batch.length
+
+    // Picqer retourneert producten niet gesorteerd op datum,
+    // dus we moeten alles doorlopen
+    if (batch.length < 100) break
+  }
+
+  console.log(`Fetched ${recentProducts.length} Picqer products created in last ${days} days`)
+  return recentProducts
+}

@@ -133,6 +133,7 @@ export async function mapSalesOrderToPicqer(
       idtemplate: PICQER_TEMPLATE_ID,
       reference: fulfillmentData.reference || undefined,
       preferred_delivery_date: deliveryDate,
+      invoicename: customer.name,
       deliveryname: customer.name,
       deliveryaddress: delivery?.addressLine,
       deliveryzipcode: delivery?.postalCode,
