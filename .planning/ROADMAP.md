@@ -13,7 +13,7 @@ Dit project breidt de bestaande packaging advice engine uit zodat deze de goedko
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Cost Data Layer** - Kostdata ophalen uit facturatie Supabase, country threading door engine, caching en graceful degradation
-- [x] **Phase 2: Cost-Primary Ranking** - Engine ranking wijzigen naar totale kosten als primaire sortering
+- [ ] **Phase 2: Cost-Primary Ranking** - Engine ranking wijzigen naar totale kosten als primaire sortering
 - [ ] **Phase 3: API + UI Integration** - Country parameter in API, kostbreakdown tonen in inpakscherm
 
 ## Phase Details
@@ -43,10 +43,11 @@ Plans:
   2. Een `enrichWithCosts()` stap verrijkt elke `PackagingMatch` met `box_cost`, `transport_cost` en `total_cost` velden voordat ranking plaatsvindt
   3. Bij multi-box advies (meerdere dozen per order) worden de kosten per doos correct geaggregeerd naar een totaalprijs voor de complete oplossing
   4. Dozen waarvoor geen preferred route bestaat voor het bestemmingsland worden uitgesloten als kandidaat (niet als zero-cost behandeld)
-**Plans**: 1 plan in 1 wave
+**Plans**: 2 plans in 1 wave
 
 Plans:
 - [x] 02-01-PLAN.md — Enrich matches with cost data, cost-primary rankPackagings sort, thread cost map through solveMultiBox, cost fields on AdviceBox
+- [ ] 02-02-PLAN.md — Gap closure: add missing enrichWithCosts call on mixable fallback path in solveMultiBox
 
 ### Phase 3: API + UI Integration
 **Goal**: Medewerkers zien bij het inpakken per geadviseerde doos de kostenopbouw (doos + transport + totaal) en het bestemmingsland wordt automatisch meegegeven vanuit de order
@@ -79,5 +80,5 @@ Phases execute in numeric order: 1 --> 2 --> 3
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Cost Data Layer | 2/2 | Complete | 2026-02-24 |
-| 2. Cost-Primary Ranking | 1/1 | Complete | 2026-02-24 |
+| 2. Cost-Primary Ranking | 1/2 | Gap closure | - |
 | 3. API + UI Integration | 0/2 | Not started | - |
