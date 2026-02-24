@@ -12,6 +12,7 @@
 import { supabase } from '@/lib/supabase/client'
 import { getOrderTags, addOrderTag, removeOrderTag, getTags, getProductFull, getProductParts } from '@/lib/picqer/client'
 import { syncProductFromPicqer, classifyProduct, syncCompositionParts } from '@/lib/supabase/productAttributes'
+import { getAllCostsForCountry } from './costProvider'
 
 // ── Input / Output types ──────────────────────────────────────────────────
 
@@ -65,6 +66,7 @@ export interface PackagingAdviceResult {
   calculated_at: string
   weight_exceeded: boolean
   shipping_unit_fingerprint: string | null
+  cost_data_available: boolean
 }
 
 // ── DB row types (internal) ───────────────────────────────────────────────
@@ -882,11 +884,12 @@ async function validateWeightsForBoxes(
 
 // ── Helper: build shipping unit fingerprint ───────────────────────────────
 
-function buildFingerprint(shippingUnits: Map<string, ShippingUnitEntry>): string {
-  return Array.from(shippingUnits.values())
+function buildFingerprint(shippingUnits: Map<string, ShippingUnitEntry>, countryCode: string): string {
+  const units = Array.from(shippingUnits.values())
     .sort((a, b) => a.name.localeCompare(b.name))
     .map(u => `${u.name}:${u.quantity}`)
     .join('|')
+  return `${countryCode}|${units}`
 }
 
 // ── 5. calculateAdvice ────────────────────────────────────────────────────
@@ -895,7 +898,8 @@ export async function calculateAdvice(
   orderId: number,
   picklistId?: number,
   products?: OrderProduct[],
-  shippingProviderProfileId?: number
+  shippingProviderProfileId?: number,
+  countryCode?: string
 ): Promise<PackagingAdviceResult> {
   if (!products || products.length === 0) {
     throw new Error('Products must be provided to calculate packaging advice')
@@ -906,14 +910,15 @@ export async function calculateAdvice(
   // Step 1: Classify
   const { shippingUnits, unclassified } = await classifyOrderProducts(products)
 
-  // Step 1b: Build fingerprint
-  const fingerprint = shippingUnits.size > 0 ? buildFingerprint(shippingUnits) : null
+  // Step 1b: Build fingerprint (includes country to prevent cross-country cache collisions)
+  const effectiveCountry = countryCode ?? 'UNKNOWN'
+  const fingerprint = shippingUnits.size > 0 ? buildFingerprint(shippingUnits, effectiveCountry) : null
 
   // Step 1c: Deduplication — check for existing advice for this order
   const { data: existing } = await supabase
     .schema('batchmaker')
     .from('packaging_advice')
-    .select('id, shipping_unit_fingerprint, confidence, advice_boxes, shipping_units_detected, unclassified_products, tags_written, calculated_at, status, weight_exceeded')
+    .select('id, shipping_unit_fingerprint, confidence, advice_boxes, shipping_units_detected, unclassified_products, tags_written, calculated_at, status, weight_exceeded, cost_data_available')
     .eq('order_id', orderId)
     .not('status', 'eq', 'invalidated')
     .order('calculated_at', { ascending: false })
@@ -941,6 +946,7 @@ export async function calculateAdvice(
         calculated_at: existing.calculated_at,
         weight_exceeded: existing.weight_exceeded ?? false,
         shipping_unit_fingerprint: fingerprint,
+        cost_data_available: existing.cost_data_available ?? false,
       }
     }
 
@@ -955,6 +961,18 @@ export async function calculateAdvice(
 
   // Step 2: Match compartments
   const matches = await matchCompartments(shippingUnits)
+
+  // Step 2b: Cost data availability check
+  let costDataAvailable = false
+  if (countryCode) {
+    const costs = await getAllCostsForCountry(countryCode)
+    costDataAvailable = costs !== null
+    if (!costDataAvailable) {
+      console.warn(`[packagingEngine] Cost data unavailable for ${countryCode}, using specificity ranking`)
+    }
+  } else {
+    console.warn(`[packagingEngine] No countryCode provided, cost data not available`)
+  }
 
   // Step 3: Rank
   const ranked = rankPackagings(matches)
@@ -1062,13 +1080,15 @@ export async function calculateAdvice(
     shipping_unit_fingerprint: fingerprint,
     shipping_provider_profile_id: shippingProviderProfileId ?? null,
     weight_exceeded: weightExceeded,
+    country_code: countryCode ?? null,
+    cost_data_available: costDataAvailable,
   }
 
   const { data: inserted, error: insertError } = await supabase
     .schema('batchmaker')
     .from('packaging_advice')
     .insert(adviceRow)
-    .select('id, order_id, picklist_id, status, confidence, advice_boxes, shipping_units_detected, unclassified_products, tags_written, calculated_at, weight_exceeded, shipping_unit_fingerprint')
+    .select('id, order_id, picklist_id, status, confidence, advice_boxes, shipping_units_detected, unclassified_products, tags_written, calculated_at, weight_exceeded, shipping_unit_fingerprint, cost_data_available')
     .single()
 
   if (insertError) {
@@ -1091,6 +1111,7 @@ export async function calculateAdvice(
     calculated_at: inserted.calculated_at,
     weight_exceeded: inserted.weight_exceeded ?? false,
     shipping_unit_fingerprint: inserted.shipping_unit_fingerprint ?? null,
+    cost_data_available: inserted.cost_data_available ?? false,
   }
 }
 
