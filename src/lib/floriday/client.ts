@@ -16,8 +16,7 @@
 import { getFloridayToken, invalidateFloridayToken } from './auth'
 import type { FloridaySyncResponse, FloridayTradeItem, FloridaySalesOrder, FloridaySupplyLine, FloridayOrganization, FloridayFulfillmentOrder, FloridayWarehouse } from './types'
 
-const FLORIDAY_API_BASE_URL = process.env.FLORIDAY_API_BASE_URL!
-const FLORIDAY_API_KEY = process.env.FLORIDAY_API_KEY!
+import { getFloridayConfig } from './config'
 
 // Rate limiting
 const MAX_RETRIES = 5
@@ -63,11 +62,12 @@ async function floridayFetch(
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       const token = await getFloridayToken()
 
-      const response = await fetch(`${FLORIDAY_API_BASE_URL}${path}`, {
+      const config = getFloridayConfig()
+      const response = await fetch(`${config.apiBaseUrl}${path}`, {
         ...options,
         headers: {
           'Authorization': `Bearer ${token}`,
-          'X-Api-Key': FLORIDAY_API_KEY,
+          'X-Api-Key': config.apiKey,
           'Content-Type': 'application/json',
           ...options.headers,
         },
@@ -325,17 +325,18 @@ export async function uploadMedia(
   filename: string
 ): Promise<{ mediaId: string }> {
   const token = await getFloridayToken()
+  const config = getFloridayConfig()
 
   const formData = new FormData()
   const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer
   const blob = new Blob([arrayBuffer], { type: filename.endsWith('.png') ? 'image/png' : 'image/jpeg' })
   formData.append('file', blob, filename)
 
-  const response = await fetch(`${FLORIDAY_API_BASE_URL}/media`, {
+  const response = await fetch(`${config.apiBaseUrl}/media`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
-      'X-Api-Key': FLORIDAY_API_KEY,
+      'X-Api-Key': config.apiKey,
       // Geen Content-Type — FormData zet dit automatisch met boundary
     },
     body: formData,

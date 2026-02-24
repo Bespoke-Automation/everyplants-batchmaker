@@ -9,6 +9,7 @@
 // 4. Resultaten logt in floriday.order_mapping en floriday.sync_log
 
 import { supabase } from '@/lib/supabase/client'
+import { getFloridayEnv } from '@/lib/floriday/config'
 import {
   syncAll,
   syncFulfillmentOrders,
@@ -37,13 +38,15 @@ export interface SyncResult {
  * Refresh the warehouse GLN→address cache from Floriday.
  */
 export async function refreshWarehouseCache(): Promise<number> {
-  console.log('Refreshing warehouse cache...')
+  const env = getFloridayEnv()
+  console.log(`Refreshing warehouse cache [${env}]...`)
   const warehouses = await getWarehouses()
 
   const rows = warehouses
     .filter(w => w.location?.gln)
     .map(w => ({
       gln: w.location.gln,
+      environment: env,
       warehouse_id: w.warehouseId,
       name: w.name,
       address_line: w.location.address?.addressLine || null,
@@ -58,14 +61,14 @@ export async function refreshWarehouseCache(): Promise<number> {
     const { error } = await supabase
       .schema('floriday')
       .from('warehouse_cache')
-      .upsert(rows, { onConflict: 'gln' })
+      .upsert(rows, { onConflict: 'gln,environment' })
 
     if (error) {
       console.error('Error upserting warehouse cache:', error)
     }
   }
 
-  console.log(`Warehouse cache bijgewerkt: ${rows.length} locaties`)
+  console.log(`Warehouse cache bijgewerkt [${env}]: ${rows.length} locaties`)
   return rows.length
 }
 
@@ -93,6 +96,7 @@ async function getFloridayTagId(): Promise<number | null> {
  * Sync all new sales orders from Floriday and create them in Picqer.
  */
 export async function syncOrders(): Promise<SyncResult> {
+  const env = getFloridayEnv()
   const startTime = Date.now()
   const errors: SyncResult['errors'] = []
   let ordersProcessed = 0
@@ -110,6 +114,7 @@ export async function syncOrders(): Promise<SyncResult> {
       .from('sync_state')
       .select('last_processed_sequence')
       .eq('resource_name', 'sales-orders')
+      .eq('environment', env)
       .single()
 
     const fromSequence = syncState?.last_processed_sequence || 0
@@ -120,6 +125,7 @@ export async function syncOrders(): Promise<SyncResult> {
       .from('sync_state')
       .select('last_processed_sequence')
       .eq('resource_name', 'fulfillment-orders')
+      .eq('environment', env)
       .single()
 
     const foFromSequence = foSyncState?.last_processed_sequence || 0
@@ -133,8 +139,15 @@ export async function syncOrders(): Promise<SyncResult> {
         await supabase
           .schema('floriday')
           .from('sync_state')
-          .update({ last_processed_sequence: maxSeq, updated_at: new Date().toISOString() })
-          .eq('resource_name', 'fulfillment-orders')
+          .upsert(
+            {
+              resource_name: 'fulfillment-orders',
+              environment: env,
+              last_processed_sequence: maxSeq,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: 'resource_name,environment' }
+          )
       }
     )
 
@@ -163,12 +176,16 @@ export async function syncOrders(): Promise<SyncResult> {
         await supabase
           .schema('floriday')
           .from('sync_state')
-          .update({
-            last_processed_sequence: maxSeq,
-            last_sync_completed_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq('resource_name', 'sales-orders')
+          .upsert(
+            {
+              resource_name: 'sales-orders',
+              environment: env,
+              last_processed_sequence: maxSeq,
+              last_sync_completed_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: 'resource_name,environment' }
+          )
       }
     )
 
@@ -218,6 +235,7 @@ export async function processSalesOrder(
   salesOrder: FloridaySalesOrder,
   fulfillmentLookup: Map<string, FloridayFulfillmentOrder>
 ): Promise<'created' | 'skipped' | 'failed'> {
+  const env = getFloridayEnv()
   const salesOrderId = salesOrder.salesOrderId
 
   try {
@@ -227,6 +245,7 @@ export async function processSalesOrder(
       .from('order_mapping')
       .select('processing_status')
       .eq('floriday_sales_order_id', salesOrderId)
+      .eq('environment', env)
       .single()
 
     if (existing && existing.processing_status === 'created') {
@@ -321,12 +340,14 @@ async function upsertOrderMapping(
   status: string,
   errorMessage?: string
 ): Promise<void> {
+  const env = getFloridayEnv()
   const { error } = await supabase
     .schema('floriday')
     .from('order_mapping')
     .upsert(
       {
         floriday_sales_order_id: salesOrder.salesOrderId,
+        environment: env,
         floriday_sales_channel: salesOrder.salesChannel,
         floriday_status: salesOrder.status,
         floriday_sequence_number: salesOrder.sequenceNumber,
@@ -347,7 +368,7 @@ async function upsertOrderMapping(
         error_message: errorMessage || null,
         updated_at: new Date().toISOString(),
       },
-      { onConflict: 'floriday_sales_order_id' }
+      { onConflict: 'floriday_sales_order_id,environment' }
     )
 
   if (error) {
@@ -362,11 +383,13 @@ async function logSync(
   details: Record<string, unknown>,
   durationMs?: number
 ): Promise<void> {
+  const env = getFloridayEnv()
   await supabase
     .schema('floriday')
     .from('sync_log')
     .insert({
       service: 'floriday',
+      environment: env,
       action,
       source_system: 'floriday',
       target_system: 'picqer',

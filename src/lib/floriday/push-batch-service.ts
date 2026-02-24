@@ -14,6 +14,7 @@
 //   6. Sla batchId op in product_mapping
 
 import { supabase } from '@/lib/supabase/client'
+import { getFloridayEnv } from './config'
 import {
   getTradeItem,
   getWarehouses,
@@ -92,6 +93,7 @@ async function autoMapProduct(picqerProductId: number): Promise<string | null> {
   }
 
   // Sla de mapping op in product_mapping
+  const env = getFloridayEnv()
   await supabase
     .schema('floriday')
     .from('product_mapping')
@@ -100,13 +102,14 @@ async function autoMapProduct(picqerProductId: number): Promise<string | null> {
         picqer_product_id: picqerProductId,
         picqer_product_code: product.productcode,
         floriday_trade_item_id: tradeItem.trade_item_id,
+        environment: env,
         floriday_supplier_article_code: matchedCode,
         floriday_trade_item_name: tradeItem.name,
         match_method: 'auto_match',
         is_active: true,
         updated_at: new Date().toISOString(),
       },
-      { onConflict: 'floriday_trade_item_id' }
+      { onConflict: 'floriday_trade_item_id,environment' }
     )
 
   console.log(
@@ -125,11 +128,13 @@ export async function pushProductBatch(
   poDetails: PoDetail[]
 ): Promise<PushBatchResult> {
   // 1. Zoek tradeItemId op in product_mapping
+  const env = getFloridayEnv()
   const { data: mapping, error: mappingError } = await supabase
     .schema('floriday')
     .from('product_mapping')
     .select('floriday_trade_item_id, floriday_batch_id')
     .eq('picqer_product_id', picqerProductId)
+    .eq('environment', env)
     .eq('is_active', true)
     .single()
 
@@ -249,6 +254,7 @@ export async function pushProductBatch(
       last_stock_sync_at: new Date().toISOString(),
     })
     .eq('picqer_product_id', picqerProductId)
+    .eq('environment', env)
 
   return {
     success: true,

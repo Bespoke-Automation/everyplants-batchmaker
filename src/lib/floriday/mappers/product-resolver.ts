@@ -10,6 +10,7 @@
 // Resultaten worden gecached in floriday.product_mapping.
 
 import { supabase } from '@/lib/supabase/client'
+import { getFloridayEnv } from '@/lib/floriday/config'
 import { searchProducts } from '@/lib/picqer/client'
 
 const PICQER_FIELD_ALTERNATIEVE_SKU = 4875
@@ -61,11 +62,13 @@ export async function resolveProduct(
 }
 
 async function getCachedMapping(articleCode: string): Promise<ResolvedProduct | null> {
+  const env = getFloridayEnv()
   const { data } = await supabase
     .schema('floriday')
     .from('product_mapping')
     .select('picqer_product_id, picqer_product_code, floriday_trade_item_name')
     .eq('floriday_supplier_article_code', articleCode)
+    .eq('environment', env)
     .eq('is_active', true)
     .single()
 
@@ -84,6 +87,7 @@ async function cacheMapping(
   tradeItemId?: string,
   productName?: string
 ): Promise<void> {
+  const env = getFloridayEnv()
   const { error } = await supabase
     .schema('floriday')
     .from('product_mapping')
@@ -91,6 +95,7 @@ async function cacheMapping(
       {
         floriday_supplier_article_code: articleCode,
         floriday_trade_item_id: tradeItemId || null,
+        environment: env,
         floriday_trade_item_name: productName || product.name,
         picqer_product_id: product.idproduct,
         picqer_product_code: product.productcode,
@@ -98,7 +103,7 @@ async function cacheMapping(
         is_active: true,
         updated_at: new Date().toISOString(),
       },
-      { onConflict: 'floriday_trade_item_id' }
+      { onConflict: 'floriday_trade_item_id,environment' }
     )
 
   if (error) {

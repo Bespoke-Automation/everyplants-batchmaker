@@ -41,6 +41,7 @@ export default function FloridayDashboard() {
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState<string | null>(null)
   const [syncResult, setSyncResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [floridayEnv, setFloridayEnv] = useState<'staging' | 'live' | null>(null)
 
   const fetchData = useCallback(async () => {
     try {
@@ -57,6 +58,10 @@ export default function FloridayDashboard() {
 
   useEffect(() => {
     fetchData()
+    fetch('/api/floriday/env')
+      .then(r => r.json())
+      .then(d => setFloridayEnv(d.env))
+      .catch(() => {})
   }, [fetchData])
 
   const triggerSync = async (action: string) => {
@@ -91,7 +96,20 @@ export default function FloridayDashboard() {
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold">Floriday Dashboard</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-xl font-bold">Floriday Dashboard</h2>
+          {floridayEnv && (
+            <span
+              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                floridayEnv === 'live'
+                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                  : 'bg-amber-100 text-amber-800 border border-amber-300'
+              }`}
+            >
+              {floridayEnv === 'live' ? '●' : '⚠'} {floridayEnv === 'live' ? 'Live' : 'Staging'}
+            </span>
+          )}
+        </div>
         <button
           onClick={() => fetchData()}
           className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"

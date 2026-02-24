@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase/client'
+import { getFloridayEnv } from '@/lib/floriday/config'
 
 /**
  * GET /api/floriday/orders
@@ -16,12 +17,15 @@ export async function GET(request: NextRequest) {
   const limit = Math.min(parseInt(searchParams.get('limit') || '50', 10), 200)
   const offset = parseInt(searchParams.get('offset') || '0', 10)
 
+  const env = getFloridayEnv()
+
   try {
     // 1. Order mappings
     let ordersQuery = supabase
       .schema('floriday')
       .from('order_mapping')
       .select('*')
+      .eq('environment', env)
       .order('updated_at', { ascending: false })
       .range(offset, offset + limit - 1)
 
@@ -38,6 +42,7 @@ export async function GET(request: NextRequest) {
       .schema('floriday')
       .from('order_mapping')
       .select('processing_status')
+      .eq('environment', env)
 
     const counts = { created: 0, failed: 0, skipped: 0, total: 0 }
     for (const row of statusCounts || []) {
@@ -51,6 +56,7 @@ export async function GET(request: NextRequest) {
       .schema('floriday')
       .from('sync_state')
       .select('*')
+      .eq('environment', env)
       .order('resource_name')
 
     // 4. Recente sync logs
@@ -58,6 +64,7 @@ export async function GET(request: NextRequest) {
       .schema('floriday')
       .from('sync_log')
       .select('*')
+      .eq('environment', env)
       .order('created_at', { ascending: false })
       .limit(20)
 
@@ -66,6 +73,7 @@ export async function GET(request: NextRequest) {
       counts,
       syncStates: syncStates || [],
       recentLogs: recentLogs || [],
+      env,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'

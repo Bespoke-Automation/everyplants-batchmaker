@@ -14,6 +14,7 @@
 // - Referenties uit fulfillment order (deliveryNoteCode + Letter)
 
 import { supabase } from '@/lib/supabase/client'
+import { getFloridayEnv } from '@/lib/floriday/config'
 import type { CreateOrderInput } from '@/lib/picqer/types'
 import { ORDERFIELD_IDS } from '@/lib/picqer/types'
 import type { FloridaySalesOrder, FloridayFulfillmentOrder } from '@/lib/floriday/types'
@@ -225,11 +226,13 @@ async function resolveWarehouseAddress(gln: string): Promise<{
   city: string
   countryCode: string
 } | null> {
+  const env = getFloridayEnv()
   const { data } = await supabase
     .schema('floriday')
     .from('warehouse_cache')
     .select('name, address_line, postal_code, city, country_code')
     .eq('gln', gln)
+    .eq('environment', env)
     .single()
 
   if (!data) {

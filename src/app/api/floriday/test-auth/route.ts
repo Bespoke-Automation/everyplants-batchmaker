@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server'
 import { getFloridayToken } from '@/lib/floriday/auth'
+import { getFloridayEnv } from '@/lib/floriday/config'
 import { getMaxSequence, syncTradeItems } from '@/lib/floriday/client'
 
 export async function GET() {
+  const env = getFloridayEnv()
+
   try {
-    const results: Record<string, unknown> = {}
+    const results: Record<string, unknown> = { env }
 
     // 1. Token ophalen
     const token = await getFloridayToken()
@@ -31,7 +34,7 @@ export async function GET() {
     return NextResponse.json({ success: true, results })
   } catch (error) {
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : String(error) },
+      { success: false, env, error: error instanceof Error ? error.message : String(error) },
       { status: 500 }
     )
   }

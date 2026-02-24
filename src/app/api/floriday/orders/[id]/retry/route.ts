@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase/client'
+import { getFloridayEnv } from '@/lib/floriday/config'
 import { getSalesOrder, syncAll } from '@/lib/floriday/client'
 import { processSalesOrder, refreshWarehouseCache } from '@/lib/floriday/sync/order-sync'
 import type { FloridayFulfillmentOrder } from '@/lib/floriday/types'
@@ -21,11 +22,13 @@ export async function POST(
 
   try {
     // 1. Verwijder bestaande mapping zodat processSalesOrder niet skip
+    const env = getFloridayEnv()
     await supabase
       .schema('floriday')
       .from('order_mapping')
       .delete()
       .eq('floriday_sales_order_id', salesOrderId)
+      .eq('environment', env)
 
     // 2. Haal actuele sales order op uit Floriday
     const salesOrder = await getSalesOrder(salesOrderId)
@@ -64,6 +67,7 @@ export async function POST(
       .from('order_mapping')
       .select('picqer_order_number, processing_status, error_message, reference')
       .eq('floriday_sales_order_id', salesOrderId)
+      .eq('environment', env)
       .single()
 
     return NextResponse.json({

@@ -6,9 +6,7 @@
 // 5 minuten voor verloop. Bij server restart wordt automatisch
 // een nieuw token opgehaald.
 
-const FLORIDAY_AUTH_URL = process.env.FLORIDAY_AUTH_URL!
-const FLORIDAY_CLIENT_ID = process.env.FLORIDAY_CLIENT_ID!
-const FLORIDAY_CLIENT_SECRET = process.env.FLORIDAY_CLIENT_SECRET!
+import { getFloridayConfig, type FloridayEnv } from './config'
 
 const SCOPES = [
   'role:app',
@@ -32,28 +30,35 @@ interface TokenCache {
   expiresAt: number  // Unix timestamp in ms
 }
 
-let tokenCache: TokenCache | null = null
+// Per-environment token cache
+const tokenCaches: Record<FloridayEnv, TokenCache | null> = {
+  staging: null,
+  live: null,
+}
 
 /**
- * Haal een geldig access token op. Cached in-memory.
+ * Haal een geldig access token op. Cached in-memory per environment.
  * Gooit een error als authenticatie mislukt.
  */
 export async function getFloridayToken(): Promise<string> {
+  const config = getFloridayConfig()
+  const cached = tokenCaches[config.env]
+
   // Return cached token als het nog geldig is
-  if (tokenCache && Date.now() < tokenCache.expiresAt) {
-    return tokenCache.accessToken
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.accessToken
   }
 
-  console.log('Floriday: Nieuw access token ophalen...')
+  console.log(`Floriday [${config.env}]: Nieuw access token ophalen...`)
 
   const params = new URLSearchParams({
     grant_type: 'client_credentials',
-    client_id: FLORIDAY_CLIENT_ID,
-    client_secret: FLORIDAY_CLIENT_SECRET,
+    client_id: config.clientId,
+    client_secret: config.clientSecret,
     scope: SCOPES,
   })
 
-  const response = await fetch(FLORIDAY_AUTH_URL, {
+  const response = await fetch(config.authUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: params.toString(),
@@ -61,8 +66,8 @@ export async function getFloridayToken(): Promise<string> {
 
   if (!response.ok) {
     const errorText = await response.text()
-    console.error('Floriday auth error:', response.status, errorText)
-    throw new Error(`Floriday authenticatie mislukt: ${response.status} - ${errorText}`)
+    console.error(`Floriday [${config.env}] auth error:`, response.status, errorText)
+    throw new Error(`Floriday authenticatie mislukt (${config.env}): ${response.status} - ${errorText}`)
   }
 
   const data = await response.json() as {
@@ -72,19 +77,20 @@ export async function getFloridayToken(): Promise<string> {
     scope: string
   }
 
-  tokenCache = {
+  tokenCaches[config.env] = {
     accessToken: data.access_token,
     expiresAt: Date.now() + (data.expires_in * 1000) - TOKEN_SAFETY_MARGIN_MS,
   }
 
-  console.log(`Floriday: Token verkregen, geldig voor ${data.expires_in}s, scopes: ${data.scope}`)
+  console.log(`Floriday [${config.env}]: Token verkregen, geldig voor ${data.expires_in}s, scopes: ${data.scope}`)
 
-  return tokenCache.accessToken
+  return tokenCaches[config.env]!.accessToken
 }
 
 /**
  * Forceer een nieuw token (bijv. na een 401 response)
  */
 export function invalidateFloridayToken(): void {
-  tokenCache = null
+  const config = getFloridayConfig()
+  tokenCaches[config.env] = null
 }

@@ -10,6 +10,7 @@
 // Hergebruikt bestaande klanten (ook die Duxly heeft aangemaakt).
 
 import { supabase } from '@/lib/supabase/client'
+import { getFloridayEnv } from '@/lib/floriday/config'
 import { getOrganization } from '@/lib/floriday/client'
 import { searchCustomers, createCustomer } from '@/lib/picqer/client'
 
@@ -65,11 +66,13 @@ async function getCachedMapping(orgId: string): Promise<{
   picqer_customer_id: number
   org_name: string
 } | null> {
+  const env = getFloridayEnv()
   const { data } = await supabase
     .schema('floriday')
     .from('customer_mapping')
     .select('picqer_customer_id, floriday_organization_name')
     .eq('floriday_organization_id', orgId)
+    .eq('environment', env)
     .single()
 
   if (!data) return null
@@ -86,19 +89,21 @@ async function cacheMapping(
   orgName: string,
   gln?: string
 ): Promise<void> {
+  const env = getFloridayEnv()
   const { error } = await supabase
     .schema('floriday')
     .from('customer_mapping')
     .upsert(
       {
         floriday_organization_id: orgId,
+        environment: env,
         floriday_organization_name: orgName,
         floriday_gln: gln || null,
         picqer_customer_id: picqerCustomerId,
         picqer_customer_name: orgName,
         updated_at: new Date().toISOString(),
       },
-      { onConflict: 'floriday_organization_id' }
+      { onConflict: 'floriday_organization_id,environment' }
     )
 
   if (error) {
