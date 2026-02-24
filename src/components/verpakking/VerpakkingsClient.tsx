@@ -282,11 +282,12 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
     }
   }, [picklistIdForComments, fetchComments])
 
-  // Call packaging engine when picklist products are available
+  // Call packaging engine when picklist products and order data are available
   useEffect(() => {
     if (engineCalledRef.current) return
     if (!picklist?.products || picklist.products.length === 0) return
     if (!picklist.idorder) return
+    if (!order?.deliverycountry) return  // Wait for order data to load
 
     engineCalledRef.current = true
     setEngineLoading(true)
@@ -305,6 +306,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
         picklistId: picklist.idpicklist,
         products,
         shippingProviderProfileId: picklist.idshippingprovider_profile ?? undefined,
+        countryCode: order.deliverycountry,
       }),
     })
       .then((res) => {
@@ -324,7 +326,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
       .finally(() => {
         setEngineLoading(false)
       })
-  }, [picklist])
+  }, [picklist, order])
 
   // Fetch packagings once
   useEffect(() => {

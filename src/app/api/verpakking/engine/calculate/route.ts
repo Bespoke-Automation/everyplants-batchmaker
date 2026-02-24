@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic'
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { orderId, picklistId, products, shippingProviderProfileId } = body
+    const { orderId, picklistId, products, shippingProviderProfileId, countryCode } = body
 
     // Validate required fields
     if (!orderId || typeof orderId !== 'number') {
@@ -55,9 +55,20 @@ export async function POST(request: Request) {
       }
     }
 
-    console.log(`[engine/calculate] Calculating advice for order ${orderId} with ${products.length} products`)
+    // Validate countryCode if provided (optional for backward compatibility)
+    const VALID_COUNTRY_CODES = ['NL', 'BE', 'DE', 'FR', 'AT', 'LU', 'SE', 'IT', 'ES']
+    if (countryCode !== undefined && countryCode !== null) {
+      if (typeof countryCode !== 'string' || !VALID_COUNTRY_CODES.includes(countryCode.toUpperCase())) {
+        return NextResponse.json(
+          { error: `countryCode must be one of: ${VALID_COUNTRY_CODES.join(', ')}` },
+          { status: 400 }
+        )
+      }
+    }
 
-    const advice = await calculateAdvice(orderId, picklistId, products, shippingProviderProfileId)
+    console.log(`[engine/calculate] Calculating advice for order ${orderId} with ${products.length} products${countryCode ? ` (country: ${countryCode})` : ''}`)
+
+    const advice = await calculateAdvice(orderId, picklistId, products, shippingProviderProfileId, countryCode?.toUpperCase())
 
     return NextResponse.json({ success: true, advice })
   } catch (error) {
