@@ -86,12 +86,12 @@ Plans:
   2. Elke actieve verpakking in batchmaker heeft een `facturatie_box_sku` kolom; bij startup worden ontbrekende mappings als warning gelogd
   3. Het systeem berekent het totaalgewicht per gevulde doos en selecteert de juiste weight bracket (PostNL: 4 brackets; DPD/pallet: NULL)
   4. Een inkomende webhook POST van de facturatie-app invalideert de cost cache onmiddellijk, en bij onbereikbare facturatie DB valt het systeem terug op specificiteit-ranking zonder crash
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 04-01: TBD
-- [ ] 04-02: TBD
-- [ ] 04-03: TBD
+- [ ] 04-01-PLAN.md — SKU mapping: DB migration, seed data, admin UI voor facturatie_box_sku
+- [ ] 04-02-PLAN.md — costProvider rewrite naar published_box_costs + webhook endpoint + SKU validatie
+- [ ] 04-03-PLAN.md — Weight bracket berekening en selectie in engine
 
 ### Phase 5: Engine Optimization
 **Goal**: De engine bepaalt de kostenoptimale verpakkingsoplossing door verbeterde ranking met pick/pack kosten en weight brackets, een niet-greedy multi-box solver, en een directe product-verpakking mapping voor single-SKU orders
@@ -141,6 +141,6 @@ Phases execute in numeric order: 1 --> 2 --> 3 --> 4 --> 5 --> 6
 | 1. Cost Data Layer | v1.0 | 2/2 | Complete | 2026-02-24 |
 | 2. Cost-Primary Ranking | v1.0 | 2/2 | Complete | 2026-02-24 |
 | 3. API + UI Integration | v1.0 | 1/1 | Complete | 2026-02-24 |
-| 4. Cost Data Layer v2 | v2.0 | 0/3 | Not started | - |
+| 4. Cost Data Layer v2 | v2.0 | 0/3 | In progress | - |
 | 5. Engine Optimization | v2.0 | 0/3 | Not started | - |
 | 6. Integration & Display | v2.0 | 0/1 | Not started | - |
