@@ -12,6 +12,7 @@ import {
   getSingleOrderBatch,
   uploadPdfToStorage,
 } from '@/lib/supabase/shipmentLabels'
+import { supabase } from '@/lib/supabase/client'
 import {
   addPlantNameToLabel,
   combinePdfs,
@@ -208,29 +209,53 @@ export async function POST(
       }
     }
 
-    // Step 5: Combine all successful PDFs
+    // Step 5: Combine all successful PDFs from storage (includes previous runs)
     let combinedPdfUrl: string | null = null
-    const successfulPdfs = processedLabels
-      .filter(l => l.success && l.pdfBuffer)
-      .map(l => l.pdfBuffer!)
+    try {
+      const allLabels = await getShipmentLabelsByBatch(batchId)
+      const completedLabels = allLabels.filter(l => l.status === 'completed' && l.edited_label_path)
 
-    if (successfulPdfs.length > 0) {
-      console.log(`[${batchId}] Combining ${successfulPdfs.length} PDFs...`)
-      try {
-        const combinedPdf = await combinePdfs(successfulPdfs)
-        combinedPdfUrl = await uploadPdfToStorage(batchId, 'combined_labels.pdf', combinedPdf)
-        console.log(`[${batchId}] Combined PDF uploaded: ${combinedPdfUrl}`)
-      } catch (error) {
-        console.error(`[${batchId}] Error combining PDFs:`, error)
+      if (completedLabels.length > 0) {
+        console.log(`[${batchId}] Combining ${completedLabels.length} PDFs from storage...`)
+        const pdfBuffers: Buffer[] = []
+
+        for (const label of completedLabels) {
+          if (!label.edited_label_path) continue
+          try {
+            const url = new URL(label.edited_label_path)
+            const pathParts = url.pathname.split('/storage/v1/object/public/shipment-labels/')
+            const filePath = pathParts[1]
+            if (!filePath) continue
+
+            const { data, error: dlError } = await supabase.storage.from('shipment-labels').download(filePath)
+            if (dlError || !data) continue
+
+            pdfBuffers.push(Buffer.from(await data.arrayBuffer()))
+          } catch {
+            // Skip individual PDF errors
+          }
+        }
+
+        if (pdfBuffers.length > 0) {
+          const combinedPdf = await combinePdfs(pdfBuffers)
+          combinedPdfUrl = await uploadPdfToStorage(batchId, 'combined_labels.pdf', combinedPdf)
+          console.log(`[${batchId}] Combined PDF uploaded: ${combinedPdfUrl}`)
+        }
       }
+    } catch (error) {
+      console.error(`[${batchId}] Error combining PDFs:`, error)
     }
 
-    // Step 6: Update batch status
-    const finalStatus = failCount === 0 ? 'completed' : successCount === 0 ? 'failed' : 'partial'
+    // Step 6: Update batch status - count from actual label statuses to handle retries correctly
+    const allLabelsForCount = await getShipmentLabelsByBatch(batchId)
+    const actualSuccess = allLabelsForCount.filter(l => l.status === 'completed').length
+    const actualFail = allLabelsForCount.filter(l => l.status === 'error').length
+    const finalStatus = actualFail === 0 ? 'completed' : actualSuccess === 0 ? 'failed' : 'partial'
+
     await updateSingleOrderBatch(batchId, {
       status: finalStatus,
-      successful_shipments: successCount,
-      failed_shipments: failCount,
+      successful_shipments: actualSuccess,
+      failed_shipments: actualFail,
       combined_pdf_path: combinedPdfUrl,
     })
 

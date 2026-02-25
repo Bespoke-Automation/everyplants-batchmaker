@@ -92,16 +92,21 @@ export const processSingleOrderBatch = inngest.createFunction(
       return await combineAllPdfs(batchId)
     })
 
-    // Update final batch status
-    const finalStatus = failCount === 0 ? "completed" : successCount === 0 ? "failed" : "partial"
+    // Update final batch status - count from actual label statuses to handle retries correctly
+    const finalStatus = await step.run("finalize-batch", async () => {
+      const allLabels = await getShipmentLabelsByBatch(batchId)
+      const actualSuccess = allLabels.filter(l => l.status === "completed").length
+      const actualFail = allLabels.filter(l => l.status === "error").length
+      const status = actualFail === 0 ? "completed" : actualSuccess === 0 ? "failed" : "partial"
 
-    await step.run("finalize-batch", async () => {
       await updateSingleOrderBatch(batchId, {
-        status: finalStatus,
-        successful_shipments: successCount,
-        failed_shipments: failCount,
+        status,
+        successful_shipments: actualSuccess,
+        failed_shipments: actualFail,
         combined_pdf_path: combinedPdfUrl,
       })
+
+      return status
     })
 
     // Trigger webhook if configured

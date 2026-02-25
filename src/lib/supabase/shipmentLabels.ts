@@ -242,9 +242,16 @@ export async function getRecentBatches(limit: number = 10): Promise<SingleOrderB
   return data || []
 }
 
+export interface FailedLabel {
+  order_reference: string | null
+  error_message: string | null
+}
+
 export interface EnrichedBatch extends SingleOrderBatch {
   plants: string[]
   retailers: string[]
+  failed_labels: FailedLabel[]
+  has_stuck_labels: boolean
 }
 
 export interface BatchHistoryResult {
@@ -309,7 +316,7 @@ export async function getBatchHistory(
   const { data: labels, error: labelsError } = await supabase
     .schema('batchmaker')
     .from('shipment_labels')
-    .select('batch_id, plant_name, retailer')
+    .select('batch_id, plant_name, retailer, status, error_message, order_reference, created_at')
     .in('batch_id', batchIds)
 
   if (labelsError) {
@@ -318,15 +325,42 @@ export async function getBatchHistory(
   }
 
   // Group labels by batch_id
-  const labelsByBatch = new Map<string, { plants: Set<string>; retailers: Set<string> }>()
+  const TEN_MINUTES_MS = 10 * 60 * 1000
+  const now = Date.now()
+  const labelsByBatch = new Map<string, {
+    plants: Set<string>
+    retailers: Set<string>
+    failed_labels: FailedLabel[]
+    has_stuck_labels: boolean
+  }>()
 
   for (const label of labels || []) {
     if (!labelsByBatch.has(label.batch_id)) {
-      labelsByBatch.set(label.batch_id, { plants: new Set(), retailers: new Set() })
+      labelsByBatch.set(label.batch_id, {
+        plants: new Set(),
+        retailers: new Set(),
+        failed_labels: [],
+        has_stuck_labels: false,
+      })
     }
     const entry = labelsByBatch.get(label.batch_id)!
     if (label.plant_name) entry.plants.add(label.plant_name)
     if (label.retailer) entry.retailers.add(label.retailer)
+
+    if (label.status === 'error') {
+      entry.failed_labels.push({
+        order_reference: label.order_reference,
+        error_message: label.error_message,
+      })
+    }
+
+    if (
+      (label.status === 'queued' || label.status === 'pending') &&
+      label.created_at &&
+      now - new Date(label.created_at).getTime() > TEN_MINUTES_MS
+    ) {
+      entry.has_stuck_labels = true
+    }
   }
 
   // Enrich batches
@@ -336,6 +370,8 @@ export async function getBatchHistory(
       ...batch,
       plants: labelData ? Array.from(labelData.plants).sort() : [],
       retailers: labelData ? Array.from(labelData.retailers).sort() : [],
+      failed_labels: labelData?.failed_labels ?? [],
+      has_stuck_labels: labelData?.has_stuck_labels ?? false,
     }
   })
 
