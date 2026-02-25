@@ -215,8 +215,8 @@ export async function processFulfillmentOrder(
       .eq('environment', env)
       .single()
 
-    if (existing && existing.processing_status === 'created') {
-      console.log(`FO ${foId} already created, skipping`)
+    if (existing && (existing.processing_status === 'created' || existing.processing_status === 'concept_unresolved')) {
+      console.log(`FO ${foId} already processed (${existing.processing_status}), skipping`)
       return 'skipped'
     }
 
@@ -307,33 +307,55 @@ export async function processFulfillmentOrder(
 
     // Create order in Picqer
     const picqerOrder = await createOrder(mapResult.payload)
+    const hasUnresolved = (mapResult.metadata?.unresolvedProducts?.length ?? 0) > 0
 
-    // Process order (concept → processing)
-    const processedOrder = await processOrder(picqerOrder.idorder)
+    let finalOrder = picqerOrder
+    if (hasUnresolved) {
+      // Keep order in concept — Dylan will manually fix the product + alt SKU
+      console.log(`FO ${foId}: ${mapResult.metadata!.unresolvedProducts.length} onbekend(e) product(en), order blijft in concept`)
+    } else {
+      // Process order (concept → processing)
+      finalOrder = await processOrder(picqerOrder.idorder)
+    }
 
     // Set custom orderfields (Leverdag + Levertijd) via separate PUT
     if (mapResult.payload.orderfields?.length) {
-      await updateOrderFields(processedOrder.idorder, mapResult.payload.orderfields)
+      await updateOrderFields(finalOrder.idorder, mapResult.payload.orderfields)
     }
 
     // Add "Floriday" tag
     const tagId = await getFloridayTagId()
     if (tagId) {
-      await addOrderTag(processedOrder.idorder, tagId)
+      await addOrderTag(finalOrder.idorder, tagId)
+    }
+
+    // Add identification comment
+    try {
+      let commentBody = 'Bespoke Automation Floriday koppeling'
+      if (hasUnresolved) {
+        const missing = mapResult.metadata!.unresolvedProducts
+          .map(p => `• "${p.supplierArticleCode}" (${p.tradeItemName})`)
+          .join('\n')
+        commentBody += `\n\n⚠️ LET OP: Dit order bevat onbekende producten (als "Onbekend Product" toegevoegd). Vul de alternatieve SKU in bij het product in Picqer en vervang het placeholder product in dit order:\n${missing}`
+      }
+      await addComment('orders', finalOrder.idorder, commentBody)
+    } catch (commentErr) {
+      console.warn(`Kon geen comment plaatsen op order ${finalOrder.orderid}:`, commentErr)
     }
 
     // Update mapping
+    const status = hasUnresolved ? 'concept_unresolved' : 'created'
     await upsertOrderMapping(fulfillmentOrder, salesOrders, {
-      picqerOrderId: processedOrder.idorder,
-      picqerOrderNumber: processedOrder.orderid,
+      picqerOrderId: finalOrder.idorder,
+      picqerOrderNumber: finalOrder.orderid,
       reference: mapResult.metadata?.reference,
       customerName: mapResult.metadata?.customerName,
       numLoadCarriers: mapResult.metadata?.numLoadCarriers,
       loadCarrierType: mapResult.metadata?.loadCarrierType,
       numPlates: mapResult.metadata?.numPlates,
-    }, 'created')
+    }, status, hasUnresolved ? `Onbekende producten: ${mapResult.metadata!.unresolvedProducts.map(p => p.supplierArticleCode).join(', ')}` : undefined)
 
-    console.log(`FO ${foId} → Picqer ${processedOrder.orderid} | ${salesOrders.length} SOs | ref: "${mapResult.metadata?.reference || '-'}" | carriers: ${mapResult.metadata?.numLoadCarriers}x ${mapResult.metadata?.loadCarrierType || 'none'} | platen: ${mapResult.metadata?.numPlates}`)
+    console.log(`FO ${foId} → Picqer ${finalOrder.orderid} | ${salesOrders.length} SOs | ref: "${mapResult.metadata?.reference || '-'}" | carriers: ${mapResult.metadata?.numLoadCarriers}x ${mapResult.metadata?.loadCarrierType || 'none'} | platen: ${mapResult.metadata?.numPlates}${hasUnresolved ? ' | ⚠️ CONCEPT (onbekende producten)' : ''}`)
     return 'created'
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'

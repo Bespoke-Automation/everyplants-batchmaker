@@ -10,6 +10,7 @@ import {
   Play,
   Database,
   Ban,
+  AlertTriangle,
 } from 'lucide-react'
 
 interface SyncState {
@@ -32,7 +33,7 @@ interface SyncLog {
 
 interface DashboardData {
   orders: unknown[]
-  counts: { created: number; failed: number; skipped: number; cancelled: number; total: number }
+  counts: { created: number; concept_unresolved: number; failed: number; skipped: number; cancelled: number; total: number }
   syncStates: SyncState[]
   recentLogs: SyncLog[]
 }
@@ -92,7 +93,7 @@ export default function FloridayDashboard() {
     )
   }
 
-  const counts = data?.counts || { created: 0, failed: 0, skipped: 0, cancelled: 0, total: 0 }
+  const counts = data?.counts || { created: 0, concept_unresolved: 0, failed: 0, skipped: 0, cancelled: 0, total: 0 }
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -121,7 +122,7 @@ export default function FloridayDashboard() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-4">
         <KpiCard
           label="Totaal"
           value={counts.total}
@@ -133,6 +134,12 @@ export default function FloridayDashboard() {
           value={counts.created}
           icon={<CheckCircle2 className="w-5 h-5 text-emerald-500" />}
           color="emerald"
+        />
+        <KpiCard
+          label="Concept"
+          value={counts.concept_unresolved || 0}
+          icon={<AlertTriangle className="w-5 h-5 text-amber-500" />}
+          color="amber"
         />
         <KpiCard
           label="Mislukt"

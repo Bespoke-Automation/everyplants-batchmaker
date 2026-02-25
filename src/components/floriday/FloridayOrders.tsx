@@ -10,6 +10,7 @@ import {
   ChevronRight,
   ExternalLink,
   RotateCcw,
+  AlertTriangle,
 } from 'lucide-react'
 
 interface OrderMapping {
@@ -288,6 +289,13 @@ function StatusBadge({ status }: { status: string }) {
         <span className="inline-flex items-center gap-1 text-red-600 text-xs font-medium">
           <XCircle className="w-3.5 h-3.5" />
           Mislukt
+        </span>
+      )
+    case 'concept_unresolved':
+      return (
+        <span className="inline-flex items-center gap-1 text-amber-600 text-xs font-medium">
+          <AlertTriangle className="w-3.5 h-3.5" />
+          Concept (onbekend product)
         </span>
       )
     case 'skipped':

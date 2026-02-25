@@ -21,13 +21,19 @@ export async function POST(
   const { id: fulfillmentOrderId } = await params
 
   try {
-    // 1. Verwijder bestaande mapping zodat processFulfillmentOrder niet skip
+    // 1. Verwijder bestaande mapping en eventuele stale lock
     const env = getFloridayEnv()
     await supabase
       .schema('floriday')
       .from('order_mapping')
       .delete()
       .eq('floriday_fulfillment_order_id', fulfillmentOrderId)
+      .eq('environment', env)
+    await supabase
+      .schema('floriday')
+      .from('order_processing_lock')
+      .delete()
+      .eq('fulfillment_order_id', fulfillmentOrderId)
       .eq('environment', env)
 
     // 2. Refresh warehouse cache (voor afleveradres)

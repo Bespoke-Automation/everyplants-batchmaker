@@ -42,10 +42,22 @@ export async function syncProductIndex(): Promise<{ synced: number }> {
 
   const allProducts = await getAllActiveProducts()
 
+  // Deduplicate alt_sku: if multiple products share the same alt_sku, only keep the first
+  const seenAltSkus = new Set<string>()
   const rows = allProducts.map(p => {
-    const altSku = p.productfields?.find(
+    let altSku = p.productfields?.find(
       f => f.idproductfield === PICQER_FIELD_ALTERNATIEVE_SKU
     )?.value || null
+
+    if (altSku) {
+      if (seenAltSkus.has(altSku)) {
+        console.warn(`Duplicate alt_sku "${altSku}" voor product ${p.productcode}, overgeslagen`)
+        altSku = null
+      } else {
+        seenAltSkus.add(altSku)
+      }
+    }
+
     return {
       picqer_product_id: p.idproduct,
       productcode: p.productcode,

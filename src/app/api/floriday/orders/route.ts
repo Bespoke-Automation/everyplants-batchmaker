@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
       .select('processing_status')
       .eq('environment', env)
 
-    const counts = { created: 0, failed: 0, skipped: 0, cancelled: 0, total: 0 }
+    const counts = { created: 0, concept_unresolved: 0, failed: 0, skipped: 0, cancelled: 0, total: 0 }
     for (const row of statusCounts || []) {
       counts.total++
       const s = row.processing_status as string

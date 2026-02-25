@@ -45,7 +45,15 @@ const LOAD_CARRIER_PRODUCTS: Record<string, { idproduct: number; productcode: st
 
 const PLATES_PRODUCT = { idproduct: 38075137, productcode: '100000011' }
 
+// Placeholder product voor onbekende artikelen — order blijft in concept
+const UNKNOWN_PRODUCT = { idproduct: 38227506, productcode: '99999999', name: 'Onbekend Product' }
+
 // ─── Types ──────────────────────────────────────────────────
+
+export interface UnresolvedProduct {
+  supplierArticleCode: string
+  tradeItemName: string
+}
 
 export interface OrderMapResult {
   success: boolean
@@ -60,6 +68,7 @@ export interface OrderMapResult {
     reference: string
     deliveryDate: string
     salesOrderCount: number
+    unresolvedProducts: UnresolvedProduct[]
   }
   error?: string
 }
@@ -99,6 +108,7 @@ export async function mapFulfillmentOrderToPicqer(
     // 3. Build product lines — per loadCarrier (trolley + producten)
     const products: CreateOrderProductInput[] = []
     const productNames: string[] = []
+    const unresolvedProducts: UnresolvedProduct[] = []
     let totalPlates = 0
 
     // Build salesOrderId → SalesOrder lookup
@@ -134,25 +144,32 @@ export async function mapFulfillmentOrderToPicqer(
           tradeItem.tradeItemName?.nl
         )
 
-        if (!product) {
-          return {
-            success: false,
-            error: `Product niet gevonden voor artikelcode "${tradeItem.supplierArticleCode}" (trade item: ${tradeItem.tradeItemName?.nl || item.tradeItemId})`,
-          }
-        }
-
         // Prijs uit SalesOrder: pricePerPiece × piecesPerPackage (stuks per collo)
         const pricePerPiece = so.pricePerPiece?.value || 0
         const piecesPerPackage = so.packingConfiguration?.piecesPerPackage || 1
         const pricePerPackage = pricePerPiece * piecesPerPackage
 
-        products.push({
-          idproduct: product.idproduct,
-          amount: item.numberOfPackages,
-          price: pricePerPackage,
-        })
-
-        productNames.push(product.name)
+        if (!product) {
+          // Use placeholder — order will stay in concept for manual resolution
+          console.warn(`Product niet gevonden voor "${tradeItem.supplierArticleCode}", gebruik placeholder ${UNKNOWN_PRODUCT.productcode}`)
+          unresolvedProducts.push({
+            supplierArticleCode: tradeItem.supplierArticleCode,
+            tradeItemName: tradeItem.tradeItemName?.nl || item.tradeItemId,
+          })
+          products.push({
+            idproduct: UNKNOWN_PRODUCT.idproduct,
+            amount: item.numberOfPackages,
+            price: pricePerPackage,
+          })
+          productNames.push(`${UNKNOWN_PRODUCT.name} (${tradeItem.supplierArticleCode})`)
+        } else {
+          products.push({
+            idproduct: product.idproduct,
+            amount: item.numberOfPackages,
+            price: pricePerPackage,
+          })
+          productNames.push(product.name)
+        }
       }
 
       // Count additional layers (plates)
@@ -224,6 +241,7 @@ export async function mapFulfillmentOrderToPicqer(
         reference,
         deliveryDate: deliveryDate || '',
         salesOrderCount: salesOrders.length,
+        unresolvedProducts,
       },
     }
   } catch (error) {
