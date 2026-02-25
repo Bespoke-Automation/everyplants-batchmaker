@@ -40,8 +40,8 @@ export async function POST() {
 
     for (const order of orders) {
       try {
-        // Cancel in Picqer
-        await cancelOrder(order.picqer_order_id)
+        // Cancel in Picqer (force=true to cancel even if already processing/picked)
+        await cancelOrder(order.picqer_order_id, true)
         cancelled++
 
         // Add comment

@@ -2040,15 +2040,18 @@ export async function processOrder(orderId: number): Promise<PicqerOrder> {
  * Cancel an order in Picqer.
  * Only works on orders with status 'new' or 'processing'.
  */
-export async function cancelOrder(orderId: number): Promise<PicqerOrder> {
-  console.log(`Cancelling order ${orderId}...`)
+export async function cancelOrder(orderId: number, force = false): Promise<void> {
+  console.log(`Cancelling order ${orderId}${force ? ' (force)' : ''}...`)
 
-  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/orders/${orderId}/cancel`, {
-    method: 'POST',
+  const url = force
+    ? `${PICQER_BASE_URL}/orders/${orderId}?force=true`
+    : `${PICQER_BASE_URL}/orders/${orderId}`
+
+  const response = await rateLimitedFetch(url, {
+    method: 'DELETE',
     headers: {
       'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
       'User-Agent': 'EveryPlants-Batchmaker/2.0',
-      'Content-Type': 'application/json',
     },
   })
 
@@ -2058,9 +2061,7 @@ export async function cancelOrder(orderId: number): Promise<PicqerOrder> {
     throw new Error(`Failed to cancel order: ${response.status} - ${errorText}`)
   }
 
-  const order: PicqerOrder = await response.json()
-  console.log(`Order ${orderId} cancelled → ${order.status}`)
-  return order
+  console.log(`Order ${orderId} cancelled`)
 }
 
 /**
