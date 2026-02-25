@@ -93,10 +93,22 @@ async function getFloridayTagId(): Promise<number | null> {
 // ─── Main Sync ──────────────────────────────────────────────
 
 /**
+ * Check of order sync actief is. Uit te zetten via FLORIDAY_ORDER_SYNC_DISABLED=true.
+ */
+export function isOrderSyncDisabled(): boolean {
+  return process.env.FLORIDAY_ORDER_SYNC_DISABLED === 'true'
+}
+
+/**
  * Sync all new fulfillment orders from Floriday and create them in Picqer.
  * Each FulfillmentOrder becomes 1 Picqer order.
  */
 export async function syncOrders(): Promise<SyncResult> {
+  if (isOrderSyncDisabled()) {
+    console.log('Floriday order sync is uitgeschakeld (FLORIDAY_ORDER_SYNC_DISABLED=true)')
+    return { success: true, ordersProcessed: 0, ordersCreated: 0, ordersFailed: 0, ordersSkipped: 0, errors: [], duration_ms: 0 }
+  }
+
   const env = getFloridayEnv()
   const startTime = Date.now()
   const errors: SyncResult['errors'] = []

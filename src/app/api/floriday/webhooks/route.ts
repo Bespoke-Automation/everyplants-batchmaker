@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getFulfillmentOrder } from '@/lib/floriday/client'
-import { processFulfillmentOrder, handleCorrectedFO, handleCancelledFO, refreshWarehouseCache } from '@/lib/floriday/sync/order-sync'
+import { processFulfillmentOrder, handleCorrectedFO, handleCancelledFO, refreshWarehouseCache, isOrderSyncDisabled } from '@/lib/floriday/sync/order-sync'
 
 /**
  * POST /api/floriday/webhooks
@@ -35,6 +35,10 @@ export async function POST(request: NextRequest) {
 
     // Only process FULFILLMENTORDER events
     if (aggregateType === 'FULFILLMENTORDER') {
+      if (isOrderSyncDisabled()) {
+        console.log(`Webhook FO event ${eventType} genegeerd — order sync is uitgeschakeld`)
+        return NextResponse.json({ success: true, action: 'ignored', reason: 'order sync disabled' })
+      }
       const fo = await getFulfillmentOrder(aggregateId)
 
       if (eventType === 'ACCEPTED' || eventType === 'SUBMITTED') {
