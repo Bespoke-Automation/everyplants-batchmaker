@@ -118,10 +118,10 @@ Plans:
   2. Het systeem toont bestemmingsland en geselecteerde carrier bij het kostenadvies
   3. Wanneer het advies op specificiteit is gebaseerd (geen kostdata), toont de UI een amber waarschuwing die dit duidelijk aangeeft
 
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 06-01: TBD
+- [ ] 06-01-PLAN.md — Extend AdviceBox with pick/pack + carrier fields, expanded cost breakdown in VerpakkingsClient
 
 ## Phase Ordering Rationale
 
