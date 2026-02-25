@@ -1,91 +1,117 @@
-# Requirements — Kostengeoptimaliseerd Verpakkingsadvies
+# Requirements: Kostengeoptimaliseerd Verpakkingsadvies
 
-**Core Value:** De engine adviseert altijd de verpakkingsoptie met de laagste totaalkosten (doos + transport + handling) per bestemmingsland.
+**Defined:** 2026-02-25
+**Core Value:** De engine adviseert altijd de verpakkingsoptie met de laagste totaalkosten (doos + pick/pack + transport) per bestemmingsland.
 
----
+## v2.0 Requirements
 
-## v1 Requirements
+Requirements for this milestone. Each maps to roadmap phases.
 
-### Cost Data Layer
+### Cost Data Access
 
-| ID | Requirement | Acceptance Criteria |
-|----|------------|---------------------|
-| DATA-01 | Transport tarieven ophalen uit facturatie Supabase | `costProvider.ts` leest `packaging_costs` JOIN `shipping_rates` uit facturatie Supabase; data gecached in-memory met 15 min TTL; facturatie client via bestaande `FACTURATIE_SUPABASE_URL` env var |
-| DATA-02 | Carrier routing tabel | Engine gebruikt `is_preferred = true` flag uit `shipping_rates` om juiste carrier per doos/land te selecteren; join key is packaging barcode/SKU |
-| DATA-03 | Graceful degradation | Bij onbereikbare facturatie DB valt engine terug op huidige specificiteit-ranking; `cost_data_available: false` flag op resultaat; geen crash, geen silent wrong advice |
+- [ ] **COST-01**: costProvider kan kostdata ophalen uit de facturatie `published_box_costs` tabel via cross-database read met `facturatie_box_sku` als join key
+- [ ] **COST-02**: costProvider cached kostdata in-memory met 15 minuten TTL; tweede call binnen TTL raakt niet de facturatie database
+- [ ] **COST-03**: Het systeem kan de cost cache invalideren via een inkomende webhook POST van de facturatie-app bij tariefwijziging
+- [ ] **COST-04**: Het systeem kan per land alle beschikbare doos-kostcombinaties opvragen inclusief box_material_cost, box_pick_cost, box_pack_cost en transport_purchase_cost
 
-### Engine Logic
+### SKU Mapping
 
-| ID | Requirement | Acceptance Criteria |
-|----|------------|---------------------|
-| ENG-01 | Cost-primary ranking | `rankPackagings()` sorteert primair op `total_cost ASC` (dooskosten + transportkosten + handling); specificiteit en volume als tiebreakers; multi-box solver aggregeert kosten correct |
-| ENG-02 | Country threading | `calculateAdvice()` accepteert `countryCode` parameter; waarde komt uit Picqer order `deliveryaddress.country` via `TransformedOrder.bezorgland`; required parameter — geen silent NL default |
+- [ ] **SKU-01**: Elke batchmaker verpakking heeft een `facturatie_box_sku` kolom die gekoppeld is aan de facturatie box SKU (6 mismatches + 16 correcte mappings als seed data)
+- [ ] **SKU-02**: De admin kan de facturatie_box_sku mapping beheren voor nieuwe of gewijzigde dozen
+- [ ] **SKU-03**: Het systeem valideert bij startup dat alle actieve dozen een geldige facturatie_box_sku mapping hebben en logt ontbrekende mappings als warning
 
-### API & UI
+### Weight Brackets
 
-| ID | Requirement | Acceptance Criteria |
-|----|------------|---------------------|
-| API-01 | Country param in engine API | `POST /api/verpakking/engine/calculate` accepteert `countryCode` in request body; valideert tegen bekende landcodes (NL, BE, DE, FR, AT, LU, SE, IT, ES); VerpakkingsClient/usePackingSession stuurt country mee |
-| UI-01 | Cost breakdown in UI | Engine advies toont per voorgestelde doos: dooskosten, transportkosten, totaalkosten; zichtbaar in VerpakkingsClient advies-panel |
+- [ ] **WEIGHT-01**: Het systeem berekent het totaalgewicht per gevulde doos op basis van productgewichten uit `product_attributes`
+- [ ] **WEIGHT-02**: Het systeem selecteert de juiste weight bracket op basis van totaalgewicht (≤5kg, ≤10kg, ≤20kg, ≤30kg voor PostNL; NULL voor DPD/pallet)
+- [ ] **WEIGHT-03**: Bij multi-box orders bepaalt het systeem per doos apart het gewicht en de weight bracket
 
----
+### Cost-Optimized Ranking
 
-## v2 Requirements (deferred)
+- [ ] **RANK-01**: De engine rankt verpakkingsopties primair op totale kosten (laagste eerst) wanneer kostdata beschikbaar is
+- [ ] **RANK-02**: De engine berekent total_cost als som van box_material_cost + box_pick_cost + box_pack_cost + transport_purchase_cost
+- [ ] **RANK-03**: Dozen waarvoor geen preferred route bestaat voor het bestemmingsland worden uitgesloten als kandidaat
+- [ ] **RANK-04**: Bij gelijke kosten wordt gesorteerd op specificiteit en volume (bestaande tiebreakers)
 
-| ID | Requirement | Rationale voor defer |
-|----|------------|---------------------|
-| ENG-03 | Route filtering — dozen uitsluiten als route niet beschikbaar | Komt in v2; v1 focust op kosten-ranking met beschikbare routes |
-| ENG-04 | Shadow mode — cost-ranking naast huidige ranking loggen zonder live te gaan | Niet nodig als v1 direct geactiveerd wordt; kan later alsnog als rollback-mechanisme |
-| ENG-05 | Multi-box cost optimization — niet-greedy solver | Alleen als greedy solver observeerbaar suboptimale splits produceert |
-| UI-02 | Carrier override UI — CRUD in instellingen voor carrier-box-country mappings | Carrier mapping verandert zelden; handmatige DB update volstaat |
-| UI-03 | A/B dashboard — vergelijking oude vs nieuwe ranking | Volgt uit shadow mode; beide deferred |
-| DATA-04 | Auto cache invalidation — Inngest cron voor dagelijkse cost sync | Handmatige trigger volstaat; kosten wijzigen zelden |
+### Multi-Box Optimization
 
----
+- [ ] **MULTI-01**: Bij orders die niet in 1 doos passen, evalueert de engine meerdere combinaties op totaalkosten (niet-greedy solver)
+- [ ] **MULTI-02**: De multi-box solver heeft een 200ms timeout met fallback naar het bestaande greedy algoritme
+
+### Single-SKU Fast Path
+
+- [ ] **SINGLE-01**: Per product (SKU) kan vastgelegd worden welke standaard verpakking erbij hoort
+- [ ] **SINGLE-02**: Bij orders met 1 uniek SKU gebruikt het systeem de directe product → verpakking mapping
+- [ ] **SINGLE-03**: De single-SKU mapping heeft prioriteit boven de compartment rules engine
+
+### Graceful Degradation
+
+- [ ] **DEGRAD-01**: Bij onbereikbare facturatie database valt de engine terug op specificiteit-ranking zonder te crashen
+- [ ] **DEGRAD-02**: De UI toont een amber waarschuwing wanneer advies op specificiteit is gebaseerd i.p.v. kosten
+- [ ] **DEGRAD-03**: Na herstel van facturatie DB schakelt het systeem automatisch terug naar kosten-ranking (via cache TTL expiry)
+
+### Cost Display
+
+- [ ] **DISPLAY-01**: Het advies-panel toont per doos: dooskosten, pick/pack kosten, transportkosten en totaalkosten
+- [ ] **DISPLAY-02**: Bij multi-box advies toont het systeem per-doos kosten en totaalkosten van de complete oplossing
+- [ ] **DISPLAY-03**: Het systeem toont bestemmingsland en geselecteerde carrier bij het kostenadvies
+
+## v3.0 Requirements (deferred)
+
+### Future Enhancements
+
+- **FUTURE-01**: Carrier override UI — medewerker kan handmatig carrier kiezen
+- **FUTURE-02**: A/B dashboard — vergelijk kosten oud vs nieuw advies over tijd
+- **FUTURE-03**: Real-time kostenmonitoring dashboard
+- **FUTURE-04**: Predictive cost analytics
 
 ## Out of Scope
 
-- Facturatie app aanpassen (read-only, single source of truth)
-- Verkooprijs/marge berekening (facturatie-domein)
-- Carrier contract onderhandelingen / tariefwijzigingen
-- Dynamische carrier selectie (carrier per doos/land staat vast)
-- Handling kosten configuratie UI (bestaande instellingen volstaan)
-
----
-
-## Constraints
-
-| Constraint | Impact |
-|-----------|--------|
-| Facturatie = read-only | Alleen SELECT queries; geen writes naar facturatie Supabase |
-| Engine snelheid = real-time | In-memory cache verplicht; geen live DB calls per advies-berekening |
-| Picqer rate limits = 500 req/min | Bestaande `rateLimitedFetch()` wrapper gebruiken |
-| Backward compatible | Bestaande engine flow mag niet breken; uitbreiden, niet vervangen |
-
----
-
-## Dependencies
-
-| Dependency | Status | Owner |
-|-----------|--------|-------|
-| Facturatie Supabase tabellen (`packaging_costs`, `shipping_rates`) | Seed data klaar in FACTURATIE_SPEC.md | Kenny (handmatig) |
-| `FACTURATIE_SUPABASE_URL` + `FACTURATIE_SUPABASE_ANON_KEY` env vars | Bestaan al in .env.local | Geconfigureerd |
-| Bestaande `facturatieClient.ts` Supabase client | Bestaat al | Codebase |
-| Picqer order `deliveryaddress.country` | Beschikbaar via bestaande order transform | Codebase |
-
----
+| Feature | Reason |
+|---------|--------|
+| Facturatie app aanpassen | Read-only, single source of truth — facturatie bouwt apart |
+| Verkooprijs/marge berekening | Facturatie-domein, niet batchmaker |
+| Carrier contract onderhandelingen | Business process, niet software |
+| Dynamische carrier selectie | Carrier per doos/land staat contractueel vast |
+| Shadow mode (cost vs specificiteit) | v1 direct geactiveerd, geen rollback-mechanisme nodig |
 
 ## Traceability
 
+Which phases cover which requirements. Updated during roadmap creation.
+
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DATA-01 | Phase 1: Cost Data Layer | Complete |
-| DATA-02 | Phase 1: Cost Data Layer | Complete |
-| DATA-03 | Phase 1: Cost Data Layer | Complete |
-| ENG-01 | Phase 2: Cost-Primary Ranking | Complete |
-| ENG-02 | Phase 1: Cost Data Layer | Complete |
-| API-01 | Phase 3: API + UI Integration | Complete |
-| UI-01 | Phase 3: API + UI Integration | Complete |
+| COST-01 | — | Pending |
+| COST-02 | — | Pending |
+| COST-03 | — | Pending |
+| COST-04 | — | Pending |
+| SKU-01 | — | Pending |
+| SKU-02 | — | Pending |
+| SKU-03 | — | Pending |
+| WEIGHT-01 | — | Pending |
+| WEIGHT-02 | — | Pending |
+| WEIGHT-03 | — | Pending |
+| RANK-01 | — | Pending |
+| RANK-02 | — | Pending |
+| RANK-03 | — | Pending |
+| RANK-04 | — | Pending |
+| MULTI-01 | — | Pending |
+| MULTI-02 | — | Pending |
+| SINGLE-01 | — | Pending |
+| SINGLE-02 | — | Pending |
+| SINGLE-03 | — | Pending |
+| DEGRAD-01 | — | Pending |
+| DEGRAD-02 | — | Pending |
+| DEGRAD-03 | — | Pending |
+| DISPLAY-01 | — | Pending |
+| DISPLAY-02 | — | Pending |
+| DISPLAY-03 | — | Pending |
+
+**Coverage:**
+- v2.0 requirements: 25 total
+- Mapped to phases: 0
+- Unmapped: 25
 
 ---
-*Generated: 2026-02-24*
+*Requirements defined: 2026-02-25*
+*Last updated: 2026-02-25 after milestone v2.0 definition*
