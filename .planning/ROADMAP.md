@@ -102,12 +102,12 @@ Plans:
   2. Bij orders die niet in 1 doos passen, evalueert de solver meerdere combinaties op totaalkosten in plaats van greedy volume-first, met 200ms timeout en greedy fallback
   3. Bij single-SKU orders (1 uniek product) gebruikt het systeem de directe product-verpakking mapping, die prioriteit heeft boven compartment rules
   4. De admin kan per product de standaard verpakking vastleggen voor single-SKU matching
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 05-01: TBD
-- [ ] 05-02: TBD
-- [ ] 05-03: TBD
+- [ ] 05-01-PLAN.md — Single-SKU data layer: DB migration, admin UI, API endpoint voor default packaging per product
+- [ ] 05-02-PLAN.md — Ranking verificatie/update + niet-greedy cost-optimal multi-box solver
+- [ ] 05-03-PLAN.md — Single-SKU engine integratie in calculateAdvice fast path
 
 ### Phase 6: Integration & Display
 **Goal**: Medewerkers zien bij het inpakken een volledige kostenbreakdown per doos (materiaal + pick/pack + transport + totaal) met bestemmingsland en carrier, en worden gewaarschuwd wanneer advies op specificiteit is gebaseerd
