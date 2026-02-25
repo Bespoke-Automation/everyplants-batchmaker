@@ -81,37 +81,37 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| COST-01 | — | Pending |
-| COST-02 | — | Pending |
-| COST-03 | — | Pending |
-| COST-04 | — | Pending |
-| SKU-01 | — | Pending |
-| SKU-02 | — | Pending |
-| SKU-03 | — | Pending |
-| WEIGHT-01 | — | Pending |
-| WEIGHT-02 | — | Pending |
-| WEIGHT-03 | — | Pending |
-| RANK-01 | — | Pending |
-| RANK-02 | — | Pending |
-| RANK-03 | — | Pending |
-| RANK-04 | — | Pending |
-| MULTI-01 | — | Pending |
-| MULTI-02 | — | Pending |
-| SINGLE-01 | — | Pending |
-| SINGLE-02 | — | Pending |
-| SINGLE-03 | — | Pending |
-| DEGRAD-01 | — | Pending |
-| DEGRAD-02 | — | Pending |
-| DEGRAD-03 | — | Pending |
-| DISPLAY-01 | — | Pending |
-| DISPLAY-02 | — | Pending |
-| DISPLAY-03 | — | Pending |
+| COST-01 | Phase 4 | Pending |
+| COST-02 | Phase 4 | Pending |
+| COST-03 | Phase 4 | Pending |
+| COST-04 | Phase 4 | Pending |
+| SKU-01 | Phase 4 | Pending |
+| SKU-02 | Phase 4 | Pending |
+| SKU-03 | Phase 4 | Pending |
+| WEIGHT-01 | Phase 4 | Pending |
+| WEIGHT-02 | Phase 4 | Pending |
+| WEIGHT-03 | Phase 4 | Pending |
+| RANK-01 | Phase 5 | Pending |
+| RANK-02 | Phase 5 | Pending |
+| RANK-03 | Phase 5 | Pending |
+| RANK-04 | Phase 5 | Pending |
+| MULTI-01 | Phase 5 | Pending |
+| MULTI-02 | Phase 5 | Pending |
+| SINGLE-01 | Phase 5 | Pending |
+| SINGLE-02 | Phase 5 | Pending |
+| SINGLE-03 | Phase 5 | Pending |
+| DEGRAD-01 | Phase 4 | Pending |
+| DEGRAD-02 | Phase 6 | Pending |
+| DEGRAD-03 | Phase 4 | Pending |
+| DISPLAY-01 | Phase 6 | Pending |
+| DISPLAY-02 | Phase 6 | Pending |
+| DISPLAY-03 | Phase 6 | Pending |
 
 **Coverage:**
 - v2.0 requirements: 25 total
-- Mapped to phases: 0
-- Unmapped: 25
+- Mapped to phases: 25
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-25*
-*Last updated: 2026-02-25 after milestone v2.0 definition*
+*Last updated: 2026-02-25 after roadmap v2.0 creation*

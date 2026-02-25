@@ -4,17 +4,38 @@
 
 See: .planning/PROJECT.md (updated 2026-02-25)
 
-**Core value:** De engine adviseert altijd de verpakkingsoptie met de laagste totaalkosten (doos + pick/pack + transport) per bestemmingsland.
-**Current focus:** Milestone v2.0 — Defining requirements
+**Core value:** De engine adviseert altijd de verpakkingsoptie met de laagste totaalkosten (doos + pick/pack + transport) per bestemmingsland, met correcte SKU mapping en gewichtsafhankelijke transportkosten.
+**Current focus:** Phase 4 — Cost Data Layer v2
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-02-25 — Milestone v2.0 started
+Phase: 4 of 6 (Cost Data Layer v2)
+Plan: 0 of 3 in current phase
+Status: Ready to plan
+Last activity: 2026-02-25 — Roadmap v2.0 created
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█████░░░░░] 50% (5/10 plans across all phases)
+
+## Performance Metrics
+
+**Velocity:**
+- Total plans completed: 5 (v1.0)
+- Average duration: — (not tracked in v1.0)
+- Total execution time: — (not tracked in v1.0)
+
+**By Phase:**
+
+| Phase | Plans | Total | Avg/Plan |
+|-------|-------|-------|----------|
+| 1. Cost Data Layer | 2 | — | — |
+| 2. Cost-Primary Ranking | 2 | — | — |
+| 3. API + UI Integration | 1 | — | — |
+
+**Recent Trend:**
+- v1.0 completed in 1 day (2026-02-24)
+- Trend: Stable
+
+*Updated after each plan completion*
 
 ## Accumulated Context
 
@@ -28,7 +49,7 @@ Recent decisions affecting current work:
 - [v2.0]: `facturatie_box_sku` als join key (niet barcode)
 - [v2.0]: Pick/pack per doostype via box_pick_cost + box_pack_cost
 - [v2.0]: Webhook voor cache invalidatie (niet Inngest)
-- [v2.0]: Niet-greedy multi-box solver met 200ms timeout → greedy fallback
+- [v2.0]: Niet-greedy multi-box solver met 200ms timeout naar greedy fallback
 
 ### v1.0 Context (carried over)
 
@@ -52,5 +73,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-25
-Stopped at: Milestone v2.0 initialized, defining requirements
-Resume file: .planning/REQUIREMENTS.md
+Stopped at: Roadmap v2.0 created, ready to plan Phase 4
+Resume file: .planning/ROADMAP.md
