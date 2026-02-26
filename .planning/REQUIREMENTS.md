@@ -9,16 +9,16 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Cost Data Access
 
-- [ ] **COST-01**: costProvider kan kostdata ophalen uit de facturatie `published_box_costs` tabel via cross-database read met `facturatie_box_sku` als join key
-- [ ] **COST-02**: costProvider cached kostdata in-memory met 15 minuten TTL; tweede call binnen TTL raakt niet de facturatie database
-- [ ] **COST-03**: Het systeem kan de cost cache invalideren via een inkomende webhook POST van de facturatie-app bij tariefwijziging
-- [ ] **COST-04**: Het systeem kan per land alle beschikbare doos-kostcombinaties opvragen inclusief box_material_cost, box_pick_cost, box_pack_cost en transport_purchase_cost
+- [x] **COST-01**: costProvider kan kostdata ophalen uit de facturatie `published_box_costs` tabel via cross-database read met `facturatie_box_sku` als join key
+- [x] **COST-02**: costProvider cached kostdata in-memory met 15 minuten TTL; tweede call binnen TTL raakt niet de facturatie database
+- [x] **COST-03**: Het systeem kan de cost cache invalideren via een inkomende webhook POST van de facturatie-app bij tariefwijziging
+- [x] **COST-04**: Het systeem kan per land alle beschikbare doos-kostcombinaties opvragen inclusief box_material_cost, box_pick_cost, box_pack_cost en transport_purchase_cost
 
 ### SKU Mapping
 
 - [x] **SKU-01**: Elke batchmaker verpakking heeft een `facturatie_box_sku` kolom die gekoppeld is aan de facturatie box SKU (6 mismatches + 16 correcte mappings als seed data)
 - [x] **SKU-02**: De admin kan de facturatie_box_sku mapping beheren voor nieuwe of gewijzigde dozen
-- [ ] **SKU-03**: Het systeem valideert bij startup dat alle actieve dozen een geldige facturatie_box_sku mapping hebben en logt ontbrekende mappings als warning
+- [x] **SKU-03**: Het systeem valideert bij startup dat alle actieve dozen een geldige facturatie_box_sku mapping hebben en logt ontbrekende mappings als warning
 
 ### Weight Brackets
 
@@ -46,9 +46,9 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Graceful Degradation
 
-- [ ] **DEGRAD-01**: Bij onbereikbare facturatie database valt de engine terug op specificiteit-ranking zonder te crashen
+- [x] **DEGRAD-01**: Bij onbereikbare facturatie database valt de engine terug op specificiteit-ranking zonder te crashen
 - [ ] **DEGRAD-02**: De UI toont een amber waarschuwing wanneer advies op specificiteit is gebaseerd i.p.v. kosten
-- [ ] **DEGRAD-03**: Na herstel van facturatie DB schakelt het systeem automatisch terug naar kosten-ranking (via cache TTL expiry)
+- [x] **DEGRAD-03**: Na herstel van facturatie DB schakelt het systeem automatisch terug naar kosten-ranking (via cache TTL expiry)
 
 ### Cost Display
 
@@ -81,13 +81,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| COST-01 | Phase 4 | Pending |
-| COST-02 | Phase 4 | Pending |
-| COST-03 | Phase 4 | Pending |
-| COST-04 | Phase 4 | Pending |
+| COST-01 | Phase 4 | Complete |
+| COST-02 | Phase 4 | Complete |
+| COST-03 | Phase 4 | Complete |
+| COST-04 | Phase 4 | Complete |
 | SKU-01 | Phase 4 | Complete |
 | SKU-02 | Phase 4 | Complete |
-| SKU-03 | Phase 4 | Pending |
+| SKU-03 | Phase 4 | Complete |
 | WEIGHT-01 | Phase 4 | Pending |
 | WEIGHT-02 | Phase 4 | Pending |
 | WEIGHT-03 | Phase 4 | Pending |
@@ -100,9 +100,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SINGLE-01 | Phase 5 | Pending |
 | SINGLE-02 | Phase 5 | Pending |
 | SINGLE-03 | Phase 5 | Pending |
-| DEGRAD-01 | Phase 4 | Pending |
+| DEGRAD-01 | Phase 4 | Complete |
 | DEGRAD-02 | Phase 6 | Pending |
-| DEGRAD-03 | Phase 4 | Pending |
+| DEGRAD-03 | Phase 4 | Complete |
 | DISPLAY-01 | Phase 6 | Pending |
 | DISPLAY-02 | Phase 6 | Pending |
 | DISPLAY-03 | Phase 6 | Pending |

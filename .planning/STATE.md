@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 ## Current Position
 
 Phase: 4 of 6 (Cost Data Layer v2)
-Plan: 1 of 3 in current phase (04-01 complete, 04-02 next)
+Plan: 2 of 3 in current phase (04-01, 04-02 complete, 04-03 next)
 Status: Executing Phase 4
-Last activity: 2026-02-26 — Completed 04-01 SKU mapping plan
+Last activity: 2026-02-26 — Completed 04-02 costProvider rewrite
 
-Progress: [██████░░░░] 60% (6/10 plans across all phases)
+Progress: [███████░░░] 70% (7/10 plans across all phases)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 6 (5 v1.0 + 1 v2.0)
-- Average duration: 10min (v2.0 only)
-- Total execution time: 10min (v2.0)
+- Total plans completed: 7 (5 v1.0 + 2 v2.0)
+- Average duration: 6.5min (v2.0 only)
+- Total execution time: 13min (v2.0)
 
 **By Phase:**
 
@@ -30,12 +30,13 @@ Progress: [██████░░░░] 60% (6/10 plans across all phases)
 | 1. Cost Data Layer | 2 | — | — |
 | 2. Cost-Primary Ranking | 2 | — | — |
 | 3. API + UI Integration | 1 | — | — |
-| 4. Cost Data Layer v2 | 1/3 | 10min | 10min |
+| 4. Cost Data Layer v2 | 2/3 | 13min | 6.5min |
 
 **Recent Trend:**
 - v1.0 completed in 1 day (2026-02-24)
 - v2.0 04-01 completed in 10min (2026-02-26)
-- Trend: Stable
+- v2.0 04-02 completed in 3min (2026-02-26)
+- Trend: Accelerating
 
 *Updated after each plan completion*
 
@@ -55,6 +56,9 @@ Recent decisions affecting current work:
 - [04-01]: facturatie_box_sku as TEXT (not FK) since cross-database reference
 - [04-01]: Same-as-barcode packagings get explicit facturatie_box_sku (not derived at runtime)
 - [04-01]: 27 total seeded (6 mismatch + 21 same-as-barcode), 3 null (batchmaker-only)
+- [04-02]: CostEntry[] per SKU for weight bracket support (PostNL has 4 brackets per SKU/country)
+- [04-02]: enrichWithCosts uses NULL bracket by default; full weight selection deferred to 04-03
+- [04-02]: SKU validation runs once per cache refresh cycle (validationDone flag)
 
 ### v1.0 Context (carried over)
 
@@ -62,7 +66,7 @@ Recent decisions affecting current work:
 - Country codes normalized to uppercase for consistent cache key matching
 - parseFloat(String(...)) for numeric fields from Supabase
 - countryCode optional on calculateAdvice() for backward compatibility
-- enrichWithCosts excludes matches with barcode but no cost entry
+- enrichWithCosts excludes matches with facturatie_box_sku but no cost entry (v2: uses SKU not barcode)
 - Cost display gated per-section, not per-banner
 - EUR formatting via formatCost helper with undefined check
 
@@ -73,14 +77,13 @@ None yet.
 ### Blockers/Concerns
 
 - [v2.0]: Facturatie app moet `published_box_costs` tabel bouwen en vullen voordat batchmaker v2 testbaar is
-- [v2.0]: costProvider.ts moet herschreven worden — v1 leest van verkeerde tabellen
 
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 04-01-PLAN.md (SKU mapping). Next: 04-02-PLAN.md (costProvider rewrite).
+Stopped at: Completed 04-02-PLAN.md (costProvider rewrite). Next: 04-03-PLAN.md (weight bracket calculation).
 Resume with: /gsd:execute-phase 4
-Resume file: .planning/phases/04-cost-data-layer-v2/04-02-PLAN.md
+Resume file: .planning/phases/04-cost-data-layer-v2/04-03-PLAN.md
 
 ### Phase Execution Status
 - Phase 4: 3 plans in 3 waves (04-01 → 04-02 → 04-03), all sequential deps

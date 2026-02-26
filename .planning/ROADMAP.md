@@ -90,7 +90,7 @@ Plans:
 
 Plans:
 - [x] 04-01-PLAN.md — SKU mapping: DB migration, seed data, admin UI voor facturatie_box_sku
-- [ ] 04-02-PLAN.md — costProvider rewrite naar published_box_costs + webhook endpoint + SKU validatie
+- [x] 04-02-PLAN.md — costProvider rewrite naar published_box_costs + webhook endpoint + SKU validatie
 - [ ] 04-03-PLAN.md — Weight bracket berekening en selectie in engine
 
 ### Phase 5: Engine Optimization
