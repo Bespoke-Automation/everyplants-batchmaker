@@ -46,8 +46,11 @@ export interface PackagingMatch {
   specificity_score: number
   volume: number
   box_cost: number       // from CostEntry.boxCost (0 if not enriched)
+  box_pick_cost: number  // from CostEntry.boxPickCost (0 if not enriched)
+  box_pack_cost: number  // from CostEntry.boxPackCost (0 if not enriched)
   transport_cost: number // from CostEntry.transportCost (0 if not enriched)
   total_cost: number
+  carrier_code: string | null  // from CostEntry.carrier (null if not enriched)
   max_weight: number
 }
 
@@ -56,10 +59,13 @@ export interface AdviceBox {
   packaging_name: string
   idpackaging: number
   products: { productcode: string; shipping_unit_name: string; quantity: number }[]
-  box_cost?: number        // from selected PackagingMatch
-  transport_cost?: number  // from selected PackagingMatch
-  total_cost?: number      // from selected PackagingMatch
-  weight_grams?: number        // Total weight of products in this box (grams)
+  box_cost?: number           // box material cost (from CostEntry.boxCost)
+  box_pick_cost?: number      // pick cost per box type (from CostEntry.boxPickCost)
+  box_pack_cost?: number      // pack cost per box type (from CostEntry.boxPackCost)
+  transport_cost?: number     // transport cost (from CostEntry.transportCost)
+  total_cost?: number         // total = material + pick + pack + transport (from CostEntry.totalCost)
+  carrier_code?: string       // selected carrier e.g. "PostNL", "DPD" (from CostEntry.carrier)
+  weight_grams?: number       // Total weight of products in this box (grams)
   weight_bracket?: string | null  // Selected weight bracket (e.g., '0-5kg') or null for DPD/pallet
 }
 
@@ -430,8 +436,11 @@ export async function matchCompartments(
           specificity_score: pkg.specificity_score ?? 50,
           volume: pkg.volume ?? Infinity,
           box_cost: 0,
+          box_pick_cost: 0,
+          box_pack_cost: 0,
           transport_cost: 0,
           total_cost: (pkg.handling_cost ?? 0) + (pkg.material_cost ?? 0),
+          carrier_code: null,
           max_weight: pkg.max_weight ?? Infinity,
         })
       }
@@ -567,9 +576,12 @@ function enrichWithCosts(
       return {
         ...match,
         box_cost: entry.boxCost,           // = boxMaterialCost (for UI display)
+        box_pick_cost: entry.boxPickCost,   // pick cost per box type
+        box_pack_cost: entry.boxPackCost,   // pack cost per box type
         transport_cost: entry.transportCost, // = transport_purchase_cost (for UI display)
         // total_cost from published_box_costs includes: box_material + pick + pack + transport
         total_cost: entry.totalCost,
+        carrier_code: entry.carrier,        // selected carrier (e.g. "PostNL", "DPD")
       }
     })
     .filter((m): m is PackagingMatch => m !== null)
@@ -628,8 +640,11 @@ function refineBoxCostWithWeight(
   return {
     ...box,
     box_cost: entry.boxCost,
+    box_pick_cost: entry.boxPickCost,
+    box_pack_cost: entry.boxPackCost,
     transport_cost: entry.transportCost,
     total_cost: entry.totalCost,
+    carrier_code: entry.carrier,
     weight_grams: weight,
     weight_bracket: entry.weightBracket,
   }
@@ -843,8 +858,11 @@ async function solveMultiBoxGreedy(
       idpackaging: bestMatch.idpackaging,
       products: boxProducts,
       box_cost: bestMatch.box_cost || undefined,
+      box_pick_cost: bestMatch.box_pick_cost || undefined,
+      box_pack_cost: bestMatch.box_pack_cost || undefined,
       transport_cost: bestMatch.transport_cost || undefined,
       total_cost: bestMatch.total_cost || undefined,
+      carrier_code: bestMatch.carrier_code ?? undefined,
     }
     // Refine cost with actual weight for this box's products
     greedyBox = refineBoxCostWithWeight(greedyBox, getCostEntries(bestMatch), weightMap)
@@ -976,8 +994,11 @@ export async function solveMultiBox(
           quantity: 1,
         }],
         box_cost: perfectMatch.box_cost || undefined,
+        box_pick_cost: perfectMatch.box_pick_cost || undefined,
+        box_pack_cost: perfectMatch.box_pack_cost || undefined,
         transport_cost: perfectMatch.transport_cost || undefined,
         total_cost: perfectMatch.total_cost || undefined,
+        carrier_code: perfectMatch.carrier_code ?? undefined,
       }
       // Refine cost with actual weight for this single-product box
       nmBox = refineBoxCostWithWeight(nmBox, getCostEntries(perfectMatch), weightMap)
@@ -1013,8 +1034,11 @@ export async function solveMultiBox(
         idpackaging: singleBoxMatch.idpackaging,
         products: boxProducts,
         box_cost: singleBoxMatch.box_cost || undefined,
+        box_pick_cost: singleBoxMatch.box_pick_cost || undefined,
+        box_pack_cost: singleBoxMatch.box_pack_cost || undefined,
         transport_cost: singleBoxMatch.transport_cost || undefined,
         total_cost: singleBoxMatch.total_cost || undefined,
+        carrier_code: singleBoxMatch.carrier_code ?? undefined,
       }
       // Refine cost with actual weight
       singleBox = refineBoxCostWithWeight(singleBox, getCostEntries(singleBoxMatch), weightMap)
@@ -1051,8 +1075,11 @@ export async function solveMultiBox(
               idpackaging: candidate.match.idpackaging,
               products: boxProducts,
               box_cost: candidate.match.box_cost || undefined,
+              box_pick_cost: candidate.match.box_pick_cost || undefined,
+              box_pack_cost: candidate.match.box_pack_cost || undefined,
               transport_cost: candidate.match.transport_cost || undefined,
               total_cost: candidate.cost || undefined,
+              carrier_code: candidate.match.carrier_code ?? undefined,
             }
             optBox = refineBoxCostWithWeight(optBox, getCostEntries(candidate.match), weightMap)
             boxes.push(optBox)
@@ -1382,8 +1409,11 @@ export async function calculateAdvice(
 
         // Enrich with cost data if available
         let boxCost: number | undefined
+        let boxPickCost: number | undefined
+        let boxPackCost: number | undefined
         let transportCost: number | undefined
         let totalCostValue: number | undefined
+        let carrierCode: string | undefined
 
         if (countryCode && defaultPkg.facturatie_box_sku) {
           if (costMap) {
@@ -1403,8 +1433,11 @@ export async function calculateAdvice(
               const entry = selectCostForWeight(entries, totalWeight)
               if (entry) {
                 boxCost = entry.boxMaterialCost ?? entry.boxCost
+                boxPickCost = entry.boxPickCost
+                boxPackCost = entry.boxPackCost
                 transportCost = entry.transportCost
                 totalCostValue = entry.totalCost
+                carrierCode = entry.carrier
                 costDataAvailable = true
               }
             }
@@ -1417,8 +1450,11 @@ export async function calculateAdvice(
           idpackaging: defaultPkg.idpackaging,
           products: boxProducts,
           box_cost: boxCost,
+          box_pick_cost: boxPickCost,
+          box_pack_cost: boxPackCost,
           transport_cost: transportCost,
           total_cost: totalCostValue,
+          carrier_code: carrierCode,
         }
 
         // Validate weight
