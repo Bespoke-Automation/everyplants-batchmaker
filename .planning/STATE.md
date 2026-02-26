@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 ## Current Position
 
 Phase: 5 of 6 (Engine Optimization)
-Plan: 1 of 3 in current phase (05-01 complete)
+Plan: 2 of 3 in current phase (05-01, 05-02 complete)
 Status: Executing Phase 5
-Last activity: 2026-02-26 — Completed 05-01 default product packaging
+Last activity: 2026-02-26 — Completed 05-02 ranking + cost-optimal multi-box solver
 
-Progress: [█████████░] 90% (9/10 plans across all phases)
+Progress: [██████████] 91% (10/11 plans across all phases)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 8 (5 v1.0 + 3 v2.0)
-- Average duration: 5min (v2.0 only)
-- Total execution time: 15min (v2.0)
+- Total plans completed: 10 (5 v1.0 + 5 v2.0)
+- Average duration: 4min (v2.0 only)
+- Total execution time: 22min (v2.0)
 
 **By Phase:**
 
@@ -31,7 +31,7 @@ Progress: [█████████░] 90% (9/10 plans across all phases)
 | 2. Cost-Primary Ranking | 2 | — | — |
 | 3. API + UI Integration | 1 | — | — |
 | 4. Cost Data Layer v2 | 3/3 | 15min | 5min |
-| 5. Engine Optimization | 1/3 | 3min | 3min |
+| 5. Engine Optimization | 2/3 | 7min | 3.5min |
 
 **Recent Trend:**
 - v1.0 completed in 1 day (2026-02-24)
@@ -39,6 +39,7 @@ Progress: [█████████░] 90% (9/10 plans across all phases)
 - v2.0 04-02 completed in 3min (2026-02-26)
 - v2.0 04-03 completed in 2min (2026-02-26)
 - v2.0 05-01 completed in 3min (2026-02-26)
+- v2.0 05-02 completed in 4min (2026-02-26)
 - Trend: Accelerating
 
 *Updated after each plan completion*
@@ -67,6 +68,9 @@ Recent decisions affecting current work:
 - [04-03]: Products with no weight data treated as 0g with console warning
 - [05-01]: Classified products fetched inline in products/status API (not separate endpoint)
 - [05-01]: Default packaging dropdown only shown for classified products
+- [05-02]: State object wrapper for TypeScript closure narrowing of mutable bestSolution
+- [05-02]: Deduplicate candidates by packaging_id:rule_group to reduce search space
+- [05-02]: solveMultiBoxOptimal is synchronous — all DB calls done before search starts
 
 ### v1.0 Context (carried over)
 
@@ -89,9 +93,9 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 05-01-PLAN.md (default product packaging). Next: 05-02 or 05-03.
+Stopped at: Completed 05-02-PLAN.md (ranking + cost-optimal multi-box solver). Next: 05-03.
 Resume with: /gsd:execute-phase 5
-Resume file: .planning/phases/05-engine-optimization/05-02-PLAN.md
+Resume file: .planning/phases/05-engine-optimization/05-03-PLAN.md
 
 ### Phase Execution Status
 - Phase 4: 3 plans in 3 waves (04-01 → 04-02 → 04-03), all sequential deps

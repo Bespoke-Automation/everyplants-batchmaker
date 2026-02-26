@@ -28,15 +28,15 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Cost-Optimized Ranking
 
-- [ ] **RANK-01**: De engine rankt verpakkingsopties primair op totale kosten (laagste eerst) wanneer kostdata beschikbaar is
-- [ ] **RANK-02**: De engine berekent total_cost als som van box_material_cost + box_pick_cost + box_pack_cost + transport_purchase_cost
-- [ ] **RANK-03**: Dozen waarvoor geen preferred route bestaat voor het bestemmingsland worden uitgesloten als kandidaat
-- [ ] **RANK-04**: Bij gelijke kosten wordt gesorteerd op specificiteit en volume (bestaande tiebreakers)
+- [x] **RANK-01**: De engine rankt verpakkingsopties primair op totale kosten (laagste eerst) wanneer kostdata beschikbaar is
+- [x] **RANK-02**: De engine berekent total_cost als som van box_material_cost + box_pick_cost + box_pack_cost + transport_purchase_cost
+- [x] **RANK-03**: Dozen waarvoor geen preferred route bestaat voor het bestemmingsland worden uitgesloten als kandidaat
+- [x] **RANK-04**: Bij gelijke kosten wordt gesorteerd op specificiteit en volume (bestaande tiebreakers)
 
 ### Multi-Box Optimization
 
-- [ ] **MULTI-01**: Bij orders die niet in 1 doos passen, evalueert de engine meerdere combinaties op totaalkosten (niet-greedy solver)
-- [ ] **MULTI-02**: De multi-box solver heeft een 200ms timeout met fallback naar het bestaande greedy algoritme
+- [x] **MULTI-01**: Bij orders die niet in 1 doos passen, evalueert de engine meerdere combinaties op totaalkosten (niet-greedy solver)
+- [x] **MULTI-02**: De multi-box solver heeft een 200ms timeout met fallback naar het bestaande greedy algoritme
 
 ### Single-SKU Fast Path
 
@@ -91,12 +91,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | WEIGHT-01 | Phase 4 | Complete |
 | WEIGHT-02 | Phase 4 | Complete |
 | WEIGHT-03 | Phase 4 | Complete |
-| RANK-01 | Phase 5 | Pending |
-| RANK-02 | Phase 5 | Pending |
-| RANK-03 | Phase 5 | Pending |
-| RANK-04 | Phase 5 | Pending |
-| MULTI-01 | Phase 5 | Pending |
-| MULTI-02 | Phase 5 | Pending |
+| RANK-01 | Phase 5 | Complete |
+| RANK-02 | Phase 5 | Complete |
+| RANK-03 | Phase 5 | Complete |
+| RANK-04 | Phase 5 | Complete |
+| MULTI-01 | Phase 5 | Complete |
+| MULTI-02 | Phase 5 | Complete |
 | SINGLE-01 | Phase 5 | Complete |
 | SINGLE-02 | Phase 5 | Pending |
 | SINGLE-03 | Phase 5 | Pending |

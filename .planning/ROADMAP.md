@@ -91,7 +91,7 @@ Plans:
 Plans:
 - [x] 04-01-PLAN.md — SKU mapping: DB migration, seed data, admin UI voor facturatie_box_sku
 - [x] 04-02-PLAN.md — costProvider rewrite naar published_box_costs + webhook endpoint + SKU validatie
-- [ ] 04-03-PLAN.md — Weight bracket berekening en selectie in engine
+- [x] 04-03-PLAN.md — Weight bracket berekening en selectie in engine
 
 ### Phase 5: Engine Optimization
 **Goal**: De engine bepaalt de kostenoptimale verpakkingsoplossing door verbeterde ranking met pick/pack kosten en weight brackets, een niet-greedy multi-box solver, en een directe product-verpakking mapping voor single-SKU orders
@@ -105,8 +105,8 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 05-01-PLAN.md — Single-SKU data layer: DB migration, admin UI, API endpoint voor default packaging per product
-- [ ] 05-02-PLAN.md — Ranking verificatie/update + niet-greedy cost-optimal multi-box solver
+- [x] 05-01-PLAN.md — Single-SKU data layer: DB migration, admin UI, API endpoint voor default packaging per product
+- [x] 05-02-PLAN.md — Ranking verificatie/update + niet-greedy cost-optimal multi-box solver
 - [ ] 05-03-PLAN.md — Single-SKU engine integratie in calculateAdvice fast path
 
 ### Phase 6: Integration & Display
@@ -141,6 +141,6 @@ Phases execute in numeric order: 1 --> 2 --> 3 --> 4 --> 5 --> 6
 | 1. Cost Data Layer | v1.0 | 2/2 | Complete | 2026-02-24 |
 | 2. Cost-Primary Ranking | v1.0 | 2/2 | Complete | 2026-02-24 |
 | 3. API + UI Integration | v1.0 | 1/1 | Complete | 2026-02-24 |
-| 4. Cost Data Layer v2 | v2.0 | 1/3 | In progress | - |
-| 5. Engine Optimization | v2.0 | 0/3 | Not started | - |
+| 4. Cost Data Layer v2 | v2.0 | 3/3 | Complete | 2026-02-26 |
+| 5. Engine Optimization | v2.0 | 2/3 | In progress | - |
 | 6. Integration & Display | v2.0 | 0/1 | Not started | - |
