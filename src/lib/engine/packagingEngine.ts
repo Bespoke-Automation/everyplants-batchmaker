@@ -665,7 +665,212 @@ export function rankPackagings(
   })
 }
 
-// ── 4. solveMultiBox ──────────────────────────────────────────────────────
+// ── 4a. Cost-optimal multi-box solver (branch-and-bound) ─────────────────
+
+interface MultiBoxCandidate {
+  match: PackagingMatch
+  coveredUnits: Map<string, number>  // what this box covers from the remaining pool
+  cost: number                        // total_cost of this box
+}
+
+interface MultiBoxSolution {
+  boxes: MultiBoxCandidate[]
+  totalCost: number
+}
+
+/**
+ * Non-greedy multi-box solver using bounded branch-and-bound search.
+ *
+ * Evaluates multiple packaging combinations to find the lowest total cost.
+ * Has a timeout (default 200ms) and depth limit (max 5 boxes) to prevent
+ * excessive computation on large orders.
+ *
+ * @returns The cheapest solution found within the time limit, or null if
+ *          no complete solution was found (timeout with no valid result).
+ */
+function solveMultiBoxOptimal(
+  pool: Map<string, ShippingUnitEntry>,
+  candidates: PackagingMatch[],
+  costDataAvailable: boolean,
+  timeoutMs: number = 200
+): MultiBoxSolution | null {
+  if (!costDataAvailable || candidates.length === 0) return null
+
+  const startTime = Date.now()
+  const state = { best: null as MultiBoxSolution | null }
+
+  // Pre-compute which candidates can cover which units from the full pool
+  // Sort by total_cost ASC for better pruning (cheapest first)
+  const sortedCandidates = [...candidates].sort((a, b) => a.total_cost - b.total_cost)
+
+  // Deduplicate candidates by packaging_id + rule_group to avoid exploring the same box twice
+  const seen = new Set<string>()
+  const uniqueCandidates = sortedCandidates.filter(c => {
+    const key = `${c.packaging_id}:${c.rule_group}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+
+  function evaluateCandidate(
+    candidate: PackagingMatch,
+    remaining: Map<string, ShippingUnitEntry>
+  ): { covered: Map<string, number>; newRemaining: Map<string, ShippingUnitEntry> } | null {
+    const covered = new Map<string, number>()
+    let coversAnything = false
+
+    for (const [unitId, qty] of candidate.covered_units) {
+      const available = remaining.get(unitId)
+      if (available && available.quantity > 0) {
+        const consume = Math.min(qty, available.quantity)
+        covered.set(unitId, consume)
+        coversAnything = true
+      }
+    }
+
+    if (!coversAnything) return null
+
+    // Build reduced pool
+    const newRemaining = new Map<string, ShippingUnitEntry>()
+    for (const [id, entry] of remaining) {
+      const consumed = covered.get(id) ?? 0
+      const left = entry.quantity - consumed
+      if (left > 0) {
+        newRemaining.set(id, { ...entry, quantity: left })
+      }
+    }
+
+    return { covered, newRemaining }
+  }
+
+  function search(
+    remaining: Map<string, ShippingUnitEntry>,
+    currentBoxes: MultiBoxCandidate[],
+    currentCost: number,
+    depth: number
+  ): void {
+    // Timeout check
+    if (Date.now() - startTime > timeoutMs) return
+
+    // All units placed? We found a complete solution.
+    if (remaining.size === 0) {
+      if (!state.best || currentCost < state.best.totalCost) {
+        state.best = { boxes: [...currentBoxes], totalCost: currentCost }
+      }
+      return
+    }
+
+    // Depth limit: max 5 boxes (typical orders need 2-4)
+    if (depth >= 5) return
+
+    // Pruning: if current cost already >= best, skip this branch
+    if (state.best && currentCost >= state.best.totalCost) return
+
+    // Try each candidate against remaining pool
+    for (const candidate of uniqueCandidates) {
+      // Timeout check inside loop
+      if (Date.now() - startTime > timeoutMs) return
+
+      const result = evaluateCandidate(candidate, remaining)
+      if (!result) continue
+
+      const boxCandidate: MultiBoxCandidate = {
+        match: candidate,
+        coveredUnits: result.covered,
+        cost: candidate.total_cost,
+      }
+
+      search(
+        result.newRemaining,
+        [...currentBoxes, boxCandidate],
+        currentCost + candidate.total_cost,
+        depth + 1
+      )
+    }
+  }
+
+  search(pool, [], 0, 0)
+
+  if (state.best) {
+    const elapsed = Date.now() - startTime
+    console.log(`[packagingEngine] Optimal multi-box: ${state.best.boxes.length} boxes, total EUR ${(state.best.totalCost / 100).toFixed(2)} (found in ${elapsed}ms)`)
+  }
+
+  return state.best
+}
+
+// ── 4b. Greedy multi-box solver (fallback) ──────────────────────────────
+
+/**
+ * Greedy multi-box solver: iteratively picks the packaging that covers the
+ * most units until all units are placed. This is the original algorithm
+ * extracted for use as a fallback when the optimal solver times out or
+ * when cost data is not available.
+ */
+async function solveMultiBoxGreedy(
+  pool: Map<string, ShippingUnitEntry>,
+  products: OrderProduct[],
+  mixableMap: Map<number, { is_mixable: boolean; shipping_unit_id: string | null; weight: number; productcode: string }>,
+  weightMap: Map<string, number>,
+  costMap: Map<string, CostEntry[]> | null,
+  costDataAvailable: boolean,
+  getCostEntries: (match: PackagingMatch) => CostEntry[] | undefined
+): Promise<AdviceBox[] | null> {
+  const boxes: AdviceBox[] = []
+  let iterations = 0
+  const maxIterations = 20 // Safety limit
+
+  while (pool.size > 0 && iterations < maxIterations) {
+    iterations++
+
+    // Re-match for remaining pool
+    const poolMatches = await matchCompartments(pool)
+    const enrichedPool = enrichWithCosts(poolMatches, costMap)
+    const poolRanked = rankPackagings(enrichedPool, costDataAvailable)
+
+    if (poolRanked.length === 0) {
+      // Can't place remaining units
+      return null
+    }
+
+    // Pick the packaging that covers the most units (by count) among top-specificity matches
+    const bestMatch = pickBestCoverage(poolRanked)
+
+    const boxProducts = buildProductList(bestMatch.covered_units, pool, products, mixableMap)
+    let greedyBox: AdviceBox = {
+      packaging_id: bestMatch.packaging_id,
+      packaging_name: bestMatch.packaging_name,
+      idpackaging: bestMatch.idpackaging,
+      products: boxProducts,
+      box_cost: bestMatch.box_cost || undefined,
+      transport_cost: bestMatch.transport_cost || undefined,
+      total_cost: bestMatch.total_cost || undefined,
+    }
+    // Refine cost with actual weight for this box's products
+    greedyBox = refineBoxCostWithWeight(greedyBox, getCostEntries(bestMatch), weightMap)
+    boxes.push(greedyBox)
+
+    // Remove covered units from pool
+    for (const [unitId, qty] of bestMatch.covered_units) {
+      const current = pool.get(unitId)
+      if (current) {
+        current.quantity -= qty
+        if (current.quantity <= 0) {
+          pool.delete(unitId)
+        }
+      }
+    }
+  }
+
+  if (pool.size > 0) {
+    // Couldn't place everything
+    return null
+  }
+
+  return boxes
+}
+
+// ── 4c. solveMultiBox (main entry point) ─────────────────────────────────
 
 export async function solveMultiBox(
   shippingUnits: Map<string, ShippingUnitEntry>,
@@ -815,61 +1020,62 @@ export async function solveMultiBox(
       singleBox = refineBoxCostWithWeight(singleBox, getCostEntries(singleBoxMatch), weightMap)
       boxes.push(singleBox)
     } else {
-      // Greedy multi-box split
+      // Multi-box split: try cost-optimal solver first, fall back to greedy
       const pool = new Map<string, ShippingUnitEntry>()
       for (const [id, entry] of mixableRemaining) {
         pool.set(id, { ...entry })
       }
 
-      let iterations = 0
-      const maxIterations = 20 // Safety limit
+      let multiBoxSolved = false
 
-      while (pool.size > 0 && iterations < maxIterations) {
-        iterations++
-
-        // Re-match for remaining pool
+      // 1. Try cost-optimal solver (with 200ms timeout) when cost data is available
+      if (costDataAvailable) {
+        // Generate fresh candidates for the full remaining pool
         const poolMatches = await matchCompartments(pool)
         const enrichedPool = enrichWithCosts(poolMatches, costMap)
-        const poolRanked = rankPackagings(enrichedPool, costDataAvailable)
 
-        if (poolRanked.length === 0) {
-          // Can't place remaining units — no_match
-          return { boxes: [], confidence: 'no_match' }
-        }
+        const optimalSolution = solveMultiBoxOptimal(
+          pool,
+          enrichedPool,
+          costDataAvailable,
+          200  // 200ms timeout
+        )
 
-        // Pick the packaging that covers the most units (by count) among top-specificity matches
-        // Among equally specific, prefer the one covering more units
-        const bestMatch = pickBestCoverage(poolRanked)
-
-        const boxProducts = buildProductList(bestMatch.covered_units, pool, products, mixableMap)
-        let greedyBox: AdviceBox = {
-          packaging_id: bestMatch.packaging_id,
-          packaging_name: bestMatch.packaging_name,
-          idpackaging: bestMatch.idpackaging,
-          products: boxProducts,
-          box_cost: bestMatch.box_cost || undefined,
-          transport_cost: bestMatch.transport_cost || undefined,
-          total_cost: bestMatch.total_cost || undefined,
-        }
-        // Refine cost with actual weight for this box's products
-        greedyBox = refineBoxCostWithWeight(greedyBox, getCostEntries(bestMatch), weightMap)
-        boxes.push(greedyBox)
-
-        // Remove covered units from pool
-        for (const [unitId, qty] of bestMatch.covered_units) {
-          const current = pool.get(unitId)
-          if (current) {
-            current.quantity -= qty
-            if (current.quantity <= 0) {
-              pool.delete(unitId)
+        if (optimalSolution && optimalSolution.boxes.length > 0) {
+          // Convert MultiBoxCandidate[] to AdviceBox[] with weight refinement
+          for (const candidate of optimalSolution.boxes) {
+            const boxProducts = buildProductList(candidate.coveredUnits, pool, products, mixableMap)
+            let optBox: AdviceBox = {
+              packaging_id: candidate.match.packaging_id,
+              packaging_name: candidate.match.packaging_name,
+              idpackaging: candidate.match.idpackaging,
+              products: boxProducts,
+              box_cost: candidate.match.box_cost || undefined,
+              transport_cost: candidate.match.transport_cost || undefined,
+              total_cost: candidate.cost || undefined,
             }
+            optBox = refineBoxCostWithWeight(optBox, getCostEntries(candidate.match), weightMap)
+            boxes.push(optBox)
           }
+          // All units placed by optimal solver
+          pool.clear()
+          multiBoxSolved = true
         }
       }
 
-      if (pool.size > 0) {
-        // Couldn't place everything
-        return { boxes: [], confidence: 'no_match' }
+      // 2. Fallback: greedy solver (when optimal didn't find solution or no cost data)
+      if (!multiBoxSolved && pool.size > 0) {
+        console.log('[packagingEngine] Multi-box: falling back to greedy solver')
+        const greedyBoxes = await solveMultiBoxGreedy(
+          pool, products, mixableMap, weightMap,
+          costMap, costDataAvailable, getCostEntries
+        )
+
+        if (greedyBoxes === null) {
+          return { boxes: [], confidence: 'no_match' }
+        }
+
+        boxes.push(...greedyBoxes)
       }
     }
   }
