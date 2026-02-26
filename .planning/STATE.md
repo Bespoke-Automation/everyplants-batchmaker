@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 ## Current Position
 
 Phase: 4 of 6 (Cost Data Layer v2)
-Plan: 0 of 3 in current phase (all 3 planned, ready to execute)
-Status: Ready to execute Phase 4
-Last activity: 2026-02-26 — All phases (4,5,6) planned and verified
+Plan: 1 of 3 in current phase (04-01 complete, 04-02 next)
+Status: Executing Phase 4
+Last activity: 2026-02-26 — Completed 04-01 SKU mapping plan
 
-Progress: [█████░░░░░] 50% (5/10 plans across all phases)
+Progress: [██████░░░░] 60% (6/10 plans across all phases)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5 (v1.0)
-- Average duration: — (not tracked in v1.0)
-- Total execution time: — (not tracked in v1.0)
+- Total plans completed: 6 (5 v1.0 + 1 v2.0)
+- Average duration: 10min (v2.0 only)
+- Total execution time: 10min (v2.0)
 
 **By Phase:**
 
@@ -30,9 +30,11 @@ Progress: [█████░░░░░] 50% (5/10 plans across all phases)
 | 1. Cost Data Layer | 2 | — | — |
 | 2. Cost-Primary Ranking | 2 | — | — |
 | 3. API + UI Integration | 1 | — | — |
+| 4. Cost Data Layer v2 | 1/3 | 10min | 10min |
 
 **Recent Trend:**
 - v1.0 completed in 1 day (2026-02-24)
+- v2.0 04-01 completed in 10min (2026-02-26)
 - Trend: Stable
 
 *Updated after each plan completion*
@@ -50,6 +52,9 @@ Recent decisions affecting current work:
 - [v2.0]: Pick/pack per doostype via box_pick_cost + box_pack_cost
 - [v2.0]: Webhook voor cache invalidatie (niet Inngest)
 - [v2.0]: Niet-greedy multi-box solver met 200ms timeout naar greedy fallback
+- [04-01]: facturatie_box_sku as TEXT (not FK) since cross-database reference
+- [04-01]: Same-as-barcode packagings get explicit facturatie_box_sku (not derived at runtime)
+- [04-01]: 27 total seeded (6 mismatch + 21 same-as-barcode), 3 null (batchmaker-only)
 
 ### v1.0 Context (carried over)
 
@@ -73,9 +78,9 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: All 3 phases planned + verified. Phase 4 execute-phase initialized, ready to spawn Wave 1 (plan 04-01).
+Stopped at: Completed 04-01-PLAN.md (SKU mapping). Next: 04-02-PLAN.md (costProvider rewrite).
 Resume with: /gsd:execute-phase 4
-Resume file: .planning/phases/04-cost-data-layer-v2/04-01-PLAN.md
+Resume file: .planning/phases/04-cost-data-layer-v2/04-02-PLAN.md
 
 ### Phase Execution Status
 - Phase 4: 3 plans in 3 waves (04-01 → 04-02 → 04-03), all sequential deps

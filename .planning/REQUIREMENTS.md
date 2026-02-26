@@ -16,8 +16,8 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### SKU Mapping
 
-- [ ] **SKU-01**: Elke batchmaker verpakking heeft een `facturatie_box_sku` kolom die gekoppeld is aan de facturatie box SKU (6 mismatches + 16 correcte mappings als seed data)
-- [ ] **SKU-02**: De admin kan de facturatie_box_sku mapping beheren voor nieuwe of gewijzigde dozen
+- [x] **SKU-01**: Elke batchmaker verpakking heeft een `facturatie_box_sku` kolom die gekoppeld is aan de facturatie box SKU (6 mismatches + 16 correcte mappings als seed data)
+- [x] **SKU-02**: De admin kan de facturatie_box_sku mapping beheren voor nieuwe of gewijzigde dozen
 - [ ] **SKU-03**: Het systeem valideert bij startup dat alle actieve dozen een geldige facturatie_box_sku mapping hebben en logt ontbrekende mappings als warning
 
 ### Weight Brackets
@@ -85,8 +85,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | COST-02 | Phase 4 | Pending |
 | COST-03 | Phase 4 | Pending |
 | COST-04 | Phase 4 | Pending |
-| SKU-01 | Phase 4 | Pending |
-| SKU-02 | Phase 4 | Pending |
+| SKU-01 | Phase 4 | Complete |
+| SKU-02 | Phase 4 | Complete |
 | SKU-03 | Phase 4 | Pending |
 | WEIGHT-01 | Phase 4 | Pending |
 | WEIGHT-02 | Phase 4 | Pending |
