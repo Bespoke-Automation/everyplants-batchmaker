@@ -31,6 +31,16 @@ export async function GET() {
 
     if (unclError) throw unclError
 
+    // Classified products with default packaging (for admin UI)
+    const { data: classifiedProducts, error: classError } = await supabase
+      .schema('batchmaker')
+      .from('product_attributes')
+      .select('id, productcode, product_name, default_packaging_id')
+      .eq('classification_status', 'classified')
+      .order('productcode')
+
+    if (classError) throw classError
+
     // Last sync
     const { data: lastSync } = await supabase
       .schema('batchmaker')
@@ -49,6 +59,7 @@ export async function GET() {
       pending: counts.pending,
       lastSyncedAt: lastSync?.last_synced_at ?? null,
       unclassifiedProducts: unclassified || [],
+      classifiedProducts: classifiedProducts || [],
     })
   } catch (error) {
     console.error('[products/status] Error:', error)
