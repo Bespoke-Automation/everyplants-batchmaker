@@ -38,7 +38,8 @@ export interface PackagingMatch {
   packaging_id: string   // packagings.id (uuid)
   packaging_name: string
   idpackaging: number    // Picqer ID
-  barcode: string | null // from packagings.barcode, used as cost lookup key
+  barcode: string | null // from packagings.barcode
+  facturatie_box_sku: string | null // join key for published_box_costs lookup
   rule_group: number
   covered_units: Map<string, number>  // shipping_unit_id -> qty consumed
   leftover_units: Map<string, number> // shipping_unit_id -> qty remaining
@@ -118,7 +119,8 @@ interface PackagingRow {
   id: string
   idpackaging: number
   name: string
-  barcode: string | null  // join key for cost provider lookup
+  barcode: string | null
+  facturatie_box_sku: string | null  // join key for cost provider lookup (published_box_costs)
   picqer_tag_name: string | null
   specificity_score: number
   volume: number | null
@@ -361,7 +363,7 @@ export async function matchCompartments(
   const { data: packagings, error: pkgError } = await supabase
     .schema('batchmaker')
     .from('packagings')
-    .select('id, idpackaging, name, barcode, picqer_tag_name, specificity_score, volume, handling_cost, material_cost, max_weight')
+    .select('id, idpackaging, name, barcode, facturatie_box_sku, picqer_tag_name, specificity_score, volume, handling_cost, material_cost, max_weight')
     .eq('active', true)
     .eq('use_in_auto_advice', true)
 
@@ -419,6 +421,7 @@ export async function matchCompartments(
           packaging_name: pkg.picqer_tag_name || pkg.name,
           idpackaging: pkg.idpackaging,
           barcode: pkg.barcode ?? null,
+          facturatie_box_sku: pkg.facturatie_box_sku ?? null,
           rule_group: groupNum,
           covered_units: matchResult.covered,
           leftover_units: matchResult.leftover,
@@ -530,29 +533,35 @@ function evaluateRuleGroup(
 
 /**
  * Enrich packaging matches with cost data from the cost provider.
- * - Matches whose barcode has a cost entry: overwrite box_cost, transport_cost, total_cost
- * - Matches whose barcode has NO cost entry: EXCLUDED (no preferred route for this country)
- * - Matches without barcode: kept with original total_cost (can't look up, but not excluded)
+ * - Matches whose facturatie_box_sku has cost entries: overwrite box_cost, transport_cost, total_cost
+ * - Matches whose facturatie_box_sku has NO cost entry: EXCLUDED (no preferred route for this country)
+ * - Matches without facturatie_box_sku: kept with original total_cost (can't look up, but not excluded)
  * - If costMap is null (no cost data): return matches unchanged (graceful degradation)
+ *
+ * For weight bracket selection: uses NULL bracket entry if available, otherwise first entry.
+ * Full weight-based selection happens in Phase 4 plan 03.
  */
 function enrichWithCosts(
   matches: PackagingMatch[],
-  costMap: Map<string, CostEntry> | null
+  costMap: Map<string, CostEntry[]> | null
 ): PackagingMatch[] {
   if (!costMap) return matches  // No cost data → keep original costs
 
   return matches
     .map(match => {
-      if (!match.barcode) return match  // No barcode → can't look up, keep as-is
+      if (!match.facturatie_box_sku) return match  // No SKU mapping → can't look up, keep as-is
 
-      const cost = costMap.get(match.barcode)
-      if (!cost) return null  // No preferred route for this country → EXCLUDE
+      const entries = costMap.get(match.facturatie_box_sku)
+      if (!entries || entries.length === 0) return null  // No cost data → EXCLUDE
+
+      // Use the entry with NULL weight_bracket if available (DPD/pallet), otherwise first
+      const entry = entries.find(e => e.weightBracket === null) ?? entries[0]
 
       return {
         ...match,
-        box_cost: cost.boxCost,
-        transport_cost: cost.transportCost,
-        total_cost: cost.boxCost + cost.transportCost,
+        box_cost: entry.boxCost,
+        transport_cost: entry.transportCost,
+        total_cost: entry.totalCost,
       }
     })
     .filter((m): m is PackagingMatch => m !== null)
@@ -595,7 +604,7 @@ export async function solveMultiBox(
   unclassified: string[],
   allMatches: PackagingMatch[],
   products: OrderProduct[],
-  costMap: Map<string, CostEntry> | null = null,
+  costMap: Map<string, CostEntry[]> | null = null,
   costDataAvailable: boolean = false
 ): Promise<{ boxes: AdviceBox[]; confidence: 'full_match' | 'partial_match' | 'no_match' }> {
   // If nothing to pack, no advice needed
@@ -1033,7 +1042,7 @@ export async function calculateAdvice(
 
   // Step 2b: Cost data enrichment
   let costDataAvailable = false
-  let costMap: Map<string, CostEntry> | null = null
+  let costMap: Map<string, CostEntry[]> | null = null
 
   if (countryCode) {
     costMap = await getAllCostsForCountry(countryCode)
