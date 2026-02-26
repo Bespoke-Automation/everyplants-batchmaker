@@ -139,6 +139,7 @@ export interface LocalPackaging {
   lastSyncedAt: string
   picqerTagName: string | null
   numShippingLabels: number
+  facturatieBoxSku: string | null
 }
 
 // Tag to packaging mapping

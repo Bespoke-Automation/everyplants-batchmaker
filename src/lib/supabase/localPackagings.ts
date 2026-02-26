@@ -23,6 +23,7 @@ export interface LocalPackagingRow {
   updated_at: string
   picqer_tag_name: string | null
   num_shipping_labels: number
+  facturatie_box_sku: string | null
 }
 
 // ── Read operations ──────────────────────────────────────────────────────────
@@ -179,7 +180,7 @@ export async function deleteLocalPackaging(idpackaging: number): Promise<void> {
  */
 export async function updateLocalPackaging(
   idpackaging: number,
-  updates: Partial<Pick<LocalPackagingRow, 'idpackaging' | 'name' | 'barcode' | 'length' | 'width' | 'height' | 'max_weight' | 'box_category' | 'specificity_score' | 'handling_cost' | 'material_cost' | 'use_in_auto_advice' | 'image_url'>>
+  updates: Partial<Pick<LocalPackagingRow, 'idpackaging' | 'name' | 'barcode' | 'length' | 'width' | 'height' | 'max_weight' | 'box_category' | 'specificity_score' | 'handling_cost' | 'material_cost' | 'use_in_auto_advice' | 'image_url' | 'facturatie_box_sku'>>
 ): Promise<void> {
   const { error } = await supabase
     .schema('batchmaker')

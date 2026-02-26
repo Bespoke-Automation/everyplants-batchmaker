@@ -22,6 +22,7 @@ interface ApiLocalPackaging {
   last_synced_at: string
   picqer_tag_name: string | null
   num_shipping_labels: number
+  facturatie_box_sku: string | null
 }
 
 function transformPackaging(raw: ApiLocalPackaging): LocalPackaging {
@@ -44,6 +45,7 @@ function transformPackaging(raw: ApiLocalPackaging): LocalPackaging {
     lastSyncedAt: raw.last_synced_at,
     picqerTagName: raw.picqer_tag_name,
     numShippingLabels: raw.num_shipping_labels ?? 1,
+    facturatieBoxSku: raw.facturatie_box_sku,
   }
 }
 
@@ -151,6 +153,7 @@ export function useLocalPackagings(activeOnly = false) {
     new_idpackaging?: number
     picqer_tag_name?: string | null
     num_shipping_labels?: number
+    facturatie_box_sku?: string | null
   }) => {
     setError(null)
 
