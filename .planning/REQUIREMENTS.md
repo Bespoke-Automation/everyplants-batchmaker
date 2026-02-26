@@ -22,9 +22,9 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Weight Brackets
 
-- [ ] **WEIGHT-01**: Het systeem berekent het totaalgewicht per gevulde doos op basis van productgewichten uit `product_attributes`
-- [ ] **WEIGHT-02**: Het systeem selecteert de juiste weight bracket op basis van totaalgewicht (≤5kg, ≤10kg, ≤20kg, ≤30kg voor PostNL; NULL voor DPD/pallet)
-- [ ] **WEIGHT-03**: Bij multi-box orders bepaalt het systeem per doos apart het gewicht en de weight bracket
+- [x] **WEIGHT-01**: Het systeem berekent het totaalgewicht per gevulde doos op basis van productgewichten uit `product_attributes`
+- [x] **WEIGHT-02**: Het systeem selecteert de juiste weight bracket op basis van totaalgewicht (≤5kg, ≤10kg, ≤20kg, ≤30kg voor PostNL; NULL voor DPD/pallet)
+- [x] **WEIGHT-03**: Bij multi-box orders bepaalt het systeem per doos apart het gewicht en de weight bracket
 
 ### Cost-Optimized Ranking
 
@@ -88,9 +88,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SKU-01 | Phase 4 | Complete |
 | SKU-02 | Phase 4 | Complete |
 | SKU-03 | Phase 4 | Complete |
-| WEIGHT-01 | Phase 4 | Pending |
-| WEIGHT-02 | Phase 4 | Pending |
-| WEIGHT-03 | Phase 4 | Pending |
+| WEIGHT-01 | Phase 4 | Complete |
+| WEIGHT-02 | Phase 4 | Complete |
+| WEIGHT-03 | Phase 4 | Complete |
 | RANK-01 | Phase 5 | Pending |
 | RANK-02 | Phase 5 | Pending |
 | RANK-03 | Phase 5 | Pending |
