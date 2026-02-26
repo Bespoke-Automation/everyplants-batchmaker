@@ -33,6 +33,7 @@ interface PackagingFormData {
   useInAutoAdvice: boolean
   picqerTagName: string
   numShippingLabels: string
+  facturatieBoxSku: string
   // Skip Picqer
   skipPicqer: boolean
   manualIdpackaging: string
@@ -52,6 +53,7 @@ const emptyFormData: PackagingFormData = {
   useInAutoAdvice: false,
   picqerTagName: '',
   numShippingLabels: '1',
+  facturatieBoxSku: '',
   skipPicqer: false,
   manualIdpackaging: '',
 }
@@ -205,6 +207,7 @@ export default function PackagingList() {
       useInAutoAdvice: pkg.useInAutoAdvice,
       picqerTagName: pkg.picqerTagName || '',
       numShippingLabels: pkg.numShippingLabels.toString(),
+      facturatieBoxSku: pkg.facturatieBoxSku || '',
       skipPicqer: false,
       manualIdpackaging: pkg.idpackaging > 0 ? pkg.idpackaging.toString() : '',
     })
@@ -249,6 +252,7 @@ export default function PackagingList() {
           use_in_auto_advice: formData.useInAutoAdvice,
           picqer_tag_name: formData.picqerTagName.trim() || null,
           num_shipping_labels: formData.numShippingLabels ? parseInt(formData.numShippingLabels, 10) : 1,
+          facturatie_box_sku: formData.facturatieBoxSku.trim() || null,
         }
         // Include new_idpackaging if changed
         const newId = formData.manualIdpackaging ? parseInt(formData.manualIdpackaging, 10) : null
@@ -637,6 +641,20 @@ export default function PackagingList() {
                 </div>
 
                 <div>
+                  <label className="block text-sm font-medium mb-1">Facturatie SKU</label>
+                  <input
+                    type="text"
+                    value={formData.facturatieBoxSku}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, facturatieBoxSku: e.target.value }))}
+                    placeholder="bijv. 55_949"
+                    className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Join key naar facturatie kosten. Laat leeg als geen facturatie equivalent.
+                  </p>
+                </div>
+
+                <div>
                   <label className="block text-sm font-medium mb-1">Picqer tag naam</label>
                   <input
                     type="text"
@@ -796,7 +814,20 @@ export default function PackagingList() {
                           <ImageIcon className="w-4 h-4 text-muted-foreground" />
                         </div>
                       )}
-                      {pkg.name}
+                      <div>
+                        {pkg.name}
+                        {pkg.facturatieBoxSku ? (
+                          pkg.facturatieBoxSku !== pkg.barcode ? (
+                            <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700">
+                              SKU: {pkg.facturatieBoxSku}
+                            </span>
+                          ) : null
+                        ) : pkg.barcode ? (
+                          <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-500">
+                            Geen SKU
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
                   </td>
                   <td className="px-3 py-3">
