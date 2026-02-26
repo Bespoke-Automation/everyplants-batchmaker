@@ -40,7 +40,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Single-SKU Fast Path
 
-- [ ] **SINGLE-01**: Per product (SKU) kan vastgelegd worden welke standaard verpakking erbij hoort
+- [x] **SINGLE-01**: Per product (SKU) kan vastgelegd worden welke standaard verpakking erbij hoort
 - [ ] **SINGLE-02**: Bij orders met 1 uniek SKU gebruikt het systeem de directe product → verpakking mapping
 - [ ] **SINGLE-03**: De single-SKU mapping heeft prioriteit boven de compartment rules engine
 
@@ -97,7 +97,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RANK-04 | Phase 5 | Pending |
 | MULTI-01 | Phase 5 | Pending |
 | MULTI-02 | Phase 5 | Pending |
-| SINGLE-01 | Phase 5 | Pending |
+| SINGLE-01 | Phase 5 | Complete |
 | SINGLE-02 | Phase 5 | Pending |
 | SINGLE-03 | Phase 5 | Pending |
 | DEGRAD-01 | Phase 4 | Complete |
