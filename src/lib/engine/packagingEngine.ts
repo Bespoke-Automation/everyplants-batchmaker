@@ -541,7 +541,12 @@ function evaluateRuleGroup(
  * - If costMap is null (no cost data): return matches unchanged (graceful degradation)
  *
  * For weight bracket selection: uses NULL bracket entry if available, otherwise first entry.
- * Full weight-based selection happens in Phase 4 plan 03.
+ * Full weight-based selection happens in refineBoxCostWithWeight (Pass 2).
+ *
+ * Cost formula: total_cost from published_box_costs includes: box_material + pick + pack + transport.
+ * box_cost is set to entry.boxCost (= boxMaterialCost) for downstream UI display.
+ * transport_cost is set to entry.transportCost for downstream UI display.
+ * total_cost is set from entry.totalCost directly (NOT box_cost + transport_cost, which would miss pick/pack).
  */
 function enrichWithCosts(
   matches: PackagingMatch[],
@@ -561,8 +566,9 @@ function enrichWithCosts(
 
       return {
         ...match,
-        box_cost: entry.boxCost,
-        transport_cost: entry.transportCost,
+        box_cost: entry.boxCost,           // = boxMaterialCost (for UI display)
+        transport_cost: entry.transportCost, // = transport_purchase_cost (for UI display)
+        // total_cost from published_box_costs includes: box_material + pick + pack + transport
         total_cost: entry.totalCost,
       }
     })
