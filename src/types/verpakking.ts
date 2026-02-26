@@ -251,12 +251,22 @@ export interface BatchPicklistItem {
 // ── Cost types (engine cost provider) ────────────────────────────────────────
 
 export interface CostEntry {
-  boxSku: string           // packaging_costs.sku (e.g., '55_949')
-  boxName: string          // packaging_costs.name (e.g., 'Surprise box')
-  boxCost: number          // packaging_costs.total_purchase_price
-  transportCost: number    // shipping_rates.shipping_cost
-  carrier: string          // shipping_rates.carrier (e.g., 'PostNL', 'DPD')
-  totalCost: number        // boxCost + transportCost
+  boxSku: string              // published_box_costs.box_sku (join key)
+  boxName: string             // published_box_costs.box_name
+  countryCode: string         // published_box_costs.country_code
+  carrier: string             // published_box_costs.carrier_code
+  tariffClass: string         // published_box_costs.tariff_class ('laag' or 'hoog')
+  weightBracket: string | null // published_box_costs.weight_bracket ('0-5kg', '5-10kg', etc. or NULL)
+  isPallet: boolean           // published_box_costs.is_pallet
+  vehicleType: string | null  // published_box_costs.vehicle_type (COL, HEU, EWP, BLOK or null)
+  boxMaterialCost: number     // published_box_costs.box_material_cost
+  boxPickCost: number         // published_box_costs.box_pick_cost
+  boxPackCost: number         // published_box_costs.box_pack_cost
+  transportCost: number       // published_box_costs.transport_purchase_cost
+  totalCost: number           // published_box_costs.total_cost
+  calculatedAt: string        // published_box_costs.calculated_at (ISO timestamp)
+  // v1 compatibility alias (= boxMaterialCost, backward compatible with enrichWithCosts)
+  boxCost: number
 }
 
 // Ship box request/response
