@@ -100,6 +100,22 @@ export function isOrderSyncDisabled(): boolean {
 }
 
 /**
+ * Cutoff datum voor order sync. Orders aangemaakt vóór deze datum worden
+ * overgeslagen om duplicaten te voorkomen met Duxly-orders.
+ * Set via FLORIDAY_ORDER_SYNC_CUTOFF (ISO 8601 string).
+ */
+function getOrderSyncCutoff(): Date | null {
+  const cutoff = process.env.FLORIDAY_ORDER_SYNC_CUTOFF
+  if (!cutoff) return null
+  const date = new Date(cutoff)
+  if (isNaN(date.getTime())) {
+    console.warn(`Invalid FLORIDAY_ORDER_SYNC_CUTOFF: "${cutoff}"`)
+    return null
+  }
+  return date
+}
+
+/**
  * Sync all new fulfillment orders from Floriday and create them in Picqer.
  * Each FulfillmentOrder becomes 1 Picqer order.
  */
@@ -230,6 +246,18 @@ export async function processFulfillmentOrder(
     if (existing && (existing.processing_status === 'created' || existing.processing_status === 'concept_unresolved')) {
       console.log(`FO ${foId} already processed (${existing.processing_status}), skipping`)
       return 'skipped'
+    }
+
+    // Check cutoff date — skip orders created before our sync was enabled
+    // (prevents duplicates with orders already created by Duxly)
+    const cutoff = getOrderSyncCutoff()
+    if (cutoff && fulfillmentOrder.creationDateTime) {
+      const foCreated = new Date(fulfillmentOrder.creationDateTime)
+      if (foCreated < cutoff) {
+        console.log(`FO ${foId} created ${fulfillmentOrder.creationDateTime} is before cutoff ${cutoff.toISOString()}, skipping`)
+        await upsertOrderMapping(fulfillmentOrder, [], null, 'skipped', `Before cutoff date ${cutoff.toISOString()}`)
+        return 'skipped'
+      }
     }
 
     // Only process ACCEPTED fulfillment orders
