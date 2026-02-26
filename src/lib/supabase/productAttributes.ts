@@ -424,6 +424,54 @@ export async function classifyAllProducts(): Promise<ClassifyStats> {
   return stats
 }
 
+// ── Default packaging ────────────────────────────────────────────────────────
+
+/**
+ * Update the default packaging for a product attribute.
+ * Pass null to clear the default packaging.
+ */
+export async function updateDefaultPackaging(
+  productAttributeId: string,
+  packagingId: string | null
+): Promise<void> {
+  const { error } = await supabase
+    .schema('batchmaker')
+    .from('product_attributes')
+    .update({ default_packaging_id: packagingId })
+    .eq('id', productAttributeId)
+
+  if (error) {
+    console.error(`Error updating default packaging for ${productAttributeId}:`, error)
+    throw error
+  }
+}
+
+/**
+ * Fetch all classified products with their default_packaging_id.
+ */
+export async function getProductsWithDefaultPackaging(): Promise<
+  Array<{
+    id: string
+    productcode: string
+    product_name: string
+    default_packaging_id: string | null
+  }>
+> {
+  const { data, error } = await supabase
+    .schema('batchmaker')
+    .from('product_attributes')
+    .select('id, productcode, product_name, default_packaging_id')
+    .eq('classification_status', 'classified')
+    .order('productcode', { ascending: true })
+
+  if (error) {
+    console.error('Error fetching products with default packaging:', error)
+    throw error
+  }
+
+  return data || []
+}
+
 // ── Read operations ──────────────────────────────────────────────────────────
 
 /**
