@@ -58,8 +58,13 @@ interface EngineAdviceBox {
   idpackaging: number
   products: { productcode: string; shipping_unit_name: string; quantity: number }[]
   box_cost?: number
+  box_pick_cost?: number
+  box_pack_cost?: number
   transport_cost?: number
   total_cost?: number
+  carrier_code?: string
+  weight_grams?: number
+  weight_bracket?: string | null
 }
 
 interface EngineAdvice {
@@ -77,6 +82,15 @@ interface EngineAdvice {
 function formatCost(value: number | undefined): string {
   if (value === undefined) return '-'
   return `\u20AC${value.toFixed(2)}`
+}
+
+function getCountryName(code: string): string {
+  const countries: Record<string, string> = {
+    NL: 'Nederland', BE: 'Belgie', DE: 'Duitsland', FR: 'Frankrijk',
+    AT: 'Oostenrijk', LU: 'Luxemburg', SE: 'Zweden', IT: 'Italie', ES: 'Spanje',
+    DK: 'Denemarken', PL: 'Polen', CZ: 'Tsjechie', UK: 'Verenigd Koninkrijk', GB: 'Verenigd Koninkrijk',
+  }
+  return countries[code?.toUpperCase()] ?? code
 }
 
 // Shared status translation map (English -> Dutch)
@@ -1295,27 +1309,57 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
                     Geen producten konden geclassificeerd worden. Controleer of de productattributen in Picqer zijn ingevuld.
                   </div>
                 )}
+                {order?.deliverycountry && (
+                  <div className="flex items-center gap-1.5">
+                    <MapPin className="w-3 h-3 flex-shrink-0" />
+                    <span className="font-medium">Bestemming:</span>
+                    <span>{getCountryName(order.deliverycountry)}</span>
+                  </div>
+                )}
                 {engineAdvice.cost_data_available !== false && engineAdvice.advice_boxes.some(b => b.total_cost !== undefined) && (
                   <div>
                     <span className="font-medium">Kosten per doos:</span>
-                    <div className="mt-0.5 space-y-0.5">
+                    <div className="mt-0.5 space-y-1">
                       {engineAdvice.advice_boxes.map((box, idx) => (
                         box.total_cost !== undefined ? (
-                          <div key={idx} className="flex items-center justify-between">
-                            <span>{box.packaging_name}</span>
-                            <span className="tabular-nums">
-                              {formatCost(box.box_cost)} doos + {formatCost(box.transport_cost)} transport = <strong>{formatCost(box.total_cost)}</strong>
-                            </span>
+                          <div key={idx} className="flex flex-col gap-0.5">
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium">{box.packaging_name}</span>
+                              <span className="tabular-nums font-semibold">{formatCost(box.total_cost)}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-[11px] opacity-75">
+                              <span>
+                                {formatCost(box.box_cost)} doos
+                                {(box.box_pick_cost !== undefined || box.box_pack_cost !== undefined) && (
+                                  <> + {formatCost((box.box_pick_cost ?? 0) + (box.box_pack_cost ?? 0))} pick/pack</>
+                                )}
+                                {' '}+ {formatCost(box.transport_cost)} transport
+                              </span>
+                              {box.carrier_code && (
+                                <span className="ml-2">{box.carrier_code}{box.weight_bracket ? ` (${box.weight_bracket})` : ''}</span>
+                              )}
+                            </div>
                           </div>
                         ) : null
                       ))}
+                      {engineAdvice.advice_boxes.length > 1 && engineAdvice.advice_boxes.some(b => b.total_cost !== undefined) && (
+                        <div className="flex items-center justify-between font-semibold border-t border-current/10 pt-1 mt-1">
+                          <span>Totaal ({engineAdvice.advice_boxes.length} dozen)</span>
+                          <span className="tabular-nums">
+                            {formatCost(engineAdvice.advice_boxes.reduce((sum, b) => sum + (b.total_cost ?? 0), 0))}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
                 {engineAdvice.cost_data_available === false && (
-                  <div className="flex items-center gap-1.5 text-amber-700">
+                  <div className="flex items-center gap-1.5 text-amber-700 bg-amber-50 rounded px-2 py-1.5">
                     <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span>Advies op basis van specificiteit — kostdata niet beschikbaar</span>
+                    <span>
+                      <strong>Specificiteit-advies</strong> — Kostdata is niet beschikbaar.
+                      Advies is gebaseerd op doosgrootte en specificiteit, niet op kosten.
+                    </span>
                   </div>
                 )}
               </div>
@@ -1973,7 +2017,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
                         </p>
                         {adviceBox.total_cost !== undefined && (
                           <p className="text-xs text-emerald-700 font-medium mt-0.5">
-                            {formatCost(adviceBox.box_cost)} doos + {formatCost(adviceBox.transport_cost)} transport = {formatCost(adviceBox.total_cost)}
+                            {formatCost(adviceBox.total_cost)} totaal
+                            {adviceBox.carrier_code && <span className="opacity-75"> via {adviceBox.carrier_code}</span>}
                           </p>
                         )}
                       </div>
