@@ -12,7 +12,7 @@
 import { supabase } from '@/lib/supabase/client'
 import { getOrderTags, addOrderTag, removeOrderTag, getTags, getProductFull, getProductParts } from '@/lib/picqer/client'
 import { syncProductFromPicqer, classifyProduct, syncCompositionParts } from '@/lib/supabase/productAttributes'
-import { getAllCostsForCountry } from './costProvider'
+import { getAllCostsForCountry, selectCostForWeight } from './costProvider'
 import type { CostEntry } from './costProvider'
 
 // ── Input / Output types ──────────────────────────────────────────────────
@@ -59,6 +59,8 @@ export interface AdviceBox {
   box_cost?: number        // from selected PackagingMatch
   transport_cost?: number  // from selected PackagingMatch
   total_cost?: number      // from selected PackagingMatch
+  weight_grams?: number        // Total weight of products in this box (grams)
+  weight_bracket?: string | null  // Selected weight bracket (e.g., '0-5kg') or null for DPD/pallet
 }
 
 export interface PackagingAdviceResult {
@@ -567,6 +569,66 @@ function enrichWithCosts(
     .filter((m): m is PackagingMatch => m !== null)
 }
 
+// ── 2c. Weight-aware cost refinement ────────────────────────────────────
+
+/**
+ * Calculate total weight of products assigned to a box (in grams).
+ * Uses product_attributes.weight data available in the weightMap.
+ */
+function calculateBoxWeight(
+  boxProducts: { productcode: string; quantity: number }[],
+  weightMap: Map<string, number>  // productcode -> weight in grams
+): number {
+  let total = 0
+  for (const bp of boxProducts) {
+    const weight = weightMap.get(bp.productcode) ?? 0
+    if (weight === 0 && bp.productcode !== '(composition parts)') {
+      console.warn(`[packagingEngine] Product ${bp.productcode} has no weight data — treating as 0g`)
+    }
+    total += weight * bp.quantity
+  }
+  return total
+}
+
+/**
+ * Refine a box's cost using its actual weight to select the correct bracket.
+ *
+ * Pass 1 (enrichWithCosts) uses NULL bracket or first entry as estimate for ranking.
+ * Pass 2 (this function) recalculates with the real weight after products are assigned.
+ *
+ * For PostNL: selects the smallest bracket that fits (0-5kg, 5-10kg, 10-20kg, 20-30kg).
+ * For DPD/pallet (NULL bracket): weight is irrelevant, entry always matches.
+ * If weight exceeds all brackets and no NULL entry exists: no cost (returns box unchanged).
+ */
+function refineBoxCostWithWeight(
+  box: AdviceBox,
+  costEntries: CostEntry[] | undefined,
+  weightMap: Map<string, number>
+): AdviceBox {
+  const weight = calculateBoxWeight(box.products, weightMap)
+
+  if (!costEntries || costEntries.length === 0) {
+    // No cost data for this box — just add weight info
+    return { ...box, weight_grams: weight }
+  }
+
+  const entry = selectCostForWeight(costEntries, weight)
+  if (!entry) {
+    // No bracket matches this weight — keep existing costs, add weight info
+    console.warn(`[packagingEngine] No cost bracket for ${box.packaging_name} at ${weight}g — keeping initial estimate`)
+    return { ...box, weight_grams: weight }
+  }
+
+  return {
+    ...box,
+    box_cost: entry.boxCost,
+    transport_cost: entry.transportCost,
+    total_cost: entry.totalCost,
+    weight_grams: weight,
+    weight_bracket: entry.weightBracket,
+  }
+}
+
 // ── 3. rankPackagings ─────────────────────────────────────────────────────
 
 export function rankPackagings(
@@ -633,6 +695,18 @@ export async function solveMultiBox(
     })
   }
 
+  // Build weight map: productcode -> weight in grams (for weight-aware cost refinement)
+  const weightMap = new Map<string, number>()
+  for (const attrs of mixableMap.values()) {
+    weightMap.set(attrs.productcode, attrs.weight)
+  }
+
+  // Helper to get cost entries for a packaging match
+  const getCostEntries = (match: PackagingMatch): CostEntry[] | undefined => {
+    if (!costMap || !match.facturatie_box_sku) return undefined
+    return costMap.get(match.facturatie_box_sku)
+  }
+
   // Identify non-mixable products: they MUST go in their own box
   const nonMixableProducts: { product: OrderProduct; shipping_unit_id: string; shipping_unit_name: string }[] = []
   const mixableRemaining = new Map<string, ShippingUnitEntry>()
@@ -681,7 +755,7 @@ export async function solveMultiBox(
     const perfectMatch = ranked.find(m => m.leftover_units.size === 0)
 
     if (perfectMatch) {
-      boxes.push({
+      let nmBox: AdviceBox = {
         packaging_id: perfectMatch.packaging_id,
         packaging_name: perfectMatch.packaging_name,
         idpackaging: perfectMatch.idpackaging,
@@ -693,7 +767,10 @@ export async function solveMultiBox(
         box_cost: perfectMatch.box_cost || undefined,
         transport_cost: perfectMatch.transport_cost || undefined,
         total_cost: perfectMatch.total_cost || undefined,
-      })
+      }
+      // Refine cost with actual weight for this single-product box
+      nmBox = refineBoxCostWithWeight(nmBox, getCostEntries(perfectMatch), weightMap)
+      boxes.push(nmBox)
     } else {
       // No packaging found for this non-mixable product
       // Return no_match — we don't force a box
@@ -719,7 +796,7 @@ export async function solveMultiBox(
     if (singleBoxMatch) {
       // Build product list for this box
       const boxProducts = buildProductList(singleBoxMatch.covered_units, shippingUnits, products, mixableMap)
-      boxes.push({
+      let singleBox: AdviceBox = {
         packaging_id: singleBoxMatch.packaging_id,
         packaging_name: singleBoxMatch.packaging_name,
         idpackaging: singleBoxMatch.idpackaging,
@@ -727,7 +804,10 @@ export async function solveMultiBox(
         box_cost: singleBoxMatch.box_cost || undefined,
         transport_cost: singleBoxMatch.transport_cost || undefined,
         total_cost: singleBoxMatch.total_cost || undefined,
-      })
+      }
+      // Refine cost with actual weight
+      singleBox = refineBoxCostWithWeight(singleBox, getCostEntries(singleBoxMatch), weightMap)
+      boxes.push(singleBox)
     } else {
       // Greedy multi-box split
       const pool = new Map<string, ShippingUnitEntry>()
@@ -756,7 +836,7 @@ export async function solveMultiBox(
         const bestMatch = pickBestCoverage(poolRanked)
 
         const boxProducts = buildProductList(bestMatch.covered_units, pool, products, mixableMap)
-        boxes.push({
+        let greedyBox: AdviceBox = {
           packaging_id: bestMatch.packaging_id,
           packaging_name: bestMatch.packaging_name,
           idpackaging: bestMatch.idpackaging,
@@ -764,7 +844,10 @@ export async function solveMultiBox(
           box_cost: bestMatch.box_cost || undefined,
           transport_cost: bestMatch.transport_cost || undefined,
           total_cost: bestMatch.total_cost || undefined,
-        })
+        }
+        // Refine cost with actual weight for this box's products
+        greedyBox = refineBoxCostWithWeight(greedyBox, getCostEntries(bestMatch), weightMap)
+        boxes.push(greedyBox)
 
         // Remove covered units from pool
         for (const [unitId, qty] of bestMatch.covered_units) {
