@@ -1332,10 +1332,7 @@ export async function calculateAdvice(
     console.log(`[packagingEngine] Invalidated old advice ${existing.id} (fingerprint changed)`)
   }
 
-  // Step 2: Match compartments
-  const matches = await matchCompartments(shippingUnits)
-
-  // Step 2b: Cost data enrichment
+  // Step 1d: Cost data pre-fetch (needed for single-SKU fast path AND normal flow)
   let costDataAvailable = false
   let costMap: Map<string, CostEntry[]> | null = null
 
@@ -1349,7 +1346,144 @@ export async function calculateAdvice(
     console.warn(`[packagingEngine] No countryCode provided, cost data not available`)
   }
 
-  // Step 2c: Enrich matches with cost data + filter unavailable routes
+  // Step 1e: Single-SKU fast path
+  // Orders with 1 unique product that has a default packaging mapping bypass compartment rules
+  const uniqueProductIds = new Set(products.map(p => p.picqer_product_id))
+  if (uniqueProductIds.size === 1 && unclassified.length === 0) {
+    const productId = products[0].picqer_product_id
+
+    const { data: productAttr } = await supabase
+      .schema('batchmaker')
+      .from('product_attributes')
+      .select('default_packaging_id, shipping_unit_id')
+      .eq('picqer_product_id', productId)
+      .single()
+
+    if (productAttr?.default_packaging_id) {
+      // Fetch the packaging details
+      const { data: defaultPkg } = await supabase
+        .schema('batchmaker')
+        .from('packagings')
+        .select('id, name, idpackaging, barcode, facturatie_box_sku, active')
+        .eq('id', productAttr.default_packaging_id)
+        .single()
+
+      if (defaultPkg && defaultPkg.active) {
+        console.log(`[packagingEngine] Single-SKU fast path: product ${products[0].productcode} → ${defaultPkg.name}`)
+
+        // Build the product list for this box
+        const unitName = shippingUnits.values().next()?.value?.name || 'Unknown'
+        const totalQty = products.reduce((sum, p) => sum + p.quantity, 0)
+        const boxProducts = [{
+          productcode: products[0].productcode,
+          shipping_unit_name: unitName,
+          quantity: totalQty,
+        }]
+
+        // Enrich with cost data if available
+        let boxCost: number | undefined
+        let transportCost: number | undefined
+        let totalCostValue: number | undefined
+
+        if (countryCode && defaultPkg.facturatie_box_sku) {
+          if (costMap) {
+            const entries = costMap.get(defaultPkg.facturatie_box_sku)
+            if (entries && entries.length > 0) {
+              // Select appropriate cost entry using weight-based selection
+              const { data: weightData } = await supabase
+                .schema('batchmaker')
+                .from('product_attributes')
+                .select('weight')
+                .eq('picqer_product_id', productId)
+                .single()
+
+              const productWeight = weightData?.weight ?? 0
+              const totalWeight = productWeight * totalQty
+
+              const entry = selectCostForWeight(entries, totalWeight)
+              if (entry) {
+                boxCost = entry.boxMaterialCost ?? entry.boxCost
+                transportCost = entry.transportCost
+                totalCostValue = entry.totalCost
+                costDataAvailable = true
+              }
+            }
+          }
+        }
+
+        const singleSkuBox: AdviceBox = {
+          packaging_id: defaultPkg.id,
+          packaging_name: defaultPkg.name,
+          idpackaging: defaultPkg.idpackaging,
+          products: boxProducts,
+          box_cost: boxCost,
+          transport_cost: transportCost,
+          total_cost: totalCostValue,
+        }
+
+        // Validate weight
+        const weightExceeded = !(await validateWeightsForBoxes([singleSkuBox], products))
+
+        const shippingUnitsDetected = Array.from(shippingUnits.values()).map(entry => ({
+          shipping_unit_id: entry.id,
+          shipping_unit_name: entry.name,
+          quantity: entry.quantity,
+        }))
+
+        const adviceRow = {
+          order_id: orderId,
+          picklist_id: picklistId ?? null,
+          status: 'calculated' as const,
+          confidence: 'full_match' as const,
+          advice_boxes: [singleSkuBox],
+          shipping_units_detected: shippingUnitsDetected,
+          unclassified_products: [],
+          tags_written: [],
+          calculated_at: new Date().toISOString(),
+          shipping_unit_fingerprint: fingerprint,
+          shipping_provider_profile_id: shippingProviderProfileId ?? null,
+          weight_exceeded: weightExceeded,
+          country_code: countryCode ?? null,
+          cost_data_available: costDataAvailable,
+        }
+
+        const { data: inserted, error: insertError } = await supabase
+          .schema('batchmaker')
+          .from('packaging_advice')
+          .insert(adviceRow)
+          .select('id, order_id, picklist_id, status, confidence, advice_boxes, shipping_units_detected, unclassified_products, tags_written, calculated_at, weight_exceeded, shipping_unit_fingerprint, cost_data_available')
+          .single()
+
+        if (insertError) {
+          console.error('[packagingEngine] Error inserting single-SKU advice:', insertError)
+          // Fall through to normal engine flow
+        } else {
+          console.log(`[packagingEngine] Single-SKU advice saved: ${inserted.id}`)
+          return {
+            id: inserted.id,
+            order_id: inserted.order_id,
+            picklist_id: inserted.picklist_id,
+            status: inserted.status,
+            confidence: inserted.confidence,
+            advice_boxes: inserted.advice_boxes as AdviceBox[],
+            shipping_units_detected: inserted.shipping_units_detected as { shipping_unit_id: string; shipping_unit_name: string; quantity: number }[],
+            unclassified_products: inserted.unclassified_products as string[],
+            tags_written: inserted.tags_written as string[],
+            calculated_at: inserted.calculated_at,
+            weight_exceeded: inserted.weight_exceeded ?? false,
+            shipping_unit_fingerprint: inserted.shipping_unit_fingerprint ?? null,
+            cost_data_available: inserted.cost_data_available ?? false,
+          }
+        }
+      }
+    }
+  }
+  // End of single-SKU fast path — continues to normal matchCompartments flow
+
+  // Step 2: Match compartments
+  const matches = await matchCompartments(shippingUnits)
+
+  // Step 2b: Enrich matches with cost data + filter unavailable routes
   const enrichedMatches = enrichWithCosts(matches, costMap)
 
   // Step 3: Rank (with cost-primary if available)
