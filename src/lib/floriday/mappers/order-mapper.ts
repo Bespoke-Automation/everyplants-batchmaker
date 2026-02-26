@@ -41,6 +41,7 @@ function extractDeliveryTime(isoDateTime: string): string {
 const LOAD_CARRIER_PRODUCTS: Record<string, { idproduct: number; productcode: string }> = {
   DANISH_TROLLEY: { idproduct: 38535312, productcode: '100000012' },
   AUCTION_TROLLEY: { idproduct: 38535557, productcode: '100000013' },
+  NONE: { idproduct: 38535557, productcode: '100000013' }, // Default naar Auction Trolley
 }
 
 const PLATES_PRODUCT = { idproduct: 38075137, productcode: '100000011' }
