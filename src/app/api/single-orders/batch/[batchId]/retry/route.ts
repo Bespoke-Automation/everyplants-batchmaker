@@ -4,6 +4,7 @@ import {
   getSingleOrderBatch,
   updateSingleOrderBatch,
 } from '@/lib/supabase/shipmentLabels'
+import { inngest } from '@/inngest/client'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,9 +13,10 @@ const TEN_MINUTES_MS = 10 * 60 * 1000
 /**
  * POST /api/single-orders/batch/[batchId]/retry
  *
- * Resets failed and stuck labels to 'queued' and triggers reprocessing.
+ * Resets failed and stuck labels to 'queued' and triggers reprocessing via Inngest.
  * - Labels with status 'error' are always retried
  * - Labels with status 'queued' or 'pending' older than 10 minutes are considered stuck
+ * - Uses Inngest for durable step-based processing (no Vercel timeout issues)
  */
 export async function POST(
   request: Request,
@@ -63,7 +65,7 @@ export async function POST(
     if (labelIds.length === 0) {
       return NextResponse.json({
         success: true,
-        message: 'No labels to retry',
+        message: 'Geen labels om opnieuw te proberen',
         retryCount: 0,
       })
     }
@@ -72,7 +74,7 @@ export async function POST(
     const { error: resetError } = await supabase
       .schema('batchmaker')
       .from('shipment_labels')
-      .update({ status: 'queued', error_message: null })
+      .update({ status: 'queued', error_message: null, updated_at: new Date().toISOString() })
       .in('id', labelIds)
 
     if (resetError) throw resetError
@@ -82,24 +84,18 @@ export async function POST(
       status: 'processing_shipments',
     })
 
-    // Trigger the process endpoint
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : 'http://localhost:3000'
-    const processUrl = `${baseUrl}/api/single-orders/batch/${batchId}/process`
-
-    // Fire and forget - don't await the processing
-    fetch(processUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    }).catch(err => {
-      console.error(`[${batchId}] Error triggering process after retry:`, err)
+    // Trigger Inngest for durable step-based processing
+    await inngest.send({
+      name: 'batch/process.requested',
+      data: { batchId },
     })
+
+    console.log(`[${batchId}] Retry triggered: ${labelIds.length} labels reset, Inngest event sent`)
 
     return NextResponse.json({
       success: true,
       retryCount: labelIds.length,
-      message: `${labelIds.length} labels queued for retry`,
+      message: `${labelIds.length} labels worden opnieuw verwerkt`,
     })
   } catch (error) {
     console.error(`[${batchId}] Error retrying labels:`, error)
