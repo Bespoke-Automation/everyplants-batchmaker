@@ -26,6 +26,7 @@ export interface ProductAttribute {
   is_fragile: boolean
   is_mixable: boolean
   shipping_unit_id: string | null
+  default_packaging_id: string | null
   classification_status: string
   source: string
   last_synced_at: string | null

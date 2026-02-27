@@ -31,11 +31,11 @@ export async function GET() {
 
     if (unclError) throw unclError
 
-    // Classified products with default packaging (for admin UI)
+    // Classified products with default packaging and classification context (for admin UI)
     const { data: classifiedProducts, error: classError } = await supabase
       .schema('batchmaker')
       .from('product_attributes')
-      .select('id, productcode, product_name, default_packaging_id')
+      .select('id, productcode, product_name, default_packaging_id, shipping_unit_id, pot_size, height')
       .eq('classification_status', 'classified')
       .order('productcode')
 

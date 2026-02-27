@@ -7,6 +7,7 @@ import PackagingList from '@/components/verpakking/PackagingList'
 import CompartmentRules from '@/components/verpakking/CompartmentRules'
 import ProductStatus from '@/components/verpakking/ProductStatus'
 import ShippingUnitList from '@/components/verpakking/ShippingUnitList'
+import DefaultPackagingList from '@/components/verpakking/DefaultPackagingList'
 
 const TABS = [
   { id: 'koppelingen', label: 'Koppelingen' },
@@ -15,6 +16,7 @@ const TABS = [
   { id: 'compartimenten', label: 'Compartimenten' },
   { id: 'producten', label: 'Producten' },
   { id: 'verzendeenheden', label: 'Verzendeenheden' },
+  { id: 'default-verpakkingen', label: 'Default Verpakkingen' },
 ] as const
 
 type TabId = (typeof TABS)[number]['id']
@@ -50,6 +52,7 @@ export default function InstellingenPage() {
       {activeTab === 'compartimenten' && <CompartmentRules />}
       {activeTab === 'producten' && <ProductStatus />}
       {activeTab === 'verzendeenheden' && <ShippingUnitList />}
+      {activeTab === 'default-verpakkingen' && <DefaultPackagingList />}
     </main>
   )
 }

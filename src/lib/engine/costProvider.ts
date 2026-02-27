@@ -162,6 +162,7 @@ async function fetchAllCosts(): Promise<Map<string, Map<string, CostEntry[]>> | 
   const { data, error } = await facturatieSupabase
     .from('published_box_costs')
     .select('box_sku, box_name, country_code, carrier_code, tariff_class, weight_bracket, is_pallet, vehicle_type, box_material_cost, box_pick_cost, box_pack_cost, transport_purchase_cost, total_cost, calculated_at')
+    .eq('price_group', 'ep')
 
   if (error) {
     console.error('[costProvider] Supabase query error:', error.message)
