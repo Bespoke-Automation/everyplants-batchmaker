@@ -1352,6 +1352,105 @@ function buildAlternatives(
   }))
 }
 
+/**
+ * Fallback: when matchCompartments returns 0 (no full rule group match),
+ * find all packagings that reference any of the order's shipping units
+ * in at least one compartment rule. Enrich with cost data for comparison.
+ */
+async function buildAlternativesByShippingUnit(
+  shippingUnits: Map<string, ShippingUnitEntry>,
+  recommendedPackagingId: string | null,
+  costMap: Map<string, CostEntry[]> | null
+): Promise<AlternativePackaging[]> {
+  const unitIds = Array.from(shippingUnits.keys())
+  if (unitIds.length === 0) return []
+
+  // Find packagings that have at least one rule referencing these shipping units
+  const { data: candidates } = await supabase
+    .schema('batchmaker')
+    .from('compartment_rules')
+    .select('packaging_id')
+    .in('shipping_unit_id', unitIds)
+    .eq('is_active', true)
+
+  if (!candidates || candidates.length === 0) return []
+
+  const candidateIds = [...new Set(candidates.map(c => c.packaging_id))]
+
+  // Include the recommended packaging even if it has no rules for this unit
+  if (recommendedPackagingId && !candidateIds.includes(recommendedPackagingId)) {
+    candidateIds.push(recommendedPackagingId)
+  }
+
+  const { data: pkgs } = await supabase
+    .schema('batchmaker')
+    .from('packagings')
+    .select('id, idpackaging, name, facturatie_box_sku, picqer_tag_name, active, use_in_auto_advice')
+    .in('id', candidateIds)
+    .eq('active', true)
+
+  if (!pkgs || pkgs.length === 0) return []
+
+  // Enrich with costs, build alternatives
+  const alts: AlternativePackaging[] = []
+  for (const pkg of pkgs) {
+    const displayName = pkg.picqer_tag_name || pkg.name
+    let boxCost: number | undefined
+    let boxPickCost: number | undefined
+    let boxPackCost: number | undefined
+    let transportCost: number | undefined
+    let totalCost: number | undefined
+    let carrierCode: string | undefined
+
+    if (costMap && pkg.facturatie_box_sku) {
+      const entries = costMap.get(pkg.facturatie_box_sku)
+      if (entries && entries.length > 0) {
+        const entry = entries.find(e => e.weightBracket === null) ?? entries[0]
+        boxCost = entry.boxCost
+        boxPickCost = entry.boxPickCost
+        boxPackCost = entry.boxPackCost
+        transportCost = entry.transportCost
+        totalCost = entry.totalCost
+        carrierCode = entry.carrier
+      } else {
+        continue // No cost data for this SKU → exclude
+      }
+    } else if (costMap && !pkg.facturatie_box_sku) {
+      continue // Has cost data but no SKU mapping → exclude
+    }
+
+    alts.push({
+      packaging_id: pkg.id,
+      name: displayName,
+      idpackaging: pkg.idpackaging,
+      box_cost: boxCost,
+      box_pick_cost: boxPickCost,
+      box_pack_cost: boxPackCost,
+      transport_cost: transportCost,
+      total_cost: totalCost,
+      carrier_code: carrierCode,
+      is_recommended: pkg.id === recommendedPackagingId,
+      is_cheapest: false, // Will be set below
+    })
+  }
+
+  if (alts.length <= 1) return []
+
+  // Sort by total_cost ASC
+  alts.sort((a, b) => (a.total_cost ?? Infinity) - (b.total_cost ?? Infinity))
+
+  // Mark cheapest
+  const withCost = alts.filter(a => a.total_cost !== undefined && a.total_cost > 0)
+  if (withCost.length > 0) {
+    const cheapest = withCost[0].total_cost
+    for (const a of alts) {
+      a.is_cheapest = a.total_cost === cheapest
+    }
+  }
+
+  return alts
+}
+
 // ── Helper: build shipping unit fingerprint ───────────────────────────────
 
 function buildFingerprint(shippingUnits: Map<string, ShippingUnitEntry>, countryCode: string): string {
@@ -1421,12 +1520,16 @@ export async function calculateAdvice(
       // Compute alternatives on-the-fly (not persisted)
       let cachedAlternatives: AlternativePackaging[] = []
       if (shippingUnits.size > 0 && costDataAvailable && costMap) {
+        const existingBoxes = existing.advice_boxes as AdviceBox[]
+        const recPkgId = existingBoxes.length === 1 ? existingBoxes[0].packaging_id : null
         const cachedMatches = await matchCompartments(shippingUnits)
         const cachedEnriched = enrichWithCosts(cachedMatches, costMap)
         const cachedRanked = rankPackagings(cachedEnriched, true)
-        const existingBoxes = existing.advice_boxes as AdviceBox[]
-        const recPkgId = existingBoxes.length === 1 ? existingBoxes[0].packaging_id : null
         cachedAlternatives = buildAlternatives(cachedRanked, recPkgId)
+        // Fallback: if no compartment rule matches, find by shipping unit reference
+        if (cachedAlternatives.length === 0) {
+          cachedAlternatives = await buildAlternativesByShippingUnit(shippingUnits, recPkgId, costMap)
+        }
       }
 
       return {
@@ -1586,6 +1689,9 @@ export async function calculateAdvice(
             const skuEnriched = enrichWithCosts(skuMatches, costMap)
             const skuRanked = rankPackagings(skuEnriched, true)
             singleSkuAlternatives = buildAlternatives(skuRanked, defaultPkg.id)
+            if (singleSkuAlternatives.length === 0) {
+              singleSkuAlternatives = await buildAlternativesByShippingUnit(shippingUnits, defaultPkg.id, costMap)
+            }
           }
 
           return {
@@ -1726,7 +1832,10 @@ export async function calculateAdvice(
 
   // Step 4c: Build alternatives (single-box options for comparison)
   const recommendedPkgId = boxes.length === 1 ? boxes[0].packaging_id : null
-  const alternatives = buildAlternatives(rankedAlternativesRaw, recommendedPkgId)
+  let alternatives = buildAlternatives(rankedAlternativesRaw, recommendedPkgId)
+  if (alternatives.length === 0 && shippingUnits.size > 0 && costDataAvailable && costMap) {
+    alternatives = await buildAlternativesByShippingUnit(shippingUnits, recommendedPkgId, costMap)
+  }
 
   // Step 4d: Weight validation
   const weightExceeded = !(await validateWeightsForBoxes(boxes, products))
