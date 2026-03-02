@@ -185,12 +185,12 @@ function SessionDetailPanel({ data }: { data: SessionDetailData }) {
         </div>
 
         <div className="space-y-3">
-          {session.boxes.map((box) => (
+          {session.boxes.map((box, i) => (
             <div key={box.id} className="border border-border rounded-lg p-3 bg-card">
               <div className="flex items-start justify-between mb-2">
                 <div>
                   <p className="font-medium text-sm">{box.packaging_name}</p>
-                  <p className="text-xs text-muted-foreground">Doos {box.box_index + 1}</p>
+                  <p className="text-xs text-muted-foreground">Doos {i + 1}</p>
                 </div>
                 {getStatusBadge(box.status)}
               </div>

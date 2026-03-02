@@ -430,7 +430,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
       // Collect all box assignments for this product
       const assignments: { boxId: string; boxName: string; boxIndex: number; amount: number; sessionProductId: string }[] = []
       if (session) {
-        for (const box of session.boxes) {
+        for (let i = 0; i < session.boxes.length; i++) {
+          const box = session.boxes[i]
           const matches = box.products.filter(
             (sp) => sp.picqerProductId === pp.idproduct && sp.productcode === pp.productcode
           )
@@ -438,7 +439,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
             assignments.push({
               boxId: box.id,
               boxName: box.packagingName,
-              boxIndex: box.boxIndex + 1,
+              boxIndex: i + 1,
               amount: match.amount,
               sessionProductId: match.id,
             })
@@ -477,10 +478,10 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
   // Build BoxRef array for the ProductCard dropdown
   const boxRefs: BoxRef[] = useMemo(() => {
     if (!session) return []
-    return session.boxes.map((box) => ({
+    return session.boxes.map((box, i) => ({
       id: box.id,
       name: box.packagingName,
-      index: box.boxIndex + 1,
+      index: i + 1,
       productCount: box.products.length,
       isClosed: closedBoxes.has(box.id),
     }))
@@ -985,7 +986,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
         const remaining = matchedProduct.amount - matchedProduct.amountAssigned
         handleAssignProduct(matchedProduct.id, openBox.id, remaining)
         setHighlightProductId(matchedProduct.id)
-        setScanFeedback({ message: `${matchedProduct.productCode} (${remaining}x) → Doos ${openBox.boxIndex + 1}`, type: 'success' })
+        const openBoxDisplayIndex = (session?.boxes.findIndex((b) => b.id === openBox.id) ?? 0) + 1
+        setScanFeedback({ message: `${matchedProduct.productCode} (${remaining}x) → Doos ${openBoxDisplayIndex}`, type: 'success' })
         return
       }
 
@@ -1762,13 +1764,12 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
                   </h2>
                 </div>
                 <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 lg:p-4 space-y-3">
-                  {boxItems.map((box) => {
-                    const sessionBox = session.boxes.find((b) => b.id === box.id)
+                  {boxItems.map((box, i) => {
                     return (
                       <BoxCard
                         key={box.id}
                         box={box}
-                        index={sessionBox ? sessionBox.boxIndex + 1 : 1}
+                        index={i + 1}
                         onRemoveProduct={(productId) => handleRemoveProduct(productId)}
                         onUpdateProductAmount={(productId, newAmount) => handleUpdateProductAmount(productId, newAmount)}
                         onCloseBox={() => handleCloseBox(box.id)}
@@ -1941,7 +1942,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
                 <p className="text-xs text-muted-foreground">Nog geen dozen aangemaakt</p>
               ) : (
                 <div className="space-y-2">
-                  {session.boxes.map((box) => {
+                  {session.boxes.map((box, i) => {
                     const statusBadge = box.status === 'shipped'
                       ? 'bg-emerald-100 text-emerald-700'
                       : box.status === 'error'
@@ -1950,7 +1951,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
                     return (
                       <div key={box.id} className="text-sm">
                         <div className="flex items-center gap-2">
-                          <span className="font-medium">Doos {box.boxIndex + 1}</span>
+                          <span className="font-medium">Doos {i + 1}</span>
                           <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium leading-none ${statusBadge}`}>
                             {translateStatus(box.status)}
                           </span>

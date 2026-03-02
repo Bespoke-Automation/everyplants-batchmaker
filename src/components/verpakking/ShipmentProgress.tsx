@@ -548,7 +548,7 @@ export default function ShipmentProgress({
 
             {/* Box list */}
             <div className="space-y-2 mb-4">
-              {boxes.map((box) => {
+              {boxes.map((box, i) => {
                 const progress = shipProgress.get(box.id)
                 const status = progress?.status
 
@@ -569,7 +569,7 @@ export default function ShipmentProgress({
                       {getStatusIcon(status)}
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-sm">
-                          Doos {box.boxIndex + 1}: {box.packagingName}
+                          Doos {i + 1}: {box.packagingName}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {getStatusText(status)}
