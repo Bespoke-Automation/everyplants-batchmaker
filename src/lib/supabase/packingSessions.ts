@@ -212,14 +212,13 @@ export async function claimPicklist(
   workerId: number,
   workerName: string
 ): Promise<PackingSession> {
-  // Check if an active session already exists for this picklist
+  // Check if an active session already exists for this picklist (including expired locks)
   const { data: existing, error: checkError } = await supabase
     .schema('batchmaker')
     .from('packing_sessions')
     .select()
     .eq('picklist_id', picklistId)
     .not('status', 'in', '("completed","failed")')
-    .or('lock_expires_at.gt.now(),lock_expires_at.is.null')
     .limit(1)
     .maybeSingle()
 
@@ -233,7 +232,15 @@ export async function claimPicklist(
     if (existing.assigned_to === workerId) {
       return existing
     }
-    throw new Error(`Picklist ${picklistId} is already claimed by ${existing.assigned_to_name}`)
+
+    // If the lock has expired, clean up the stale session so a new one can be created
+    const lockExpired = existing.lock_expires_at && new Date(existing.lock_expires_at) < new Date()
+    if (lockExpired) {
+      await updatePackingSession(existing.id, { status: 'failed' })
+      // Fall through to create a new session below
+    } else {
+      throw new Error(`Picklist ${picklistId} is already claimed by ${existing.assigned_to_name}`)
+    }
   }
 
   // Create new session
