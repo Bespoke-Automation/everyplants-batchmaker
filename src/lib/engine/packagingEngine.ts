@@ -168,9 +168,13 @@ export async function classifyOrderProducts(
     attrMap.set(row.picqer_product_id, row)
   }
 
-  // ── On-demand classification: fetch missing products from Picqer ──────
+  // ── On-demand classification: fetch missing or unclassified products from Picqer ──────
   const missingProductIds = products
-    .filter(p => !attrMap.has(p.picqer_product_id))
+    .filter(p => {
+      const attr = attrMap.get(p.picqer_product_id)
+      // Fetch if not in DB at all, or if previously missing data (fields may have been updated in Picqer)
+      return !attr || attr.classification_status === 'missing_data'
+    })
     .map(p => p.picqer_product_id)
 
   if (missingProductIds.length > 0) {
