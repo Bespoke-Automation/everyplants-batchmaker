@@ -375,6 +375,15 @@ export interface PicqerPurchaseOrder {
   products: PicqerPurchaseOrderProduct[]
 }
 
+// ─── Expected Purchase Orders (per product) ─────────────────
+export interface PicqerExpectedPurchaseOrder {
+  idpurchaseorder: number
+  idpurchaseorder_product: number
+  idwarehouse: number
+  amount_to_receive: number
+  delivery_date: string | null
+}
+
 // Result for batch creation with shipments
 export interface SingleOrderBatchResult {
   success: boolean

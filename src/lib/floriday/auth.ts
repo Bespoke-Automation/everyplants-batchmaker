@@ -29,6 +29,7 @@ const SCOPES_BY_ENV: Record<FloridayEnv, string> = {
     'catalog:read',
     'catalog:write',
     'supply:read',
+    'supply:write',
     'sales-order:read',
     'fulfillment:read',
     'webhooks:write',

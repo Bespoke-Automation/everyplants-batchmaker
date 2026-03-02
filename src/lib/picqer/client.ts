@@ -1,4 +1,4 @@
-import { PicqerOrder, PicqerPicklist, PicqerPicklistWithProducts, PicqerProduct, PicqerTag, PicqerShipment, CreateShipmentResult, CancelShipmentResult, GetLabelResult, PicqerPackaging, ShippingMethod, PicqerUser, PicqerPicklistBatch, PicqerBatchPicklist, type MulticolloParcelInput, PicqerProductFull, PicqerCompositionPart, PicqerCustomer, CreateOrderInput, PicqerProductStock, PicqerPurchaseOrder } from './types'
+import { PicqerOrder, PicqerPicklist, PicqerPicklistWithProducts, PicqerProduct, PicqerTag, PicqerShipment, CreateShipmentResult, CancelShipmentResult, GetLabelResult, PicqerPackaging, ShippingMethod, PicqerUser, PicqerPicklistBatch, PicqerBatchPicklist, type MulticolloParcelInput, PicqerProductFull, PicqerCompositionPart, PicqerCustomer, CreateOrderInput, PicqerProductStock, PicqerPurchaseOrder, PicqerExpectedPurchaseOrder } from './types'
 
 const PICQER_SUBDOMAIN = process.env.PICQER_SUBDOMAIN!
 const PICQER_API_KEY = process.env.PICQER_API_KEY!
@@ -2281,4 +2281,31 @@ export async function getAllActiveProducts(): Promise<PicqerProductFull[]> {
 
   console.log(`Fetched ${allProducts.length} active Picqer products`)
   return allProducts
+}
+
+/**
+ * Get expected (outstanding) purchase orders for a specific product.
+ * Returns PO line items with amount_to_receive and delivery_date.
+ * Much more efficient than fetching all POs and filtering client-side.
+ */
+export async function getProductExpected(idproduct: number): Promise<PicqerExpectedPurchaseOrder[]> {
+  const response = await rateLimitedFetch(
+    `${PICQER_BASE_URL}/products/${idproduct}/expected`,
+    {
+      method: 'GET',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+        'User-Agent': 'EveryPlants-Batchmaker/2.0',
+        'Content-Type': 'application/json',
+      },
+    }
+  )
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error fetching expected for product ${idproduct}:`, response.status, errorText)
+    throw new Error(`Picqer API error: ${response.status} - ${errorText}`)
+  }
+
+  return response.json()
 }

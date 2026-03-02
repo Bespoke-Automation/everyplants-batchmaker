@@ -310,3 +310,12 @@ export interface FloridayWebhookEvent {
 export interface FloridayWebhookSubscription {
   callbackUrl: string
 }
+
+// ─── Catalog Supply (Base Supply) ───────────────────────────
+export interface WeeklyBaseSupply {
+  tradeItemId: string
+  week: number
+  year: number
+  basePricePerPiece?: { currency: string; value: number }
+  numberOfPieces: number
+}

@@ -2,29 +2,29 @@
 // Floriday Stock Service
 // ══════════════════════════════════════════════════════════════
 //
-// Berekent de huidige voorraad en weekvoorraad voor Floriday-
+// Berekent de huidige voorraad en verwachte voorraad voor Floriday-
 // producten op basis van Picqer warehouse 9979 (excl. PPS-locaties)
-// en openstaande inkooporders die deze week binnenkomen.
+// en openstaande inkooporders die binnen 7 kalenderdagen binnenkomen.
 
-import { fetchProductsByTag, getProductStock, getPurchaseOrders } from '@/lib/picqer/client'
+import { fetchProductsByTag, getProductStock, getPurchaseOrders, getProductExpected } from '@/lib/picqer/client'
 import type { PicqerProduct } from '@/lib/picqer/types'
 
 const FLORIDAY_WAREHOUSE_ID = 9979
-const FLORIDAY_TAGS = ['floriday', 'floriday product']
+const FLORIDAY_TAGS = ['kunstplant']
 
 export interface StockSnapshotItem {
   picqer_product_id: number
   productcode: string
   name: string
   bulk_pick_stock: number       // Huidige stock excl. PPS
-  po_qty_this_week: number      // Verwacht via PO's (ma–vr)
+  po_qty_this_week: number      // Verwacht via PO's (7 dagen)
   week_stock: number            // Som
   po_details: PoDetail[]
 }
 
 export interface PoDetail {
   idpurchaseorder: number
-  purchaseorderid: string
+  purchaseorderid?: string
   delivery_date: string
   qty: number
 }
@@ -53,10 +53,23 @@ function isThisWeek(dateStr: string | null, monday: Date, friday: Date): boolean
   return d >= monday && d <= friday
 }
 
+/**
+ * Check of een datum binnen de komende 7 kalenderdagen valt.
+ */
+function isWithin7Days(dateStr: string | null): boolean {
+  if (!dateStr) return false
+  const d = new Date(dateStr)
+  const now = new Date()
+  now.setHours(0, 0, 0, 0)
+  const cutoff = new Date(now)
+  cutoff.setDate(cutoff.getDate() + 7)
+  return d >= now && d <= cutoff
+}
+
 // ─── Stap 1: Floriday-producten ophalen ──────────────────────
 
 /**
- * Haal alle Picqer-producten op met tag "floriday" of "floriday product".
+ * Haal alle Picqer-producten op met de geconfigureerde tags.
  * Dedupliceer op idproduct.
  */
 export async function getFloridayProducts(): Promise<PicqerProduct[]> {
@@ -99,7 +112,7 @@ export async function calcBulkPickStock(idproduct: number): Promise<number> {
   }
 }
 
-// ─── Stap 3: PO's deze week ──────────────────────────────────
+// ─── Stap 3: PO's deze week (legacy — voor bestaande callers) ──
 
 /**
  * Haal openstaande inkooporders op die deze week binnenkomen (ma–vr).
@@ -132,6 +145,43 @@ export async function getThisWeekPOs(): Promise<Map<number, PoDetail[]>> {
   }
 
   return map
+}
+
+// ─── Stap 3b: Per-product PO's (7-dag rolling window) ────────
+
+/**
+ * Bereken verwachte voorraad voor een specifiek product.
+ * Gebruikt het per-product /expected endpoint (efficiënter dan alle POs ophalen).
+ * Filter: alleen POs binnen 7 kalenderdagen EN voor warehouse 9979.
+ */
+export async function calcExpectedStock(idproduct: number): Promise<{
+  freeStock: number
+  expectedFromPOs: number
+  totalStock: number
+  poDetails: PoDetail[]
+}> {
+  const [freeStock, expectedPOs] = await Promise.all([
+    calcBulkPickStock(idproduct),
+    getProductExpected(idproduct),
+  ])
+
+  // Filter: alleen POs binnen 7 dagen EN voor warehouse 9979
+  const relevantPOs = expectedPOs.filter(po =>
+    isWithin7Days(po.delivery_date) && po.idwarehouse === FLORIDAY_WAREHOUSE_ID
+  )
+
+  const expectedFromPOs = relevantPOs.reduce((sum, po) => sum + po.amount_to_receive, 0)
+
+  return {
+    freeStock,
+    expectedFromPOs,
+    totalStock: freeStock + expectedFromPOs,
+    poDetails: relevantPOs.map(po => ({
+      idpurchaseorder: po.idpurchaseorder,
+      delivery_date: po.delivery_date!,
+      qty: po.amount_to_receive,
+    })),
+  }
 }
 
 // ─── Stap 4: Volledige snapshot ──────────────────────────────

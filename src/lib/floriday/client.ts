@@ -14,7 +14,7 @@
 //   Continuous stock: 10 req/sec (burst 1000)
 
 import { getFloridayToken, invalidateFloridayToken } from './auth'
-import type { FloridaySyncResponse, FloridayTradeItem, FloridaySalesOrder, FloridaySupplyLine, FloridayOrganization, FloridayFulfillmentOrder, FloridayWarehouse } from './types'
+import type { FloridaySyncResponse, FloridayTradeItem, FloridaySalesOrder, FloridaySupplyLine, FloridayOrganization, FloridayFulfillmentOrder, FloridayWarehouse, WeeklyBaseSupply } from './types'
 
 import { getFloridayConfig } from './config'
 
@@ -333,6 +333,37 @@ export async function deleteWebhook(callbackUrl: string): Promise<void> {
     const errorText = await response.text()
     throw new Error(`Floriday webhook delete error: ${response.status} - ${errorText}`)
   }
+}
+
+// ─── Catalog Supply (Base Supply) ────────────────────────────
+
+/**
+ * Get weekly base supplies for a given year+week.
+ * GET /trade-items/base-supply?year={year}&week={week}
+ * Rate limit: 1 req/sec, burst 20 — use sparingly.
+ */
+export async function getWeeklyBaseSupplies(year: number, week: number): Promise<WeeklyBaseSupply[]> {
+  return floridayGet<WeeklyBaseSupply[]>(
+    `/trade-items/base-supply?year=${year}&week=${week}`
+  )
+}
+
+/**
+ * Update the numberOfPieces for a trade item's base supply in a specific week.
+ * PATCH /trade-items/{tradeItemId}/base-supply/{year}/{week}?numberOfPieces={qty}
+ * Note: numberOfPieces is a QUERY PARAMETER, not a request body.
+ * Rate limit: 10 req/sec, burst 1000.
+ *
+ * Throws on HTTP 423 (pricing freeze — after Thursday 10:00 CET for current+next week).
+ */
+export async function patchWeeklyBaseSupplyQuantity(
+  tradeItemId: string,
+  year: number,
+  week: number,
+  numberOfPieces: number
+): Promise<void> {
+  const path = `/trade-items/${tradeItemId}/base-supply/${year}/${week}?numberOfPieces=${numberOfPieces}`
+  await floridayPatch(path)
 }
 
 // ─── Media Upload ────────────────────────────────────────────
