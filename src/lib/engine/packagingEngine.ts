@@ -172,8 +172,8 @@ export async function classifyOrderProducts(
   const missingProductIds = products
     .filter(p => {
       const attr = attrMap.get(p.picqer_product_id)
-      // Fetch if not in DB at all, or if previously missing data (fields may have been updated in Picqer)
-      return !attr || attr.classification_status === 'missing_data'
+      // Fetch if not in DB, or if not yet classified (data may have been updated in Picqer)
+      return !attr || attr.classification_status !== 'classified'
     })
     .map(p => p.picqer_product_id)
 
