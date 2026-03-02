@@ -1384,6 +1384,20 @@ export async function calculateAdvice(
   const effectiveCountry = countryCode ?? 'UNKNOWN'
   const fingerprint = shippingUnits.size > 0 ? buildFingerprint(shippingUnits, effectiveCountry) : null
 
+  // Step 1b2: Cost data pre-fetch (needed for alternatives in cache hit, single-SKU, AND normal flow)
+  let costDataAvailable = false
+  let costMap: Map<string, CostEntry[]> | null = null
+
+  if (countryCode) {
+    costMap = await getAllCostsForCountry(countryCode)
+    costDataAvailable = costMap !== null
+    if (!costDataAvailable) {
+      console.warn(`[packagingEngine] Cost data unavailable for ${countryCode}, using specificity ranking`)
+    }
+  } else {
+    console.warn(`[packagingEngine] No countryCode provided, cost data not available`)
+  }
+
   // Step 1c: Deduplication — check for existing advice for this order
   const { data: existing } = await supabase
     .schema('batchmaker')
@@ -1403,6 +1417,18 @@ export async function calculateAdvice(
     if (sameFingerprint) {
       // Same products, same advice → return existing
       console.log(`[packagingEngine] Returning existing advice ${existing.id} (same fingerprint)`)
+
+      // Compute alternatives on-the-fly (not persisted)
+      let cachedAlternatives: AlternativePackaging[] = []
+      if (shippingUnits.size > 0 && costDataAvailable && costMap) {
+        const cachedMatches = await matchCompartments(shippingUnits)
+        const cachedEnriched = enrichWithCosts(cachedMatches, costMap)
+        const cachedRanked = rankPackagings(cachedEnriched, true)
+        const existingBoxes = existing.advice_boxes as AdviceBox[]
+        const recPkgId = existingBoxes.length === 1 ? existingBoxes[0].packaging_id : null
+        cachedAlternatives = buildAlternatives(cachedRanked, recPkgId)
+      }
+
       return {
         id: existing.id,
         order_id: orderId,
@@ -1410,7 +1436,7 @@ export async function calculateAdvice(
         status: existing.status,
         confidence: existing.confidence,
         advice_boxes: existing.advice_boxes as AdviceBox[],
-        alternatives: [],
+        alternatives: cachedAlternatives,
         shipping_units_detected: existing.shipping_units_detected as { shipping_unit_id: string; shipping_unit_name: string; quantity: number }[],
         unclassified_products: existing.unclassified_products as string[],
         tags_written: existing.tags_written as string[],
@@ -1428,20 +1454,6 @@ export async function calculateAdvice(
       .update({ status: 'invalidated', invalidated_at: new Date().toISOString() })
       .eq('id', existing.id)
     console.log(`[packagingEngine] Invalidated old advice ${existing.id} (fingerprint changed)`)
-  }
-
-  // Step 1d: Cost data pre-fetch (needed for single-SKU fast path AND normal flow)
-  let costDataAvailable = false
-  let costMap: Map<string, CostEntry[]> | null = null
-
-  if (countryCode) {
-    costMap = await getAllCostsForCountry(countryCode)
-    costDataAvailable = costMap !== null
-    if (!costDataAvailable) {
-      console.warn(`[packagingEngine] Cost data unavailable for ${countryCode}, using specificity ranking`)
-    }
-  } else {
-    console.warn(`[packagingEngine] No countryCode provided, cost data not available`)
   }
 
   // Step 1e: Single-SKU fast path
@@ -1566,6 +1578,16 @@ export async function calculateAdvice(
           // Fall through to normal engine flow
         } else {
           console.log(`[packagingEngine] Single-SKU advice saved: ${inserted.id}`)
+
+          // Compute alternatives via compartment rules (single-SKU bypasses them, but we want comparisons)
+          let singleSkuAlternatives: AlternativePackaging[] = []
+          if (shippingUnits.size > 0 && costDataAvailable && costMap) {
+            const skuMatches = await matchCompartments(shippingUnits)
+            const skuEnriched = enrichWithCosts(skuMatches, costMap)
+            const skuRanked = rankPackagings(skuEnriched, true)
+            singleSkuAlternatives = buildAlternatives(skuRanked, defaultPkg.id)
+          }
+
           return {
             id: inserted.id,
             order_id: inserted.order_id,
@@ -1573,7 +1595,7 @@ export async function calculateAdvice(
             status: inserted.status,
             confidence: inserted.confidence,
             advice_boxes: inserted.advice_boxes as AdviceBox[],
-            alternatives: [],
+            alternatives: singleSkuAlternatives,
             shipping_units_detected: inserted.shipping_units_detected as { shipping_unit_id: string; shipping_unit_name: string; quantity: number }[],
             unclassified_products: inserted.unclassified_products as string[],
             tags_written: inserted.tags_written as string[],
