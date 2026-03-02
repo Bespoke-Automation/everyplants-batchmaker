@@ -25,13 +25,8 @@ import type { CostEntry } from '@/types/verpakking'
 
 export type { CostEntry }
 
-// ── Cache ────────────────────────────────────────────────────────────────────
+// ── Cache (disabled — re-enable when cost data stabilises) ──────────────────
 
-const CACHE_TTL_MS = 15 * 60 * 1000 // 15 minutes
-
-/** Nested map: country_code -> box_sku -> CostEntry[] */
-let costCache: Map<string, Map<string, CostEntry[]>> | null = null
-let cacheTimestamp = 0
 let validationDone = false
 
 // ── Weight bracket parsing ───────────────────────────────────────────────────
@@ -109,37 +104,29 @@ export function selectCostForWeight(
 
 /**
  * Clear the cost cache so the next call fetches fresh data.
+ * Currently a no-op since caching is disabled.
  */
 export function invalidateCostCache(): void {
-  costCache = null
-  cacheTimestamp = 0
   validationDone = false
 }
 
 // ── Internal ─────────────────────────────────────────────────────────────────
 
 /**
- * Ensure the cache is populated and fresh. Returns null if facturatie is unreachable.
+ * Fetch fresh cost data. Returns null if facturatie is unreachable.
  */
 async function ensureCache(): Promise<Map<string, Map<string, CostEntry[]>> | null> {
   try {
-    if (costCache && Date.now() - cacheTimestamp < CACHE_TTL_MS) {
-      return costCache
-    }
-
     const freshData = await fetchAllCosts()
     if (freshData === null) return null
 
-    costCache = freshData
-    cacheTimestamp = Date.now()
-
-    // Validate SKU mappings once per cache refresh
+    // Validate SKU mappings once per server lifecycle
     if (!validationDone) {
       await validateSkuMappings(freshData)
       validationDone = true
     }
 
-    return costCache
+    return freshData
   } catch (error) {
     console.error('[costProvider] Failed to load cost data:', error)
     return null
