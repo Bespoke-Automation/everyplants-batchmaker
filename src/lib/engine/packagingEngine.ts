@@ -1551,10 +1551,10 @@ export async function calculateAdvice(
       const { data: pkgs } = await supabase
         .schema('batchmaker')
         .from('packagings')
-        .select('id, name, idpackaging')
+        .select('id, name, idpackaging, facturatie_box_sku')
         .in('id', defaultPkgIds)
 
-      const pkgMap = new Map((pkgs || []).map((p: { id: string; name: string; idpackaging: number }) => [p.id, p]))
+      const pkgMap = new Map((pkgs || []).map((p: { id: string; name: string; idpackaging: number; facturatie_box_sku: string | null }) => [p.id, p]))
 
       // Build product → shipping_unit lookup
       const productUnitMap = new Map<string, string>() // productcode → shipping_unit_id
@@ -1597,12 +1597,31 @@ export async function calculateAdvice(
       }
 
       if (boxMap.size > 0) {
-        const fallbackBoxes: AdviceBox[] = Array.from(boxMap.values()).map(entry => ({
-          packaging_id: entry.pkg.id,
-          packaging_name: entry.pkg.name,
-          idpackaging: entry.pkg.idpackaging,
-          products: entry.products,
-        }))
+        const fallbackBoxes: AdviceBox[] = Array.from(boxMap.values()).map(entry => {
+          const box: AdviceBox = {
+            packaging_id: entry.pkg.id,
+            packaging_name: entry.pkg.name,
+            idpackaging: entry.pkg.idpackaging,
+            products: entry.products,
+          }
+
+          // Enrich with cost data if available
+          if (costMap && entry.pkg.facturatie_box_sku) {
+            const entries = costMap.get(entry.pkg.facturatie_box_sku)
+            if (entries && entries.length > 0) {
+              const costEntry = selectCostForWeight(entries, 0) // weight unknown at this stage
+              if (costEntry) {
+                box.box_cost = costEntry.boxCost
+                box.box_pick_cost = costEntry.boxPickCost
+                box.box_pack_cost = costEntry.boxPackCost
+                box.transport_cost = costEntry.transportCost
+                box.total_cost = costEntry.totalCost
+              }
+            }
+          }
+
+          return box
+        })
 
         boxes = fallbackBoxes
         confidence = unclassified.length > 0 ? 'partial_match' : 'full_match'
