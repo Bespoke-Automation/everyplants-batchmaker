@@ -67,11 +67,26 @@ interface EngineAdviceBox {
   weight_bracket?: string | null
 }
 
+interface AlternativePackaging {
+  packaging_id: string
+  name: string
+  idpackaging: number
+  box_cost?: number
+  box_pick_cost?: number
+  box_pack_cost?: number
+  transport_cost?: number
+  total_cost?: number
+  carrier_code?: string
+  is_recommended: boolean
+  is_cheapest: boolean
+}
+
 interface EngineAdvice {
   id: string
   order_id: number
   confidence: 'full_match' | 'partial_match' | 'no_match'
   advice_boxes: EngineAdviceBox[]
+  alternatives?: AlternativePackaging[]
   shipping_units_detected: { shipping_unit_id: string; shipping_unit_name: string; quantity: number }[]
   unclassified_products: string[]
   tags_written: string[]
@@ -1360,6 +1375,44 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
                       <strong>Specificiteit-advies</strong> — Kostdata is niet beschikbaar.
                       Advies is gebaseerd op doosgrootte en specificiteit, niet op kosten.
                     </span>
+                  </div>
+                )}
+                {/* Alternatives comparison table */}
+                {engineAdvice.alternatives && engineAdvice.alternatives.length > 1 && engineAdvice.cost_data_available !== false && (
+                  <div>
+                    <span className="font-medium">Alle passende verpakkingen:</span>
+                    <div className="mt-1 overflow-x-auto">
+                      <table className="w-full text-[11px]">
+                        <thead>
+                          <tr className="border-b border-current/10">
+                            <th className="text-left py-1 pr-2 font-medium">Verpakking</th>
+                            <th className="text-right py-1 px-1 font-medium">Doos</th>
+                            <th className="text-right py-1 px-1 font-medium">Pick/Pack</th>
+                            <th className="text-right py-1 px-1 font-medium">Transport</th>
+                            <th className="text-right py-1 pl-1 font-medium">Totaal</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {engineAdvice.alternatives.map((alt) => (
+                            <tr key={alt.packaging_id} className={alt.is_recommended ? 'font-semibold' : 'opacity-80'}>
+                              <td className="py-1 pr-2">
+                                <span>{alt.name}</span>
+                                {alt.is_recommended && (
+                                  <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-100 text-emerald-700">Aanbevolen</span>
+                                )}
+                                {alt.is_cheapest && !alt.is_recommended && (
+                                  <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-700">Goedkoopst</span>
+                                )}
+                              </td>
+                              <td className="text-right py-1 px-1 tabular-nums">{formatCost(alt.box_cost)}</td>
+                              <td className="text-right py-1 px-1 tabular-nums">{formatCost((alt.box_pick_cost ?? 0) + (alt.box_pack_cost ?? 0) || undefined)}</td>
+                              <td className="text-right py-1 px-1 tabular-nums">{formatCost(alt.transport_cost)}</td>
+                              <td className="text-right py-1 pl-1 tabular-nums font-semibold">{formatCost(alt.total_cost)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
               </div>

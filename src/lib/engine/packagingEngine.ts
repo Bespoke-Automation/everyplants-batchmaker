@@ -69,6 +69,20 @@ export interface AdviceBox {
   weight_bracket?: string | null  // Selected weight bracket (e.g., '0-5kg') or null for DPD/pallet
 }
 
+export interface AlternativePackaging {
+  packaging_id: string
+  name: string
+  idpackaging: number
+  box_cost?: number
+  box_pick_cost?: number
+  box_pack_cost?: number
+  transport_cost?: number
+  total_cost?: number
+  carrier_code?: string
+  is_recommended: boolean
+  is_cheapest: boolean
+}
+
 export interface PackagingAdviceResult {
   id: string
   order_id: number
@@ -76,6 +90,7 @@ export interface PackagingAdviceResult {
   status: 'calculated' | 'applied' | 'invalidated' | 'overridden'
   confidence: 'full_match' | 'partial_match' | 'no_match'
   advice_boxes: AdviceBox[]
+  alternatives: AlternativePackaging[]
   shipping_units_detected: { shipping_unit_id: string; shipping_unit_name: string; quantity: number }[]
   unclassified_products: string[]
   tags_written: string[]
@@ -1286,6 +1301,57 @@ async function validateWeightsForBoxes(
   return allValid
 }
 
+// ── Helper: build alternatives from ranked matches ────────────────────────
+
+/**
+ * Build a list of alternative single-box packagings from the ranked matches.
+ * Filters to only full matches (leftover_units.size === 0), deduplicates by packaging_id
+ * (keeps the lowest-cost rule_group per packaging), and marks recommended + cheapest.
+ *
+ * @param ranked - The ranked PackagingMatch[] from rankPackagings()
+ * @param recommendedPackagingId - The packaging_id that the engine actually chose
+ */
+function buildAlternatives(
+  ranked: PackagingMatch[],
+  recommendedPackagingId: string | null
+): AlternativePackaging[] {
+  // Only single-box solutions (everything fits in one box)
+  const singleBox = ranked.filter(m => m.leftover_units.size === 0)
+  if (singleBox.length === 0) return []
+
+  // Deduplicate by packaging_id: keep the first (best-ranked) per packaging
+  const seen = new Set<string>()
+  const unique: PackagingMatch[] = []
+  for (const m of singleBox) {
+    if (!seen.has(m.packaging_id)) {
+      seen.add(m.packaging_id)
+      unique.push(m)
+    }
+  }
+
+  if (unique.length <= 1) return [] // Nothing to compare
+
+  // Find cheapest (lowest total_cost among those with cost data)
+  const withCost = unique.filter(m => m.total_cost > 0)
+  const cheapestCost = withCost.length > 0
+    ? Math.min(...withCost.map(m => m.total_cost))
+    : null
+
+  return unique.map(m => ({
+    packaging_id: m.packaging_id,
+    name: m.packaging_name,
+    idpackaging: m.idpackaging,
+    box_cost: m.box_cost || undefined,
+    box_pick_cost: m.box_pick_cost || undefined,
+    box_pack_cost: m.box_pack_cost || undefined,
+    transport_cost: m.transport_cost || undefined,
+    total_cost: m.total_cost || undefined,
+    carrier_code: m.carrier_code ?? undefined,
+    is_recommended: m.packaging_id === recommendedPackagingId,
+    is_cheapest: cheapestCost !== null && m.total_cost === cheapestCost,
+  }))
+}
+
 // ── Helper: build shipping unit fingerprint ───────────────────────────────
 
 function buildFingerprint(shippingUnits: Map<string, ShippingUnitEntry>, countryCode: string): string {
@@ -1344,6 +1410,7 @@ export async function calculateAdvice(
         status: existing.status,
         confidence: existing.confidence,
         advice_boxes: existing.advice_boxes as AdviceBox[],
+        alternatives: [],
         shipping_units_detected: existing.shipping_units_detected as { shipping_unit_id: string; shipping_unit_name: string; quantity: number }[],
         unclassified_products: existing.unclassified_products as string[],
         tags_written: existing.tags_written as string[],
@@ -1506,6 +1573,7 @@ export async function calculateAdvice(
             status: inserted.status,
             confidence: inserted.confidence,
             advice_boxes: inserted.advice_boxes as AdviceBox[],
+            alternatives: [],
             shipping_units_detected: inserted.shipping_units_detected as { shipping_unit_id: string; shipping_unit_name: string; quantity: number }[],
             unclassified_products: inserted.unclassified_products as string[],
             tags_written: inserted.tags_written as string[],
@@ -1528,6 +1596,10 @@ export async function calculateAdvice(
 
   // Step 3: Rank (with cost-primary if available)
   const ranked = rankPackagings(enrichedMatches, costDataAvailable)
+
+  // Step 3b: Build alternatives from ranked single-box matches (before solving)
+  // We'll set is_recommended after solveMultiBox determines the winner
+  const rankedAlternativesRaw = ranked
 
   // Step 4: Solve multi-box (pass cost context through)
   let { boxes, confidence } = await solveMultiBox(
@@ -1554,7 +1626,7 @@ export async function calculateAdvice(
         .select('id, name, idpackaging, facturatie_box_sku')
         .in('id', defaultPkgIds)
 
-      const pkgMap = new Map((pkgs || []).map((p: { id: string; name: string; idpackaging: number; facturatie_box_sku: string | null }) => [p.id, p]))
+      const pkgMap = new Map((pkgs || []).map((p: { id: string; name: string; idpackaging: number; facturatie_box_sku: string | null }) => [p.id, p] as const))
 
       // Build product → shipping_unit lookup
       const productUnitMap = new Map<string, string>() // productcode → shipping_unit_id
@@ -1572,7 +1644,7 @@ export async function calculateAdvice(
       }
 
       // Group products by their default packaging
-      const boxMap = new Map<string, { pkg: { id: string; name: string; idpackaging: number }; products: { productcode: string; shipping_unit_name: string; quantity: number }[] }>()
+      const boxMap = new Map<string, { pkg: { id: string; name: string; idpackaging: number; facturatie_box_sku: string | null }; products: { productcode: string; shipping_unit_name: string; quantity: number }[] }>()
 
       for (const product of products) {
         const unitId = productUnitMap.get(product.productcode)
@@ -1630,7 +1702,11 @@ export async function calculateAdvice(
     }
   }
 
-  // Step 4c: Weight validation
+  // Step 4c: Build alternatives (single-box options for comparison)
+  const recommendedPkgId = boxes.length === 1 ? boxes[0].packaging_id : null
+  const alternatives = buildAlternatives(rankedAlternativesRaw, recommendedPkgId)
+
+  // Step 4d: Weight validation
   const weightExceeded = !(await validateWeightsForBoxes(boxes, products))
 
   // Build detected shipping units array
@@ -1679,6 +1755,7 @@ export async function calculateAdvice(
     status: inserted.status,
     confidence: inserted.confidence,
     advice_boxes: inserted.advice_boxes as AdviceBox[],
+    alternatives,
     shipping_units_detected: inserted.shipping_units_detected as { shipping_unit_id: string; shipping_unit_name: string; quantity: number }[],
     unclassified_products: inserted.unclassified_products as string[],
     tags_written: inserted.tags_written as string[],
