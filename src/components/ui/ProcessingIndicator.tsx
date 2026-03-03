@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Loader2, ChevronDown, ChevronUp, Check, X, ExternalLink, RotateCw } from 'lucide-react'
 
 export interface ActiveBatchProgress {
@@ -33,6 +33,7 @@ export default function ProcessingIndicator({ newlyCreatedBatch }: ProcessingInd
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [isPolling, setIsPolling] = useState(false)
   const [retryingBatches, setRetryingBatches] = useState<Set<string>>(new Set())
+  const autoFinalizingRef = useRef<Set<string>>(new Set())
 
   const fetchActiveBatches = useCallback(async () => {
     try {
@@ -60,6 +61,22 @@ export default function ProcessingIndicator({ newlyCreatedBatch }: ProcessingInd
           processing: b.processing,
           status: b.status,
         })))
+      }
+
+      // Auto-finalize stuck batches (all labels done but batch still in processing state)
+      for (const batch of batches) {
+        const allLabelsDone = (batch.completed + batch.failed) >= batch.total
+          && batch.queued === 0 && batch.processing === 0 && batch.total > 0
+        const needsFinalize = allLabelsDone
+          && !['completed', 'partial', 'failed'].includes(batch.status)
+
+        if (needsFinalize && !autoFinalizingRef.current.has(batch.batchId)) {
+          autoFinalizingRef.current.add(batch.batchId)
+          console.log(`[ProcessingIndicator] Auto-finalizing stuck batch ${batch.batchId.slice(-8)}`)
+          fetch(`/api/single-orders/batch/${batch.batchId}/process`, { method: 'POST' })
+            .catch(err => console.error('Auto-finalize failed:', err))
+            .finally(() => autoFinalizingRef.current.delete(batch.batchId))
+        }
       }
 
       // Check for newly completed batches (were active, now not in active list)
