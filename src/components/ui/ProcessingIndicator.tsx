@@ -234,9 +234,12 @@ export default function ProcessingIndicator({ newlyCreatedBatch }: ProcessingInd
             const isFailed = batch.status === 'failed'
             const progress = batch.completed + batch.failed
             const progressPercent = Math.round((progress / batch.total) * 100)
+            const allLabelsDone = (batch.completed + batch.failed) >= batch.total
+              && batch.queued === 0 && batch.processing === 0 && batch.total > 0
             const isStuck = batch.status === 'trigger_failed' ||
-              (batch.completed === 0 && batch.processing === 0 &&
-               Date.now() - new Date(batch.createdAt).getTime() > 60000)
+              (batch.completed === 0 && batch.processing === 0 && batch.queued === 0 &&
+               Date.now() - new Date(batch.createdAt).getTime() > 60000) ||
+              (allLabelsDone && !['completed', 'partial', 'failed'].includes(batch.status))
             const isRetrying = retryingBatches.has(batch.batchId)
 
             return (

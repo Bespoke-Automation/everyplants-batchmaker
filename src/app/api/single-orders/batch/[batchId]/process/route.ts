@@ -69,6 +69,65 @@ export async function POST(
     console.log(`[${batchId}] Found ${queuedLabels.length} queued labels to process`)
 
     if (queuedLabels.length === 0) {
+      // Check if batch needs finalization (all labels done but batch still in processing state)
+      if (['processing_shipments', 'processing', 'batch_created'].includes(batch.status)) {
+        console.log(`[${batchId}] No queued labels but batch still in "${batch.status}" status, running finalize...`)
+
+        // Combine PDFs
+        let combinedPdfUrl: string | null = null
+        try {
+          const completedLabels = labels.filter(l => l.status === 'completed' && l.edited_label_path)
+          if (completedLabels.length > 0) {
+            console.log(`[${batchId}] Combining ${completedLabels.length} PDFs from storage...`)
+            const pdfBuffers: Buffer[] = []
+            for (const label of completedLabels) {
+              if (!label.edited_label_path) continue
+              try {
+                const url = new URL(label.edited_label_path)
+                const pathParts = url.pathname.split('/storage/v1/object/public/shipment-labels/')
+                const filePath = pathParts[1]
+                if (!filePath) continue
+                const { data, error: dlError } = await supabase.storage.from('shipment-labels').download(filePath)
+                if (dlError || !data) continue
+                pdfBuffers.push(Buffer.from(await data.arrayBuffer()))
+              } catch {
+                // Skip individual PDF errors
+              }
+            }
+            if (pdfBuffers.length > 0) {
+              const combinedPdf = await combinePdfs(pdfBuffers)
+              combinedPdfUrl = await uploadPdfToStorage(batchId, 'combined_labels.pdf', combinedPdf)
+              console.log(`[${batchId}] Combined PDF uploaded: ${combinedPdfUrl}`)
+            }
+          }
+        } catch (error) {
+          console.error(`[${batchId}] Error combining PDFs during finalize:`, error)
+        }
+
+        // Finalize batch status
+        const actualSuccess = labels.filter(l => l.status === 'completed').length
+        const actualFail = labels.filter(l => l.status === 'error').length
+        const finalStatus = actualFail === 0 ? 'completed' : actualSuccess === 0 ? 'failed' : 'partial'
+
+        await updateSingleOrderBatch(batchId, {
+          status: finalStatus,
+          successful_shipments: actualSuccess,
+          failed_shipments: actualFail,
+          combined_pdf_path: combinedPdfUrl || batch.combined_pdf_path,
+        })
+
+        console.log(`[${batchId}] Batch finalized: ${finalStatus} (${actualSuccess} success, ${actualFail} failed)`)
+
+        return NextResponse.json({
+          success: true,
+          batchId,
+          status: finalStatus,
+          successCount: actualSuccess,
+          failCount: actualFail,
+          combinedPdfUrl,
+        })
+      }
+
       console.log(`[${batchId}] No queued labels to process`)
       return NextResponse.json({
         success: true,

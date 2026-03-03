@@ -88,9 +88,15 @@ export const processSingleOrderBatch = inngest.createFunction(
     }
 
     // Combine all successful PDFs by fetching from storage
-    const combinedPdfUrl = await step.run("combine-pdfs", async () => {
-      return await combineAllPdfs(batchId)
-    })
+    // Wrapped in try/catch so finalize-batch always runs even if combining fails
+    let combinedPdfUrl: string | null = null
+    try {
+      combinedPdfUrl = await step.run("combine-pdfs", async () => {
+        return await combineAllPdfs(batchId)
+      })
+    } catch (error) {
+      console.error(`[${batchId}] PDF combining failed, continuing to finalize:`, error)
+    }
 
     // Update final batch status - count from actual label statuses to handle retries correctly
     const finalStatus = await step.run("finalize-batch", async () => {
