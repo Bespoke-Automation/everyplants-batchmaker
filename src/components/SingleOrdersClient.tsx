@@ -29,6 +29,19 @@ export default function SingleOrdersClient() {
   const { presets, isLoading: presetsLoading, removePreset, addPreset } = usePresets('single_order')
   const [selectedGroups, setSelectedGroups] = useState<ProductGroup[]>([])
 
+  // Sync selectedGroups with filteredGroups when filters/maxResults change
+  useEffect(() => {
+    setSelectedGroups(prev => {
+      if (prev.length === 0) return prev
+      const updated = prev
+        .map(selected => filteredGroups.find(fg => fg.productId === selected.productId))
+        .filter((g): g is ProductGroup => g !== undefined)
+      // Only update if something actually changed
+      if (updated.length === prev.length && updated.every((g, i) => g === prev[i])) return prev
+      return updated
+    })
+  }, [filteredGroups])
+
   // Batch creation state
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false)
   const [isCreatingBatch, setIsCreatingBatch] = useState(false)
