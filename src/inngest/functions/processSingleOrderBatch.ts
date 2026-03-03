@@ -15,10 +15,9 @@ import {
 } from "@/lib/picqer/client"
 import {
   addPlantNameToLabel,
-  combinePdfs,
   detectCarrierFromShipment,
 } from "@/lib/pdf/labelEditor"
-import { supabase } from "@/lib/supabase/client"
+import { combineLabelsFromStorage } from "@/lib/pdf/combineFromStorage"
 
 interface BatchEventData {
   batchId: string
@@ -258,60 +257,16 @@ async function processLabel(
 }
 
 /**
- * Combine all successfully processed PDFs from storage
+ * Combine all successfully processed PDFs from storage (chunked)
  */
 async function combineAllPdfs(batchId: string): Promise<string | null> {
-  // Get all completed labels to find their PDF paths
   const labels = await getShipmentLabelsByBatch(batchId)
   const completedLabels = labels.filter((l) => l.status === "completed" && l.edited_label_path)
 
-  if (completedLabels.length === 0) {
-    console.log(`[${batchId}] No completed labels to combine`)
-    return null
-  }
+  const combinedPdf = await combineLabelsFromStorage(completedLabels, batchId)
+  if (!combinedPdf) return null
 
-  console.log(`[${batchId}] Combining ${completedLabels.length} PDFs...`)
-
-  // Download all PDFs from storage
-  const pdfBuffers: Buffer[] = []
-
-  for (const label of completedLabels) {
-    if (!label.edited_label_path) continue
-
-    try {
-      // Extract the path from the full URL
-      const url = new URL(label.edited_label_path)
-      const pathParts = url.pathname.split("/storage/v1/object/public/shipment-labels/")
-      const filePath = pathParts[1]
-
-      if (!filePath) {
-        console.error(`[${batchId}] Could not extract file path from: ${label.edited_label_path}`)
-        continue
-      }
-
-      const { data, error } = await supabase.storage.from("shipment-labels").download(filePath)
-
-      if (error) {
-        console.error(`[${batchId}] Error downloading PDF ${filePath}:`, error)
-        continue
-      }
-
-      const buffer = Buffer.from(await data.arrayBuffer())
-      pdfBuffers.push(buffer)
-    } catch (error) {
-      console.error(`[${batchId}] Error processing PDF path:`, error)
-    }
-  }
-
-  if (pdfBuffers.length === 0) {
-    console.error(`[${batchId}] No PDFs could be downloaded for combining`)
-    return null
-  }
-
-  // Combine all PDFs
-  const combinedPdf = await combinePdfs(pdfBuffers)
   const combinedUrl = await uploadPdfToStorage(batchId, "combined_labels.pdf", combinedPdf)
-
   console.log(`[${batchId}] Combined PDF uploaded: ${combinedUrl}`)
   return combinedUrl
 }

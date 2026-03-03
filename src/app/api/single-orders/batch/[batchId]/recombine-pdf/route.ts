@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase/client'
 import {
   getShipmentLabelsByBatch,
   uploadPdfToStorage,
   updateSingleOrderBatch,
 } from '@/lib/supabase/shipmentLabels'
-import { combinePdfs } from '@/lib/pdf/labelEditor'
+import { combineLabelsFromStorage } from '@/lib/pdf/combineFromStorage'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -39,43 +38,11 @@ export async function POST(
       return NextResponse.json({ error: 'No completed labels found' }, { status: 404 })
     }
 
-    console.log(`[${batchId}] Found ${completedLabels.length} completed labels to combine`)
-
-    const pdfBuffers: Buffer[] = []
-
-    for (const label of completedLabels) {
-      if (!label.edited_label_path) continue
-
-      try {
-        const url = new URL(label.edited_label_path)
-        const pathParts = url.pathname.split('/storage/v1/object/public/shipment-labels/')
-        const filePath = pathParts[1]
-
-        if (!filePath) {
-          console.error(`[${batchId}] Could not extract file path from: ${label.edited_label_path}`)
-          continue
-        }
-
-        const { data, error } = await supabase.storage.from('shipment-labels').download(filePath)
-
-        if (error) {
-          console.error(`[${batchId}] Error downloading PDF ${filePath}:`, error)
-          continue
-        }
-
-        const buffer = Buffer.from(await data.arrayBuffer())
-        pdfBuffers.push(buffer)
-      } catch (error) {
-        console.error(`[${batchId}] Error processing PDF path:`, error)
-      }
-    }
-
-    if (pdfBuffers.length === 0) {
+    const combinedPdf = await combineLabelsFromStorage(completedLabels, batchId)
+    if (!combinedPdf) {
       return NextResponse.json({ error: 'No PDFs could be downloaded' }, { status: 500 })
     }
 
-    console.log(`[${batchId}] Combining ${pdfBuffers.length} PDFs...`)
-    const combinedPdf = await combinePdfs(pdfBuffers)
     const combinedUrl = await uploadPdfToStorage(batchId, 'combined_labels.pdf', combinedPdf)
 
     await updateSingleOrderBatch(batchId, {
@@ -87,7 +54,7 @@ export async function POST(
     return NextResponse.json({
       success: true,
       batchId,
-      labelsIncluded: pdfBuffers.length,
+      labelsIncluded: completedLabels.length,
       combinedPdfUrl: combinedUrl,
     })
   } catch (error) {

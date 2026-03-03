@@ -15,10 +15,10 @@ import {
 import { supabase } from '@/lib/supabase/client'
 import {
   addPlantNameToLabel,
-  combinePdfs,
   detectCarrierFromShipment,
   ProcessedLabel,
 } from '@/lib/pdf/labelEditor'
+import { combineLabelsFromStorage } from '@/lib/pdf/combineFromStorage'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300 // 5 minutes max
@@ -73,32 +73,13 @@ export async function POST(
       if (['processing_shipments', 'processing', 'batch_created'].includes(batch.status)) {
         console.log(`[${batchId}] No queued labels but batch still in "${batch.status}" status, running finalize...`)
 
-        // Combine PDFs
+        // Combine PDFs (chunked for reliability)
         let combinedPdfUrl: string | null = null
         try {
           const completedLabels = labels.filter(l => l.status === 'completed' && l.edited_label_path)
-          if (completedLabels.length > 0) {
-            console.log(`[${batchId}] Combining ${completedLabels.length} PDFs from storage...`)
-            const pdfBuffers: Buffer[] = []
-            for (const label of completedLabels) {
-              if (!label.edited_label_path) continue
-              try {
-                const url = new URL(label.edited_label_path)
-                const pathParts = url.pathname.split('/storage/v1/object/public/shipment-labels/')
-                const filePath = pathParts[1]
-                if (!filePath) continue
-                const { data, error: dlError } = await supabase.storage.from('shipment-labels').download(filePath)
-                if (dlError || !data) continue
-                pdfBuffers.push(Buffer.from(await data.arrayBuffer()))
-              } catch {
-                // Skip individual PDF errors
-              }
-            }
-            if (pdfBuffers.length > 0) {
-              const combinedPdf = await combinePdfs(pdfBuffers)
-              combinedPdfUrl = await uploadPdfToStorage(batchId, 'combined_labels.pdf', combinedPdf)
-              console.log(`[${batchId}] Combined PDF uploaded: ${combinedPdfUrl}`)
-            }
+          const combinedPdf = await combineLabelsFromStorage(completedLabels, batchId)
+          if (combinedPdf) {
+            combinedPdfUrl = await uploadPdfToStorage(batchId, 'combined_labels.pdf', combinedPdf)
           }
         } catch (error) {
           console.error(`[${batchId}] Error combining PDFs during finalize:`, error)
@@ -268,38 +249,14 @@ export async function POST(
       }
     }
 
-    // Step 5: Combine all successful PDFs from storage (includes previous runs)
+    // Step 5: Combine all successful PDFs from storage (chunked for reliability)
     let combinedPdfUrl: string | null = null
     try {
       const allLabels = await getShipmentLabelsByBatch(batchId)
       const completedLabels = allLabels.filter(l => l.status === 'completed' && l.edited_label_path)
-
-      if (completedLabels.length > 0) {
-        console.log(`[${batchId}] Combining ${completedLabels.length} PDFs from storage...`)
-        const pdfBuffers: Buffer[] = []
-
-        for (const label of completedLabels) {
-          if (!label.edited_label_path) continue
-          try {
-            const url = new URL(label.edited_label_path)
-            const pathParts = url.pathname.split('/storage/v1/object/public/shipment-labels/')
-            const filePath = pathParts[1]
-            if (!filePath) continue
-
-            const { data, error: dlError } = await supabase.storage.from('shipment-labels').download(filePath)
-            if (dlError || !data) continue
-
-            pdfBuffers.push(Buffer.from(await data.arrayBuffer()))
-          } catch {
-            // Skip individual PDF errors
-          }
-        }
-
-        if (pdfBuffers.length > 0) {
-          const combinedPdf = await combinePdfs(pdfBuffers)
-          combinedPdfUrl = await uploadPdfToStorage(batchId, 'combined_labels.pdf', combinedPdf)
-          console.log(`[${batchId}] Combined PDF uploaded: ${combinedPdfUrl}`)
-        }
+      const combinedPdf = await combineLabelsFromStorage(completedLabels, batchId)
+      if (combinedPdf) {
+        combinedPdfUrl = await uploadPdfToStorage(batchId, 'combined_labels.pdf', combinedPdf)
       }
     } catch (error) {
       console.error(`[${batchId}] Error combining PDFs:`, error)
