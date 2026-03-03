@@ -63,19 +63,26 @@ export default function ProcessingIndicator({ newlyCreatedBatch }: ProcessingInd
         })))
       }
 
-      // Auto-finalize stuck batches (all labels done but batch still in processing state)
+      // Auto-recover stuck batches by calling the process endpoint directly
       for (const batch of batches) {
+        if (['completed', 'partial', 'failed'].includes(batch.status)) continue
+        if (autoFinalizingRef.current.has(batch.batchId)) continue
+
         const allLabelsDone = (batch.completed + batch.failed) >= batch.total
           && batch.queued === 0 && batch.processing === 0 && batch.total > 0
-        const needsFinalize = allLabelsDone
-          && !['completed', 'partial', 'failed'].includes(batch.status)
+        const noProgressTimeout = Date.now() - new Date(batch.createdAt).getTime() > 60000
+          && batch.completed === 0 && batch.failed === 0
 
-        if (needsFinalize && !autoFinalizingRef.current.has(batch.batchId)) {
+        if (allLabelsDone || noProgressTimeout) {
           autoFinalizingRef.current.add(batch.batchId)
-          console.log(`[ProcessingIndicator] Auto-finalizing stuck batch ${batch.batchId.slice(-8)}`)
+          const reason = allLabelsDone ? 'all labels done, needs finalize' : 'no progress after 60s'
+          console.log(`[ProcessingIndicator] Auto-recovering batch ${batch.batchId.slice(-8)}: ${reason}`)
           fetch(`/api/single-orders/batch/${batch.batchId}/process`, { method: 'POST' })
-            .catch(err => console.error('Auto-finalize failed:', err))
-            .finally(() => autoFinalizingRef.current.delete(batch.batchId))
+            .catch(err => console.error('Auto-recover failed:', err))
+            .finally(() => {
+              // Allow retry after 60s if still stuck
+              setTimeout(() => autoFinalizingRef.current.delete(batch.batchId), 60000)
+            })
         }
       }
 
@@ -254,8 +261,8 @@ export default function ProcessingIndicator({ newlyCreatedBatch }: ProcessingInd
             const allLabelsDone = (batch.completed + batch.failed) >= batch.total
               && batch.queued === 0 && batch.processing === 0 && batch.total > 0
             const isStuck = batch.status === 'trigger_failed' ||
-              (batch.completed === 0 && batch.processing === 0 && batch.queued === 0 &&
-               Date.now() - new Date(batch.createdAt).getTime() > 60000) ||
+              (batch.completed === 0 && batch.failed === 0 &&
+               Date.now() - new Date(batch.createdAt).getTime() > 120000) ||
               (allLabelsDone && !['completed', 'partial', 'failed'].includes(batch.status))
             const isRetrying = retryingBatches.has(batch.batchId)
 
