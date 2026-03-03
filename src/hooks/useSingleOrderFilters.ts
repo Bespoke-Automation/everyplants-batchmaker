@@ -84,14 +84,22 @@ const MIN_GROUP_SIZE = 5
 
 export function useSingleOrderFilters(groups: ProductGroup[], postalRegions: PostalRegion[] = []) {
   const [filters, setFilters] = useState<FilterState>(initialFilterState)
+  const [maxResults, setMaxResults] = useState<number | null>(null)
 
   const filteredGroups = useMemo(() => {
     return groups
       .map(group => {
         // Filter orders within the group
-        const filteredOrders = group.orders.filter(order =>
+        let filteredOrders = group.orders.filter(order =>
           orderMatchesFilters(order, filters, postalRegions)
         )
+
+        // Limit orders per group: sort oldest first, take first N
+        if (maxResults !== null && maxResults > 0) {
+          filteredOrders = [...filteredOrders]
+            .sort((a, b) => a.created.localeCompare(b.created))
+            .slice(0, maxResults)
+        }
 
         // Recalculate retailer breakdown
         const retailerBreakdown: Record<string, number> = {}
@@ -110,7 +118,7 @@ export function useSingleOrderFilters(groups: ProductGroup[], postalRegions: Pos
       .filter(group => group.totalCount >= MIN_GROUP_SIZE)
       // Sort by total count descending
       .sort((a, b) => b.totalCount - a.totalCount)
-  }, [groups, filters, postalRegions])
+  }, [groups, filters, postalRegions, maxResults])
 
   const updateFilter = useCallback(<K extends keyof FilterState>(
     key: K,
@@ -121,6 +129,7 @@ export function useSingleOrderFilters(groups: ProductGroup[], postalRegions: Pos
 
   const resetFilters = useCallback(() => {
     setFilters(initialFilterState)
+    setMaxResults(null)
   }, [])
 
   const applyPreset = useCallback((preset: Preset) => {
@@ -134,11 +143,17 @@ export function useSingleOrderFilters(groups: ProductGroup[], postalRegions: Pos
     })
   }, [])
 
+  const updateMaxResults = useCallback((value: number | null) => {
+    setMaxResults(value)
+  }, [])
+
   return {
     filters,
     filteredGroups,
     updateFilter,
     resetFilters,
     applyPreset,
+    maxResults,
+    updateMaxResults,
   }
 }

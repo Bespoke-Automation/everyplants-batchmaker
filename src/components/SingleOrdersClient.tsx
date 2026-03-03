@@ -25,7 +25,7 @@ interface BatchResult {
 export default function SingleOrdersClient() {
   const { groups, totalSingleOrders, metadata, isLoading, error, refetch, fetchedAt } = useSingleOrders()
   const { regions: postalRegions } = usePostalRegions()
-  const { filters, filteredGroups, updateFilter, resetFilters, applyPreset } = useSingleOrderFilters(groups, postalRegions)
+  const { filters, filteredGroups, updateFilter, resetFilters, applyPreset, maxResults, updateMaxResults } = useSingleOrderFilters(groups, postalRegions)
   const { presets, isLoading: presetsLoading, removePreset, addPreset } = usePresets('single_order')
   const [selectedGroups, setSelectedGroups] = useState<ProductGroup[]>([])
 
@@ -236,6 +236,8 @@ export default function SingleOrdersClient() {
             onCreateBatch={handleCreateBatchClick}
             isCreatingBatch={isCreatingBatch}
             postalRegions={postalRegions}
+            maxResults={maxResults}
+            onMaxResultsChange={updateMaxResults}
           />
           <PresetsPanel
             presets={presets}
