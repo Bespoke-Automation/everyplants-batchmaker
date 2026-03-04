@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import {
   createShipment,
   getShipmentLabel,
+  getPicklistShipments,
   pickAllProducts,
   closePicklist,
 } from '@/lib/picqer/client'
@@ -136,12 +137,28 @@ export async function POST(
           packagingId
         )
 
-        if (!shipmentResult.success || !shipmentResult.shipment) {
-          throw new Error(shipmentResult.error || 'Failed to create shipment')
-        }
+        let shipment = shipmentResult.shipment
+        let skipPickClose = false
 
-        const shipment = shipmentResult.shipment
-        console.log(`[${batchId}] Shipment created: ${shipment.idshipment}`)
+        if (!shipmentResult.success || !shipment) {
+          // Recovery: if picklist is already closed/picked, try to use existing shipment
+          const isAlreadyProcessed = shipmentResult.error?.includes('Picklist status is')
+          if (isAlreadyProcessed) {
+            console.log(`[${batchId}] Picklist ${label.picklist_id} already processed, attempting to recover existing shipment...`)
+            const existingShipments = await getPicklistShipments(label.picklist_id)
+            if (existingShipments.length > 0) {
+              shipment = existingShipments[existingShipments.length - 1]
+              skipPickClose = true
+              console.log(`[${batchId}] Recovered existing shipment ${shipment.idshipment} (tracking: ${shipment.trackingcode})`)
+            } else {
+              throw new Error(shipmentResult.error || 'Failed to create shipment')
+            }
+          } else {
+            throw new Error(shipmentResult.error || 'Failed to create shipment')
+          }
+        } else {
+          console.log(`[${batchId}] Shipment created: ${shipment.idshipment}`)
+        }
 
         // Update label with shipment info
         await updateShipmentLabel(label.id, {
@@ -151,16 +168,17 @@ export async function POST(
           original_label_url: shipment.labelurl_pdf || shipment.labelurl || null,
         })
 
-        // Pick all products and close the picklist after successful shipment
-        const pickResult = await pickAllProducts(label.picklist_id)
-        if (!pickResult.success) {
-          console.warn(`[${batchId}] Failed to pick all on picklist ${label.picklist_id}: ${pickResult.error}`)
-        }
+        // Pick all products and close the picklist (skip if already done)
+        if (!skipPickClose) {
+          const pickResult = await pickAllProducts(label.picklist_id)
+          if (!pickResult.success) {
+            console.warn(`[${batchId}] Failed to pick all on picklist ${label.picklist_id}: ${pickResult.error}`)
+          }
 
-        const closeResult = await closePicklist(label.picklist_id)
-        if (!closeResult.success) {
-          console.warn(`[${batchId}] Failed to close picklist ${label.picklist_id}: ${closeResult.error}`)
-          // Continue processing - don't fail the batch for close failures
+          const closeResult = await closePicklist(label.picklist_id)
+          if (!closeResult.success) {
+            console.warn(`[${batchId}] Failed to close picklist ${label.picklist_id}: ${closeResult.error}`)
+          }
         }
 
         // Step 2: Fetch label PDF

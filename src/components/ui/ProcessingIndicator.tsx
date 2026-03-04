@@ -72,10 +72,16 @@ export default function ProcessingIndicator({ newlyCreatedBatch }: ProcessingInd
           && batch.queued === 0 && batch.processing === 0 && batch.total > 0
         const noProgressTimeout = Date.now() - new Date(batch.createdAt).getTime() > 60000
           && batch.completed === 0 && batch.failed === 0
+        // Catch batches where Inngest died mid-processing: some done, some still queued, batch older than 5 min
+        const stuckWithQueuedLabels = batch.queued > 0 && (batch.completed + batch.failed) > 0
+          && batch.processing === 0
+          && Date.now() - new Date(batch.createdAt).getTime() > 300000
 
-        if (allLabelsDone || noProgressTimeout) {
+        if (allLabelsDone || noProgressTimeout || stuckWithQueuedLabels) {
           autoFinalizingRef.current.add(batch.batchId)
-          const reason = allLabelsDone ? 'all labels done, needs finalize' : 'no progress after 60s'
+          const reason = allLabelsDone ? 'all labels done, needs finalize'
+            : stuckWithQueuedLabels ? `stuck: ${batch.queued} queued labels with no active processing for 5+ min`
+            : 'no progress after 60s'
           console.log(`[ProcessingIndicator] Auto-recovering batch ${batch.batchId.slice(-8)}: ${reason}`)
           fetch(`/api/single-orders/batch/${batch.batchId}/process`, { method: 'POST' })
             .catch(err => console.error('Auto-recover failed:', err))

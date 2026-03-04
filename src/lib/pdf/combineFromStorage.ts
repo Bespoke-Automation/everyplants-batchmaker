@@ -57,6 +57,10 @@ export async function combineLabelsFromStorage(
       }
     }
 
+    if (chunkBuffers.length < chunk.length) {
+      console.warn(`[${batchId}] Chunk ${chunkIndex}/${totalChunks}: ${chunk.length - chunkBuffers.length} PDF(s) failed to download (${chunkBuffers.length}/${chunk.length} successful)`)
+    }
+
     if (chunkBuffers.length > 0) {
       // Combine this chunk into an intermediate PDF
       const chunkPdf = await combinePdfs(chunkBuffers)
