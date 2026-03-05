@@ -37,13 +37,13 @@ export async function GET() {
     return NextResponse.json({ success: false, error: cacheResult.error.message }, { status: 500 })
   }
 
-  // Build lookup maps
+  // Build lookup maps (use Number() keys — bigint comes back as string from Supabase)
   const altSkuMap = new Map(
-    (productIndexResult.data ?? []).map(p => [p.picqer_product_id, p.alt_sku as string | null])
+    (productIndexResult.data ?? []).map(p => [Number(p.picqer_product_id), p.alt_sku as string | null])
   )
   const mappingMap = new Map(
     (mappingsResult.data ?? []).map(m => [
-      m.picqer_product_id,
+      Number(m.picqer_product_id),
       { tradeItemId: m.floriday_trade_item_id, vbnCode: m.floriday_vbn_product_code },
     ])
   )
@@ -53,14 +53,15 @@ export async function GET() {
 
   // Enrich each cache item
   const enriched = (cacheResult.data ?? []).map(item => {
-    const mapping = mappingMap.get(item.picqer_product_id)
+    const pid = Number(item.picqer_product_id)
+    const mapping = mappingMap.get(pid)
     const vbnCode = mapping?.tradeItemId
       ? (vbnMap.get(mapping.tradeItemId) ?? mapping.vbnCode ?? null)
       : null
 
     return {
       ...item,
-      alt_sku: altSkuMap.get(item.picqer_product_id) ?? null,
+      alt_sku: altSkuMap.get(pid) ?? null,
       floriday_trade_item_id: mapping?.tradeItemId ?? null,
       vbn_product_code: vbnCode,
     }
