@@ -18,19 +18,24 @@ export async function GET() {
   try {
     const env = getFloridayEnv()
 
-    // Parallel: producten + mappings + product index (alt_sku) + trade items (vbn)
-    const [products, mappingsResult, productIndexResult, tradeItemsResult] = await Promise.all([
-      getFloridayProducts(),
+    // Stap 1: producten ophalen uit Picqer
+    const products = await getFloridayProducts()
+    const productIds = products.map(p => p.idproduct)
+
+    // Stap 2: enrichment queries gefilterd op alleen deze product IDs
+    const [mappingsResult, productIndexResult, tradeItemsResult] = await Promise.all([
       supabase
         .schema('floriday')
         .from('product_mapping')
         .select('picqer_product_id, floriday_trade_item_id, floriday_supplier_article_code, last_stock_sync_at')
         .eq('environment', env)
-        .eq('is_active', true),
+        .eq('is_active', true)
+        .in('picqer_product_id', productIds),
       supabase
         .schema('floriday')
         .from('picqer_product_index')
-        .select('picqer_product_id, alt_sku'),
+        .select('picqer_product_id, alt_sku')
+        .in('picqer_product_id', productIds),
       supabase
         .schema('floriday')
         .from('trade_items')

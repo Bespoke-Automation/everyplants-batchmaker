@@ -10,32 +10,40 @@ import { getFloridayEnv } from '@/lib/floriday/config'
 export async function GET() {
   const env = getFloridayEnv()
 
-  const [cacheResult, productIndexResult, mappingsResult, tradeItemsResult] = await Promise.all([
-    supabase
-      .schema('batchmaker')
-      .from('floriday_stock_cache')
-      .select('*')
-      .order('name'),
+  // Stap 1: cache ophalen
+  const cacheResult = await supabase
+    .schema('batchmaker')
+    .from('floriday_stock_cache')
+    .select('*')
+    .order('name')
+
+  if (cacheResult.error) {
+    return NextResponse.json({ success: false, error: cacheResult.error.message }, { status: 500 })
+  }
+
+  const cacheItems = cacheResult.data ?? []
+  const productIds = cacheItems.map(item => Number(item.picqer_product_id))
+
+  // Stap 2: enrichment queries gefilterd op alleen deze product IDs
+  const [productIndexResult, mappingsResult, tradeItemsResult] = await Promise.all([
     supabase
       .schema('floriday')
       .from('picqer_product_index')
-      .select('picqer_product_id, alt_sku'),
+      .select('picqer_product_id, alt_sku')
+      .in('picqer_product_id', productIds),
     supabase
       .schema('floriday')
       .from('product_mapping')
       .select('picqer_product_id, floriday_trade_item_id, floriday_vbn_product_code')
       .eq('environment', env)
-      .eq('is_active', true),
+      .eq('is_active', true)
+      .in('picqer_product_id', productIds),
     supabase
       .schema('floriday')
       .from('trade_items')
       .select('trade_item_id, vbn_product_code')
       .eq('environment', env),
   ])
-
-  if (cacheResult.error) {
-    return NextResponse.json({ success: false, error: cacheResult.error.message }, { status: 500 })
-  }
 
   // Build lookup maps (use Number() keys — bigint comes back as string from Supabase)
   const altSkuMap = new Map(
@@ -52,7 +60,7 @@ export async function GET() {
   )
 
   // Enrich each cache item
-  const enriched = (cacheResult.data ?? []).map(item => {
+  const enriched = cacheItems.map(item => {
     const pid = Number(item.picqer_product_id)
     const mapping = mappingMap.get(pid)
     const vbnCode = mapping?.tradeItemId
