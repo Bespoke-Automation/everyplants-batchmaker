@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { RefreshCw, TrendingUp, Package, AlertTriangle, Send, CheckCircle, Search } from 'lucide-react'
+import CatalogSupplyPanel from './CatalogSupplyPanel'
 
 interface StockCacheItem {
   picqer_product_id: number
@@ -12,6 +13,9 @@ interface StockCacheItem {
   week_stock: number
   po_details: PoDetail[]
   synced_at: string
+  alt_sku: string | null
+  floriday_trade_item_id: string | null
+  vbn_product_code: number | null
 }
 
 interface PoDetail {
@@ -314,7 +318,7 @@ export default function FloridayStock() {
   const productsWithPO = items.filter(i => i.po_qty_this_week > 0).length
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="max-w-7xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -338,6 +342,9 @@ export default function FloridayStock() {
 
       {/* Single product panel */}
       <SingleProductPanel />
+
+      {/* Catalog Supply panel (multi-week bulk sync) */}
+      <CatalogSupplyPanel />
 
       {/* Stats */}
       {items.length > 0 && (
@@ -394,6 +401,9 @@ export default function FloridayStock() {
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Product</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Code</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Alt. SKU</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Trade Item</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground">VBN</th>
                 <th className="text-right px-4 py-3 font-medium text-muted-foreground">Huidig</th>
                 <th className="text-right px-4 py-3 font-medium text-muted-foreground">PO deze week</th>
                 <th className="text-right px-4 py-3 font-medium text-muted-foreground">Weekstock</th>
@@ -405,6 +415,15 @@ export default function FloridayStock() {
                 <tr key={item.picqer_product_id} className="hover:bg-muted/30 transition-colors">
                   <td className="px-4 py-3 font-medium">{item.name}</td>
                   <td className="px-4 py-3 text-muted-foreground font-mono text-xs">{item.productcode}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{item.alt_sku ?? '—'}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
+                    {item.floriday_trade_item_id ? (
+                      <span title={item.floriday_trade_item_id} className="cursor-help">
+                        {item.floriday_trade_item_id.slice(0, 8)}…
+                      </span>
+                    ) : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground">{item.vbn_product_code ?? '—'}</td>
                   <td className="px-4 py-3 text-right">
                     <StockBadge stock={item.bulk_pick_stock} />
                   </td>
