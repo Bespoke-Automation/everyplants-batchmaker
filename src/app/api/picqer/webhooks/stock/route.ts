@@ -43,15 +43,14 @@ function verifySignature(body: string, signature: string | null): boolean {
   }
   if (!signature) return false
 
-  const expected = crypto
+  const expectedBuf = crypto
     .createHmac('sha256', secret)
     .update(body)
-    .digest('hex')
+    .digest()
 
-  const sigBuf = Buffer.from(signature)
-  const expBuf = Buffer.from(expected)
-  if (sigBuf.length !== expBuf.length) return false
-  return crypto.timingSafeEqual(sigBuf, expBuf)
+  const sigBuf = Buffer.from(signature, 'base64')
+  if (sigBuf.length !== expectedBuf.length) return false
+  return crypto.timingSafeEqual(sigBuf, expectedBuf)
 }
 
 // ── Extract product IDs from webhook payload ─────────────────
