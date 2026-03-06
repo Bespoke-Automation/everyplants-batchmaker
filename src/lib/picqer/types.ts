@@ -398,3 +398,16 @@ export interface SingleOrderBatchResult {
   }>
   combinedPdfUrl?: string
 }
+
+// ─── Webhooks ──────────────────────────────────────────────
+
+export interface PicqerWebhook {
+  idhook: number
+  name: string | null
+  event: string
+  address: string
+  secret: string | null
+  active: boolean
+  created: string
+  updated: string
+}

@@ -1,4 +1,4 @@
-import { PicqerOrder, PicqerPicklist, PicqerPicklistWithProducts, PicqerProduct, PicqerTag, PicqerShipment, CreateShipmentResult, CancelShipmentResult, GetLabelResult, PicqerPackaging, ShippingMethod, PicqerUser, PicqerPicklistBatch, PicqerBatchPicklist, type MulticolloParcelInput, PicqerProductFull, PicqerCompositionPart, PicqerCustomer, CreateOrderInput, PicqerProductStock, PicqerPurchaseOrder, PicqerExpectedPurchaseOrder } from './types'
+import { PicqerOrder, PicqerPicklist, PicqerPicklistWithProducts, PicqerProduct, PicqerTag, PicqerShipment, CreateShipmentResult, CancelShipmentResult, GetLabelResult, PicqerPackaging, ShippingMethod, PicqerUser, PicqerPicklistBatch, PicqerBatchPicklist, type MulticolloParcelInput, PicqerProductFull, PicqerCompositionPart, PicqerCustomer, CreateOrderInput, PicqerProductStock, PicqerPurchaseOrder, PicqerExpectedPurchaseOrder, PicqerWebhook } from './types'
 
 const PICQER_SUBDOMAIN = process.env.PICQER_SUBDOMAIN!
 const PICQER_API_KEY = process.env.PICQER_API_KEY!
@@ -2305,6 +2305,125 @@ export async function getProductExpected(idproduct: number): Promise<PicqerExpec
     const errorText = await response.text()
     console.error(`Picqer API error fetching expected for product ${idproduct}:`, response.status, errorText)
     throw new Error(`Picqer API error: ${response.status} - ${errorText}`)
+  }
+
+  return response.json()
+}
+
+// ── Purchase Order (single) ───────────────────────────────────────────
+
+/**
+ * Fetch a single purchase order by ID (includes products).
+ * Used by stock webhook to extract product IDs from PO events.
+ */
+export async function getPurchaseOrder(idpurchaseorder: number): Promise<PicqerPurchaseOrder> {
+  const response = await rateLimitedFetch(
+    `${PICQER_BASE_URL}/purchaseorders/${idpurchaseorder}`,
+    {
+      method: 'GET',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+        'User-Agent': 'EveryPlants-Batchmaker/2.0',
+        'Content-Type': 'application/json',
+      },
+    }
+  )
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Picqer API error fetching purchase order ${idpurchaseorder}: ${response.status} - ${errorText}`)
+  }
+
+  return response.json()
+}
+
+// ── Webhook CRUD ──────────────────────────────────────────────────────
+
+/**
+ * List all registered webhooks.
+ */
+export async function listWebhooks(): Promise<PicqerWebhook[]> {
+  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/hooks`, {
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      'Content-Type': 'application/json',
+    },
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Picqer API error listing webhooks: ${response.status} - ${errorText}`)
+  }
+
+  return response.json()
+}
+
+/**
+ * Create a new webhook.
+ */
+export async function createWebhook(
+  name: string,
+  event: string,
+  address: string,
+  secret?: string
+): Promise<PicqerWebhook> {
+  const body: Record<string, unknown> = { name, event, address }
+  if (secret) body.secret = secret
+
+  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/hooks`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Picqer API error creating webhook: ${response.status} - ${errorText}`)
+  }
+
+  return response.json()
+}
+
+/**
+ * Delete a webhook by ID.
+ */
+export async function deleteWebhook(idhook: number): Promise<void> {
+  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/hooks/${idhook}`, {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+    },
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Picqer API error deleting webhook ${idhook}: ${response.status} - ${errorText}`)
+  }
+}
+
+/**
+ * Reactivate a deactivated webhook.
+ * Picqer deactivates webhooks after repeated failures.
+ */
+export async function reactivateWebhook(idhook: number): Promise<PicqerWebhook> {
+  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/hooks/${idhook}/reactivate`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      'Content-Type': 'application/json',
+    },
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Picqer API error reactivating webhook ${idhook}: ${response.status} - ${errorText}`)
   }
 
   return response.json()
