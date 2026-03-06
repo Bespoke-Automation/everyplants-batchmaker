@@ -7,7 +7,6 @@ import { getPurchaseOrder } from '@/lib/picqer/client'
 import { getFloridayEnv } from '@/lib/floriday/config'
 import { isStockSyncDisabled, PICQER_STOCK_WEBHOOK_EVENTS } from '@/lib/floriday/stock-sync-config'
 import { inngest } from '@/inngest/client'
-import { getNextNWeeks } from '@/lib/floriday/utils'
 
 // ── In-memory cache for mapped product IDs (1 min TTL) ──────
 
@@ -49,10 +48,10 @@ function verifySignature(body: string, signature: string | null): boolean {
     .update(body)
     .digest('hex')
 
-  return crypto.timingSafeEqual(
-    Buffer.from(signature),
-    Buffer.from(expected)
-  )
+  const sigBuf = Buffer.from(signature)
+  const expBuf = Buffer.from(expected)
+  if (sigBuf.length !== expBuf.length) return false
+  return crypto.timingSafeEqual(sigBuf, expBuf)
 }
 
 // ── Extract product IDs from webhook payload ─────────────────
@@ -80,14 +79,11 @@ async function extractProductIds(
     try {
       const po = await getPurchaseOrder(poId)
 
-      // Only include POs with delivery within our sync window (6 weeks)
+      // Only include POs with delivery within our sync window (~7 weeks)
       if (po.delivery_date) {
-        const weeks = getNextNWeeks(7) // 6 weeks + 1 for look-ahead
-        const lastWeekEnd = new Date()
-        lastWeekEnd.setDate(lastWeekEnd.getDate() + 7 * 7) // ~7 weeks out
-
-        const deliveryDate = new Date(po.delivery_date)
-        if (deliveryDate > lastWeekEnd) {
+        const cutoff = new Date()
+        cutoff.setDate(cutoff.getDate() + 49) // ~7 weeks out
+        if (new Date(po.delivery_date) > cutoff) {
           console.log(`PO ${poId} delivery ${po.delivery_date} is beyond sync window, skipping`)
           return []
         }
@@ -161,21 +157,24 @@ export async function POST(request: Request) {
       })
     }
 
-    // 6. UPSERT into queue (deduplication via partial unique index)
+    // 6. INSERT into queue (partial unique index deduplicates pending items)
+    // If a pending entry already exists for this product, the insert is silently ignored.
+    // If the product is in processing/synced/error, a new pending entry is created.
     for (const productId of relevantProductIds) {
-      await supabase
+      const { error: insertError } = await supabase
         .schema('floriday')
         .from('stock_sync_queue')
-        .upsert(
-          {
-            picqer_product_id: productId,
-            trigger_event: event,
-            trigger_data: data,
-            status: 'pending',
-            created_at: new Date().toISOString(),
-          },
-          { onConflict: 'picqer_product_id', ignoreDuplicates: false }
-        )
+        .insert({
+          picqer_product_id: productId,
+          trigger_event: event,
+          trigger_data: data,
+          status: 'pending',
+        })
+
+      // 23505 = unique_violation from partial unique index — product already pending, safe to ignore
+      if (insertError && !insertError.code?.startsWith('23505')) {
+        console.error(`Queue insert failed for product ${productId}:`, insertError.message)
+      }
     }
 
     // 7. Trigger debounced Inngest function

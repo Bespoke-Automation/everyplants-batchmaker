@@ -60,13 +60,14 @@ export const processStockSyncQueue = inngest.createFunction(
       if (error) console.error('Failed to mark queue items as processing:', error.message)
     })
 
-    // 3. Sync to Floriday
-    const startTime = Date.now()
+    // 3. Sync to Floriday (duration measured inside step to survive retries)
     const syncResult = await step.run('sync-to-floriday', async () => {
-      return syncSelectedProductsBulk(productIds)
+      const t0 = Date.now()
+      const result = await syncSelectedProductsBulk(productIds)
+      return { ...result, durationMs: Date.now() - t0 }
     })
 
-    const durationMs = Date.now() - startTime
+    const durationMs = syncResult.durationMs
 
     // 4. Update queue status based on sync results
     await step.run('update-queue-status', async () => {
