@@ -177,13 +177,19 @@ export async function POST(request: Request) {
     }
 
     // 7. Trigger debounced Inngest function
-    await inngest.send({
-      name: 'floriday/stock-sync.requested',
-      data: {
-        productIds: relevantProductIds,
-        triggerEvent: event,
-      },
-    })
+    let inngestResult: unknown
+    try {
+      inngestResult = await inngest.send({
+        name: 'floriday/stock-sync.requested',
+        data: {
+          productIds: relevantProductIds,
+          triggerEvent: event,
+        },
+      })
+      console.log('Inngest send result:', JSON.stringify(inngestResult))
+    } catch (inngestErr) {
+      console.error('Inngest send FAILED:', inngestErr)
+    }
 
     const durationMs = Date.now() - startTime
     console.log(
@@ -194,6 +200,7 @@ export async function POST(request: Request) {
       action: 'queued',
       products: relevantProductIds.length,
       duration_ms: durationMs,
+      inngest: inngestResult ?? 'send_failed',
     })
   } catch (err) {
     // Always 200 to prevent Picqer deactivation
