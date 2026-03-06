@@ -10,8 +10,8 @@ export async function GET() {
   const env = getFloridayEnv()
   const { data, error } = await supabase
     .schema('floriday')
-    .from('product_mapping')
-    .select('picqer_product_id, picqer_product_code, floriday_trade_item_name, last_stock_sync_at')
+    .from('enriched_product_mapping')
+    .select('picqer_product_id, picqer_product_code, floriday_trade_item_name, last_stock_sync_at, alt_sku, vbn_product_code')
     .eq('environment', env)
     .eq('is_active', true)
     .order('floriday_trade_item_name')

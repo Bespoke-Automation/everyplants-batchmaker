@@ -3,36 +3,32 @@
 // ══════════════════════════════════════════════════════════════
 //
 // Synchroniseert de "Aantal stuks" (numberOfPieces) in de
-// Floriday catalogus via het Base Supply PATCH endpoint.
+// Floriday catalogus via het Bulk Base Supply PUT endpoint.
 //
-// Berekening: vrije voorraad (warehouse 9979, excl PPS)
-//           + inkooporders die binnen 7 kalenderdagen binnenkomen
+// Multi-week sync: pusht voorraad voor 6 weken vooruit.
+// Per week N: free_stock + POs(week N) + POs(week N+1)
 //
-// Vervangt het batch-push systeem als primaire sync methode
-// voor kunstplant-producten.
+// Bulk PUT endpoint: PUT /trade-items/base-supply/{year}/{week}
+// Max 50 items per call, upsert semantiek, prijs optioneel.
+// Reduceert ~306 API calls naar 6 (1 per week).
 
 import { supabase } from '@/lib/supabase/client'
 import { getFloridayEnv } from './config'
-import { patchWeeklyBaseSupplyQuantity } from './client'
-import { calcExpectedStock, getFloridayProducts } from './stock-service'
+import { putWeeklyBaseSuppliesBulk, getWeeklyBaseSupplies, patchWeeklyBaseSupplyQuantity } from './client'
+import { calcExpectedStockByWeek, getFloridayProducts, type WeekStockResult } from './stock-service'
 import { getProductFull } from '@/lib/picqer/client'
 import { findTradeItemByArticleCode } from './sync/trade-item-sync'
+import { getNextNWeeks, weekKey } from './utils'
+import type { BulkBaseSupplyItem } from './types'
 
 const PICQER_FIELD_ALTERNATIEVE_SKU = 4875
+const SYNC_WEEKS = 6
+const BULK_CHUNK_SIZE = 50  // Floriday max per bulk PUT call
 
-// ─── ISO Week berekening ─────────────────────────────────────
+// ─── Kill switch ────────────────────────────────────────────
 
-/**
- * Bereken het ISO 8601 weeknummer voor een datum.
- * ISO weken starten op maandag; week 1 bevat de eerste donderdag van het jaar.
- */
-function getISOWeek(date: Date): { year: number; week: number } {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
-  // Zet naar dichtstbijzijnde donderdag: huidige dag + 4 - dagnummer (ma=1, zo=7)
-  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7))
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
-  const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)
-  return { year: d.getUTCFullYear(), week: weekNo }
+export function isCatalogSupplySyncDisabled(): boolean {
+  return process.env.FLORIDAY_CATALOG_SUPPLY_SYNC_DISABLED === 'true'
 }
 
 // ─── Product → Trade Item mapping ────────────────────────────
@@ -113,17 +109,22 @@ async function resolveTradeItemId(picqerProductId: number): Promise<string | nul
 
 // ─── Types ───────────────────────────────────────────────────
 
+export interface WeekSyncDetail {
+  year: number
+  week: number
+  totalStock: number
+  action: 'bulk_put' | 'skipped_frozen' | 'skipped_unmapped' | 'error'
+  error?: string
+}
+
 export interface CatalogSyncResult {
   success: boolean
   picqerProductId: number
+  productcode?: string
+  name?: string
   tradeItemId?: string
-  freeStock?: number
-  expectedFromPOs?: number
-  totalStock?: number
-  year?: number
-  week?: number
+  weekResults: WeekSyncDetail[]
   error?: string
-  dryRun?: boolean
 }
 
 export interface BulkSyncResult {
@@ -131,150 +132,334 @@ export interface BulkSyncResult {
   synced: number
   skipped: number
   errors: number
+  frozenWeeks: string[]
   details: CatalogSyncResult[]
 }
 
-// ─── Per-product sync ────────────────────────────────────────
+// ─── Internal: resolve + calc stock voor producten ──────────
+
+interface ResolvedProduct {
+  picqerProductId: number
+  productcode: string
+  name: string
+  tradeItemId: string
+  weekStocks: WeekStockResult[]
+}
 
 /**
- * Sync de catalog supply (numberOfPieces) voor een enkel Picqer product naar Floriday.
- *
- * 1. Bereken stock (vrije voorraad + 7-dag POs)
- * 2. Zoek tradeItemId via product_mapping (met auto-match fallback)
- * 3. Bepaal huidige ISO week
- * 4. PATCH numberOfPieces naar Floriday
- * 5. Update product_mapping met last_synced_freestock + timestamp
+ * Resolve trade item IDs en bereken stock per week voor een lijst producten.
+ * Producten zonder mapping worden overgeslagen (returned in skipped).
  */
-export async function syncProductCatalogSupply(
-  picqerProductId: number,
-  options?: { dryRun?: boolean }
-): Promise<CatalogSyncResult> {
-  const dryRun = options?.dryRun ?? false
+async function resolveAndCalcProducts(
+  picqerProductIds: number[]
+): Promise<{
+  resolved: ResolvedProduct[]
+  skipped: CatalogSyncResult[]
+}> {
+  const products = await getFloridayProducts()
+  const productMap = new Map(products.map(p => [p.idproduct, p]))
 
-  try {
-    // 1. Bereken stock
-    const stockResult = await calcExpectedStock(picqerProductId)
-    const { freeStock, expectedFromPOs, totalStock } = stockResult
+  const resolved: ResolvedProduct[] = []
+  const skipped: CatalogSyncResult[] = []
 
-    // 2. Zoek tradeItemId
-    const tradeItemId = await resolveTradeItemId(picqerProductId)
-    if (!tradeItemId) {
-      return {
-        success: false,
-        picqerProductId,
-        freeStock,
-        expectedFromPOs,
-        totalStock,
-        error: 'Geen Floriday trade item mapping gevonden',
-        dryRun,
-      }
+  // Process in batches of 3 (rate limit friendly)
+  for (let i = 0; i < picqerProductIds.length; i += 3) {
+    const batch = picqerProductIds.slice(i, i + 3)
+    const results = await Promise.all(
+      batch.map(async (pid) => {
+        const product = productMap.get(pid)
+        const tradeItemId = await resolveTradeItemId(pid)
+
+        if (!tradeItemId) {
+          skipped.push({
+            success: false,
+            picqerProductId: pid,
+            productcode: product?.productcode,
+            name: product?.name,
+            weekResults: [],
+            error: 'Geen Floriday trade item mapping gevonden',
+          })
+          return null
+        }
+
+        const weekStocks = await calcExpectedStockByWeek(pid)
+
+        return {
+          picqerProductId: pid,
+          productcode: product?.productcode ?? '',
+          name: product?.name ?? '',
+          tradeItemId,
+          weekStocks,
+        }
+      })
+    )
+
+    for (const r of results) {
+      if (r) resolved.push(r)
+    }
+  }
+
+  return { resolved, skipped }
+}
+
+// ─── Bulk sync via bulk PUT endpoint ─────────────────────────
+
+/**
+ * Sync catalog supply via bulk PUT voor de opgegeven producten.
+ * 1 bulk PUT per week (max 50 items, chunked als meer).
+ * HTTP 423 = frozen week, skip en ga door.
+ */
+async function executeBulkSync(
+  resolved: ResolvedProduct[]
+): Promise<{
+  weekResults: Map<number, WeekSyncDetail[]>  // picqerProductId → details
+  frozenWeeks: Set<string>
+  hasErrors: boolean
+}> {
+  const weeks = getNextNWeeks(SYNC_WEEKS)
+  const weekResults = new Map<number, WeekSyncDetail[]>()
+  const frozenWeeks = new Set<string>()
+  let hasErrors = false
+
+  // Init weekResults per product
+  for (const p of resolved) {
+    weekResults.set(p.picqerProductId, [])
+  }
+
+  // Per week: bouw items array, preserveer prijzen, chunk, bulk PUT
+  for (const w of weeks) {
+    const wk = weekKey(w.year, w.week)
+
+    // Bouw items voor deze week
+    const items: Array<{ product: ResolvedProduct; item: BulkBaseSupplyItem; totalStock: number }> = []
+
+    for (const product of resolved) {
+      const weekStock = product.weekStocks.find(ws => ws.year === w.year && ws.week === w.week)
+      if (!weekStock) continue
+
+      items.push({
+        product,
+        item: {
+          tradeItemId: product.tradeItemId,
+          numberOfPieces: weekStock.totalStock,
+          manualPriceGroupPrices: [],
+        },
+        totalStock: weekStock.totalStock,
+      })
     }
 
-    // 3. Bepaal huidige ISO week
-    const { year, week } = getISOWeek(new Date())
+    if (items.length === 0) continue
 
-    // 4. PATCH naar Floriday (tenzij dry run)
-    if (!dryRun) {
-      try {
-        await patchWeeklyBaseSupplyQuantity(tradeItemId, year, week, totalStock)
-        console.log(
-          `Catalog supply bijgewerkt: product ${picqerProductId} → ` +
-          `${totalStock} stuks (week ${year}-W${String(week).padStart(2, '0')})`
-        )
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        // HTTP 423 = pricing freeze
-        if (message.includes('423')) {
-          return {
-            success: false,
-            picqerProductId,
-            tradeItemId,
-            freeStock,
-            expectedFromPOs,
-            totalStock,
-            year,
-            week,
-            error: `Pricing freeze: week ${year}-W${String(week).padStart(2, '0')} is vergrendeld (na donderdag 10:00 CET)`,
-            dryRun,
-          }
+    // Bestaande base supplies ophalen om prijzen te preserveren
+    try {
+      const existingSupplies = await getWeeklyBaseSupplies(w.year, w.week)
+      const priceMap = new Map(
+        existingSupplies
+          .filter(s => s.basePricePerPiece && s.basePricePerPiece.value > 0)
+          .map(s => [s.tradeItemId, s.basePricePerPiece!])
+      )
+
+      for (const entry of items) {
+        const existingPrice = priceMap.get(entry.item.tradeItemId)
+        if (existingPrice) {
+          entry.item.basePricePerPiece = existingPrice
         }
-        throw err
       }
 
-      // 5. Update mapping met sync timestamp
-      const env = getFloridayEnv()
+      if (priceMap.size > 0) {
+        console.log(`${wk}: ${priceMap.size} bestaande prijzen gepreserveerd`)
+      }
+    } catch (err) {
+      // Kon prijzen niet ophalen — ga door zonder prijspreservatie
+      console.warn(`${wk}: kon bestaande base supplies niet ophalen, prijzen worden mogelijk gereset`)
+    }
+
+    // Chunk in batches van 50
+    const chunks: typeof items[] = []
+    for (let i = 0; i < items.length; i += BULK_CHUNK_SIZE) {
+      chunks.push(items.slice(i, i + BULK_CHUNK_SIZE))
+    }
+
+    try {
+      for (const chunk of chunks) {
+        await putWeeklyBaseSuppliesBulk(
+          w.year,
+          w.week,
+          chunk.map(c => c.item)
+        )
+      }
+
+      // Success: registreer bulk_put per product
+      for (const { product, totalStock } of items) {
+        weekResults.get(product.picqerProductId)!.push({
+          year: w.year,
+          week: w.week,
+          totalStock,
+          action: 'bulk_put',
+        })
+      }
+
+      console.log(`Bulk PUT ${wk}: ${items.length} items gesynchroniseerd`)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+
+      if (message.includes('423') || message.includes('weeklist-closed')) {
+        // Week gesloten voor bulk PUT — probeer PATCH per product (wijzigt alleen qty, niet prijs)
+        frozenWeeks.add(wk)
+        console.log(`Bulk PUT ${wk}: gesloten, fallback naar PATCH per product (${items.length} producten)`)
+
+        for (const { product, totalStock } of items) {
+          try {
+            await patchWeeklyBaseSupplyQuantity(product.tradeItemId, w.year, w.week, totalStock)
+            weekResults.get(product.picqerProductId)!.push({
+              year: w.year,
+              week: w.week,
+              totalStock,
+              action: 'bulk_put',
+            })
+          } catch (patchErr) {
+            const patchMsg = patchErr instanceof Error ? patchErr.message : String(patchErr)
+            if (patchMsg.includes('423')) {
+              // PATCH ook geblokkeerd — week is volledig frozen
+              weekResults.get(product.picqerProductId)!.push({
+                year: w.year,
+                week: w.week,
+                totalStock,
+                action: 'skipped_frozen',
+              })
+            } else {
+              weekResults.get(product.picqerProductId)!.push({
+                year: w.year,
+                week: w.week,
+                totalStock,
+                action: 'error',
+                error: `PATCH fallback mislukt: ${patchMsg}`,
+              })
+              hasErrors = true
+            }
+          }
+        }
+      } else {
+        hasErrors = true
+        for (const { product, totalStock } of items) {
+          weekResults.get(product.picqerProductId)!.push({
+            year: w.year,
+            week: w.week,
+            totalStock,
+            action: 'error',
+            error: message,
+          })
+        }
+        console.error(`Bulk PUT ${wk}: fout — ${message}`)
+      }
+    }
+  }
+
+  return { weekResults, frozenWeeks, hasErrors }
+}
+
+// ─── Public: sync alle kunstplant-producten ──────────────────
+
+/**
+ * Sync catalog supply voor alle producten met tag "kunstplant",
+ * voor de komende 6 weken via bulk PUT.
+ */
+export async function syncAllKunstplantStock(): Promise<BulkSyncResult> {
+  if (isCatalogSupplySyncDisabled()) {
+    console.log('Catalog supply sync is uitgeschakeld (FLORIDAY_CATALOG_SUPPLY_SYNC_DISABLED=true)')
+    return { success: true, synced: 0, skipped: 0, errors: 0, frozenWeeks: [], details: [] }
+  }
+
+  const products = await getFloridayProducts()
+  const productIds = products.map(p => p.idproduct)
+  console.log(`Catalog supply bulk sync: ${products.length} kunstplant-producten, ${SYNC_WEEKS} weken`)
+
+  return syncSelectedProductsBulk(productIds)
+}
+
+// ─── Public: sync geselecteerde producten ────────────────────
+
+/**
+ * Sync catalog supply voor geselecteerde Picqer producten via bulk PUT.
+ * Gebruikt door de CatalogSupplyPanel UI.
+ */
+export async function syncSelectedProductsBulk(
+  picqerProductIds: number[]
+): Promise<BulkSyncResult> {
+  if (picqerProductIds.length === 0) {
+    return { success: true, synced: 0, skipped: 0, errors: 0, frozenWeeks: [], details: [] }
+  }
+
+  // 1. Resolve trade item IDs + bereken stock per week
+  const { resolved, skipped } = await resolveAndCalcProducts(picqerProductIds)
+  console.log(`Resolved: ${resolved.length} producten, overgeslagen: ${skipped.length}`)
+
+  if (resolved.length === 0) {
+    return {
+      success: skipped.length === 0,
+      synced: 0,
+      skipped: skipped.length,
+      errors: 0,
+      frozenWeeks: [],
+      details: skipped,
+    }
+  }
+
+  // 2. Bulk PUT per week
+  const { weekResults, frozenWeeks, hasErrors } = await executeBulkSync(resolved)
+
+  // 3. Update product_mapping timestamps
+  const env = getFloridayEnv()
+  const now = new Date().toISOString()
+
+  await Promise.all(
+    resolved.map(async (p) => {
+      const firstWeek = p.weekStocks[0]
       await supabase
         .schema('floriday')
         .from('product_mapping')
         .update({
-          last_synced_freestock: totalStock,
-          last_stock_sync_at: new Date().toISOString(),
+          last_synced_freestock: firstWeek?.totalStock ?? 0,
+          last_stock_sync_at: now,
         })
-        .eq('picqer_product_id', picqerProductId)
+        .eq('picqer_product_id', p.picqerProductId)
         .eq('environment', env)
-    }
+    })
+  )
 
-    return {
-      success: true,
-      picqerProductId,
-      tradeItemId,
-      freeStock,
-      expectedFromPOs,
-      totalStock,
-      year,
-      week,
-      dryRun,
-    }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.error(`Catalog supply sync mislukt voor product ${picqerProductId}:`, message)
-    return {
-      success: false,
-      picqerProductId,
-      error: message,
-      dryRun,
-    }
-  }
-}
+  // 4. Build details
+  const details: CatalogSyncResult[] = [
+    ...resolved.map(p => {
+      const results = weekResults.get(p.picqerProductId) ?? []
+      const productErrors = results.filter(r => r.action === 'error')
+      return {
+        success: productErrors.length === 0,
+        picqerProductId: p.picqerProductId,
+        productcode: p.productcode,
+        name: p.name,
+        tradeItemId: p.tradeItemId,
+        weekResults: results,
+      }
+    }),
+    ...skipped,
+  ]
 
-// ─── Bulk sync (alle kunstplant-producten) ───────────────────
-
-/**
- * Sync catalog supply voor alle producten met tag "kunstplant".
- */
-export async function syncAllKunstplantStock(
-  options?: { dryRun?: boolean }
-): Promise<BulkSyncResult> {
-  const products = await getFloridayProducts()
-  console.log(`Catalog supply sync: ${products.length} kunstplant-producten gevonden`)
-
-  const details: CatalogSyncResult[] = []
-  let synced = 0
-  let skipped = 0
-  let errors = 0
-
-  for (const product of products) {
-    const result = await syncProductCatalogSupply(product.idproduct, options)
-    details.push(result)
-
-    if (result.success) {
-      synced++
-    } else if (result.error?.includes('mapping')) {
-      skipped++
-    } else {
-      errors++
-    }
-  }
+  const synced = resolved.filter(p => {
+    const results = weekResults.get(p.picqerProductId) ?? []
+    return results.some(r => r.action === 'bulk_put')
+  }).length
 
   console.log(
-    `Catalog supply sync klaar: ${synced} gesynchroniseerd, ${skipped} overgeslagen, ${errors} fouten`
+    `Catalog supply bulk sync klaar: ${synced} gesynchroniseerd, ${skipped.length} overgeslagen` +
+    (frozenWeeks.size > 0 ? `, frozen weken: ${[...frozenWeeks].join(', ')}` : '')
   )
 
   return {
-    success: errors === 0,
+    success: !hasErrors && skipped.length === 0,
     synced,
-    skipped,
-    errors,
+    skipped: skipped.length,
+    errors: hasErrors ? details.filter(d => !d.success && !d.error?.includes('mapping')).length : 0,
+    frozenWeeks: [...frozenWeeks],
     details,
   }
 }

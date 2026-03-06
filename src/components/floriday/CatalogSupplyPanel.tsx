@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { RefreshCw, CheckCircle, XCircle, AlertTriangle, Send, Package, Link2, Link2Off } from 'lucide-react'
+import { RefreshCw, CheckCircle, XCircle, AlertTriangle, Send, Package, Link2, Link2Off, Wand2, ChevronDown, ChevronRight } from 'lucide-react'
+import MappingModal from './MappingModal'
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -11,8 +12,12 @@ interface CatalogProduct {
   name: string
   altSku: string | null
   tradeItemId: string | null
+  tradeItemName: string | null
+  supplierArticleCode: string | null
+  matchMethod: string | null
   vbnCode: number | null
   lastSyncedAt: string | null
+  weekStocks: Record<string, number>
 }
 
 interface WeekSyncDetail {
@@ -85,6 +90,17 @@ export default function CatalogSupplyPanel() {
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState<SyncResponse | null>(null)
 
+  // Mapping modal state
+  const [mappingProduct, setMappingProduct] = useState<CatalogProduct | null>(null)
+  const [mappingModalOpen, setMappingModalOpen] = useState(false)
+
+  // Auto-map state
+  const [autoMapping, setAutoMapping] = useState(false)
+  const [autoMapResult, setAutoMapResult] = useState<{ mapped: number; message: string } | null>(null)
+
+  // Collapsible state
+  const [panelOpen, setPanelOpen] = useState(false)
+
   const loadProducts = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -147,23 +163,63 @@ export default function CatalogSupplyPanel() {
     }
   }
 
+  const handleAutoMap = async () => {
+    setAutoMapping(true)
+    setAutoMapResult(null)
+    setError(null)
+
+    try {
+      const res = await fetch('/api/floriday/product-mapping/auto-map', {
+        method: 'POST',
+      })
+      const json = await res.json()
+      if (json.success) {
+        setAutoMapResult({ mapped: json.mapped, message: json.message })
+        if (json.mapped > 0) {
+          await loadProducts()
+        }
+      } else {
+        setError(json.error ?? 'Auto-map mislukt')
+      }
+    } catch {
+      setError('Netwerkfout bij auto-map')
+    } finally {
+      setAutoMapping(false)
+    }
+  }
+
+  const openMappingModal = (product: CatalogProduct) => {
+    setMappingProduct(product)
+    setMappingModalOpen(true)
+  }
+
+  const handleMapped = () => {
+    loadProducts()
+  }
+
   // Zoek sync result detail per product
   const getProductSyncDetail = (pid: number): SyncDetail | undefined => {
     return syncResult?.details.find(d => d.picqerProductId === pid)
   }
 
   return (
-    <div className="bg-card border border-border rounded-lg p-4 space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-sm font-semibold">Catalogus Supply (6 weken)</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Multi-week voorraad syncen naar Floriday via bulk PUT
-          </p>
-        </div>
+    <div className="bg-card border border-border rounded-lg">
+      {/* Collapsible Header */}
+      <div className="flex items-center justify-between px-4 py-3">
         <button
-          onClick={loadProducts}
+          onClick={() => setPanelOpen(!panelOpen)}
+          className="flex items-center gap-2 text-sm font-semibold hover:text-foreground/80 transition-colors"
+        >
+          {panelOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          Catalogus Supply (6 weken)
+          {!loading && products.length > 0 && (
+            <span className="text-xs font-normal text-muted-foreground">
+              {mappedProducts.length} gemapt · {unmappedProducts.length} niet gemapt
+            </span>
+          )}
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); loadProducts() }}
           disabled={loading}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-muted hover:bg-muted/80 disabled:opacity-50 text-foreground transition-colors"
         >
@@ -171,6 +227,9 @@ export default function CatalogSupplyPanel() {
           Vernieuwen
         </button>
       </div>
+
+      {!panelOpen ? null : (
+      <div className="px-4 pb-4 space-y-4 border-t border-border pt-4">
 
       {/* Stats */}
       {!loading && products.length > 0 && (
@@ -209,6 +268,13 @@ export default function CatalogSupplyPanel() {
         </div>
       )}
 
+      {/* Auto-map resultaat */}
+      {autoMapResult && (
+        <div className="bg-blue-50 border border-blue-200 text-blue-800 text-sm px-3 py-2 rounded-lg">
+          {autoMapResult.message}
+        </div>
+      )}
+
       {/* Loading */}
       {loading ? (
         <div className="text-center py-8 text-muted-foreground text-sm">Producten laden...</div>
@@ -219,7 +285,7 @@ export default function CatalogSupplyPanel() {
       ) : (
         <>
           {/* Action bar */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <button
               onClick={handleSync}
               disabled={syncing || selected.size === 0}
@@ -227,6 +293,14 @@ export default function CatalogSupplyPanel() {
             >
               {syncing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
               {syncing ? 'Synchroniseren...' : `Geselecteerde syncen (${selected.size})`}
+            </button>
+            <button
+              onClick={handleAutoMap}
+              disabled={autoMapping || unmappedProducts.length === 0}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              {autoMapping ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+              {autoMapping ? 'Auto-mapping...' : 'Auto-map producten'}
             </button>
             <button
               onClick={selectAll}
@@ -272,7 +346,7 @@ export default function CatalogSupplyPanel() {
                     return (
                       <tr
                         key={product.picqerProductId}
-                        className={`transition-colors ${isMapped ? 'hover:bg-muted/30' : 'bg-muted/20 opacity-60'}`}
+                        className={`transition-colors ${isMapped ? 'hover:bg-muted/30' : 'bg-muted/20 hover:bg-muted/30'}`}
                       >
                         <td className="px-3 py-2 text-center">
                           <input
@@ -290,42 +364,52 @@ export default function CatalogSupplyPanel() {
                           {product.productcode}
                         </td>
                         <td className="px-3 py-2 text-muted-foreground font-mono text-xs">
-                          {product.altSku ?? <span className="text-muted-foreground/40">—</span>}
+                          {product.altSku ?? <span className="text-muted-foreground/40">&mdash;</span>}
                         </td>
                         <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
                           {product.tradeItemId ? (
                             <span title={product.tradeItemId} className="cursor-help">
-                              {product.tradeItemId.slice(0, 8)}…
+                              {product.tradeItemId.slice(0, 8)}&hellip;
                             </span>
-                          ) : '—'}
+                          ) : '&mdash;'}
                         </td>
                         <td className="px-3 py-2 text-center">
-                          {isMapped ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
-                              <CheckCircle className="w-3 h-3" />
-                              gemapt
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
-                              <XCircle className="w-3 h-3" />
-                            </span>
-                          )}
+                          <button
+                            onClick={() => openMappingModal(product)}
+                            className="cursor-pointer hover:opacity-80 transition-opacity"
+                            title={isMapped ? 'Klik om mapping te wijzigen' : 'Klik om te mappen'}
+                          >
+                            {isMapped ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors">
+                                <CheckCircle className="w-3 h-3" />
+                                gemapt
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-600 hover:bg-amber-200 transition-colors">
+                                <Link2Off className="w-3 h-3" />
+                                map
+                              </span>
+                            )}
+                          </button>
                         </td>
                         <td className="px-3 py-2 text-center font-mono text-xs">
                           {product.vbnCode ? (
                             <span className="text-muted-foreground">{product.vbnCode}</span>
                           ) : (
-                            <span className="text-muted-foreground/40">—</span>
+                            <span className="text-muted-foreground/40">&mdash;</span>
                           )}
                         </td>
                         {weekHeaders.map((wh, idx) => {
                           const weekDetail = syncDetail?.weekResults[idx]
+                          const savedQty = product.weekStocks[wh]
                           return (
                             <td key={wh} className="px-2 py-2 text-center">
                               {weekDetail ? (
                                 <WeekBadge detail={weekDetail} />
+                              ) : savedQty !== undefined ? (
+                                <span className="text-xs text-muted-foreground font-mono">{savedQty}</span>
                               ) : (
-                                <span className="text-muted-foreground text-xs">—</span>
+                                <span className="text-muted-foreground/40 text-xs">&mdash;</span>
                               )}
                             </td>
                           )
@@ -380,6 +464,17 @@ export default function CatalogSupplyPanel() {
           )}
         </>
       )}
+
+      </div>
+      )}
+
+      {/* Mapping Modal */}
+      <MappingModal
+        product={mappingProduct}
+        open={mappingModalOpen}
+        onClose={() => setMappingModalOpen(false)}
+        onMapped={handleMapped}
+      />
     </div>
   )
 }

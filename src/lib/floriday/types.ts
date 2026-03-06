@@ -319,3 +319,10 @@ export interface WeeklyBaseSupply {
   basePricePerPiece?: { currency: string; value: number }
   numberOfPieces: number
 }
+
+export interface BulkBaseSupplyItem {
+  tradeItemId: string
+  numberOfPieces: number
+  manualPriceGroupPrices: []  // Required by schema, altijd leeg
+  basePricePerPiece?: { currency: string; value: number }  // Optioneel — meesturen om bestaande prijs te behouden
+}

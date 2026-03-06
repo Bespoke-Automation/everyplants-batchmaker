@@ -1,8 +1,61 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { RefreshCw, TrendingUp, Package, AlertTriangle, Send, CheckCircle, Search } from 'lucide-react'
+import { RefreshCw, TrendingUp, Package, AlertTriangle, Send, CheckCircle, Search, Clock, Activity, XCircle, ChevronDown, ChevronRight } from 'lucide-react'
 import CatalogSupplyPanel from './CatalogSupplyPanel'
+
+// ─── Stock Sync Status Types ─────────────────────────────────
+
+interface StockSyncStatus {
+  lastSuccessfulSync: { trigger_type: string; created_at: string; products_synced: number; duration_ms: number | null } | null
+  queueSize: number
+  errorsToday: number
+  driftDetectedToday: number
+  recentRuns: StockSyncLogEntry[]
+  pendingQueue: { id: number; picqer_product_id: number; trigger_event: string; created_at: string }[]
+}
+
+interface StockSyncLogEntry {
+  id: number
+  trigger_type: string
+  products_synced: number
+  products_skipped: number
+  products_errored: number
+  drift_detected: number
+  duration_ms: number | null
+  details: Record<string, unknown> | null
+  created_at: string
+}
+
+function TriggerTypeBadge({ type }: { type: string }) {
+  const styles: Record<string, string> = {
+    webhook: 'bg-blue-100 text-blue-700',
+    cron_hourly: 'bg-violet-100 text-violet-700',
+    reconciliation: 'bg-amber-100 text-amber-700',
+  }
+  const labels: Record<string, string> = {
+    webhook: 'Webhook',
+    cron_hourly: 'Cron',
+    reconciliation: 'Reconciliation',
+  }
+  return (
+    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${styles[type] || 'bg-gray-100 text-gray-700'}`}>
+      {labels[type] || type}
+    </span>
+  )
+}
+
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'zojuist'
+  if (mins < 60) return `${mins}m geleden`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}u geleden`
+  return `${Math.floor(hours / 24)}d geleden`
+}
+
+// ─── Stock Cache Types ───────────────────────────────────────
 
 interface StockCacheItem {
   picqer_product_id: number
@@ -258,6 +311,21 @@ export default function FloridayStock() {
   const [error, setError] = useState<string | null>(null)
   const [pushingId, setPushingId] = useState<number | null>(null)
   const [pushedIds, setPushedIds] = useState<Set<number>>(new Set())
+  const [syncStatus, setSyncStatus] = useState<StockSyncStatus | null>(null)
+  const [syncSectionOpen, setSyncSectionOpen] = useState(false)
+  const [tableOpen, setTableOpen] = useState(false)
+
+  const loadSyncStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/floriday/stock-sync-status')
+      if (res.ok) {
+        const data = await res.json()
+        setSyncStatus(data)
+      }
+    } catch {
+      // Stille fout — monitoring is niet kritiek
+    }
+  }, [])
 
   const loadCache = useCallback(async () => {
     try {
@@ -274,7 +342,7 @@ export default function FloridayStock() {
     }
   }, [])
 
-  useEffect(() => { loadCache() }, [loadCache])
+  useEffect(() => { loadCache(); loadSyncStatus() }, [loadCache, loadSyncStatus])
 
   const handleSync = async () => {
     setSyncing(true)
@@ -346,6 +414,47 @@ export default function FloridayStock() {
       {/* Catalog Supply panel (multi-week bulk sync) */}
       <CatalogSupplyPanel />
 
+      {/* Stock Sync Status */}
+      {syncStatus && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="bg-card border border-border rounded-lg p-3">
+            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
+              <Clock className="w-3.5 h-3.5 text-blue-500" /> Laatste sync
+            </div>
+            {syncStatus.lastSuccessfulSync ? (
+              <div>
+                <p className="text-sm font-semibold">{timeAgo(syncStatus.lastSuccessfulSync.created_at)}</p>
+                <TriggerTypeBadge type={syncStatus.lastSuccessfulSync.trigger_type} />
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">Nog geen sync</p>
+            )}
+          </div>
+          <div className="bg-card border border-border rounded-lg p-3">
+            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
+              <Activity className="w-3.5 h-3.5 text-blue-500" /> Queue
+            </div>
+            <p className="text-sm font-semibold">{syncStatus.queueSize} pending</p>
+          </div>
+          <div className="bg-card border border-border rounded-lg p-3">
+            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
+              <XCircle className="w-3.5 h-3.5 text-red-500" /> Fouten vandaag
+            </div>
+            <p className={`text-sm font-semibold ${syncStatus.errorsToday > 0 ? 'text-red-600' : ''}`}>
+              {syncStatus.errorsToday}
+            </p>
+          </div>
+          <div className="bg-card border border-border rounded-lg p-3">
+            <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-500" /> Drift vandaag
+            </div>
+            <p className={`text-sm font-semibold ${syncStatus.driftDetectedToday > 0 ? 'text-amber-600' : ''}`}>
+              {syncStatus.driftDetectedToday}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Stats */}
       {items.length > 0 && (
         <div className="grid grid-cols-3 gap-4">
@@ -377,17 +486,7 @@ export default function FloridayStock() {
         </div>
       )}
 
-      {lastSynced && (
-        <p className="text-xs text-muted-foreground">
-          Laatste cache sync:{' '}
-          {new Date(lastSynced).toLocaleString('nl-NL', {
-            day: '2-digit', month: '2-digit', year: 'numeric',
-            hour: '2-digit', minute: '2-digit',
-          })}
-        </p>
-      )}
-
-      {/* Table */}
+      {/* Product Mappings (collapsible) */}
       {loading ? (
         <div className="text-center py-12 text-muted-foreground text-sm">Laden...</div>
       ) : items.length === 0 ? (
@@ -396,66 +495,147 @@ export default function FloridayStock() {
         </div>
       ) : (
         <div className="bg-card border border-border rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 border-b border-border">
-              <tr>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Product</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Code</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Alt. SKU</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Trade Item</th>
-                <th className="text-left px-4 py-3 font-medium text-muted-foreground">VBN</th>
-                <th className="text-right px-4 py-3 font-medium text-muted-foreground">Huidig</th>
-                <th className="text-right px-4 py-3 font-medium text-muted-foreground">PO deze week</th>
-                <th className="text-right px-4 py-3 font-medium text-muted-foreground">Weekstock</th>
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {items.map((item) => (
-                <tr key={item.picqer_product_id} className="hover:bg-muted/30 transition-colors">
-                  <td className="px-4 py-3 font-medium">{item.name}</td>
-                  <td className="px-4 py-3 text-muted-foreground font-mono text-xs">{item.productcode}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{item.alt_sku ?? '—'}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
-                    {item.floriday_trade_item_id ? (
-                      <span title={item.floriday_trade_item_id} className="cursor-help">
-                        {item.floriday_trade_item_id.slice(0, 8)}…
-                      </span>
-                    ) : '—'}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground">{item.vbn_product_code ?? '—'}</td>
-                  <td className="px-4 py-3 text-right">
-                    <StockBadge stock={item.bulk_pick_stock} />
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    {item.po_qty_this_week > 0 ? (
-                      <span
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 cursor-help"
-                        title={item.po_details
-                          .map(p => `PO ${p.purchaseorderid}: ${p.qty} st. (${new Date(p.delivery_date).toLocaleDateString('nl-NL')})`)
-                          .join('\n')}
-                      >
-                        +{item.po_qty_this_week} st.
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <StockBadge stock={item.week_stock} />
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <PushButton
-                      productId={item.picqer_product_id}
-                      pushing={pushingId === item.picqer_product_id}
-                      pushed={pushedIds.has(item.picqer_product_id)}
-                      onPush={handlePushBatch}
-                    />
-                  </td>
+          <button
+            onClick={() => setTableOpen(!tableOpen)}
+            className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/30 transition-colors"
+          >
+            <span className="flex items-center gap-2">
+              {tableOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+              Product mappings ({items.length})
+            </span>
+            {lastSynced && (
+              <span className="text-xs text-muted-foreground font-normal">
+                Cache: {new Date(lastSynced).toLocaleString('nl-NL', {
+                  day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+                })}
+              </span>
+            )}
+          </button>
+          {tableOpen && (
+            <table className="w-full text-sm border-t border-border">
+              <thead className="bg-muted/50 border-b border-border">
+                <tr>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">Product</th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">Code</th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">Alt. SKU</th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">Trade Item</th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">VBN</th>
+                  <th className="text-right px-4 py-3 font-medium text-muted-foreground">Huidig</th>
+                  <th className="text-right px-4 py-3 font-medium text-muted-foreground">PO deze week</th>
+                  <th className="text-right px-4 py-3 font-medium text-muted-foreground">Weekstock</th>
+                  <th className="px-4 py-3" />
                 </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {items.map((item) => (
+                  <tr key={item.picqer_product_id} className="hover:bg-muted/30 transition-colors">
+                    <td className="px-4 py-3 font-medium">{item.name}</td>
+                    <td className="px-4 py-3 text-muted-foreground font-mono text-xs">{item.productcode}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{item.alt_sku ?? '—'}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
+                      {item.floriday_trade_item_id ? (
+                        <span title={item.floriday_trade_item_id} className="cursor-help">
+                          {item.floriday_trade_item_id.slice(0, 8)}…
+                        </span>
+                      ) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{item.vbn_product_code ?? '—'}</td>
+                    <td className="px-4 py-3 text-right">
+                      <StockBadge stock={item.bulk_pick_stock} />
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {item.po_qty_this_week > 0 ? (
+                        <span
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 cursor-help"
+                          title={item.po_details
+                            .map(p => `PO ${p.purchaseorderid}: ${p.qty} st. (${new Date(p.delivery_date).toLocaleDateString('nl-NL')})`)
+                            .join('\n')}
+                        >
+                          +{item.po_qty_this_week} st.
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <StockBadge stock={item.week_stock} />
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <PushButton
+                        productId={item.picqer_product_id}
+                        pushing={pushingId === item.picqer_product_id}
+                        pushed={pushedIds.has(item.picqer_product_id)}
+                        onPush={handlePushBatch}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {/* Recente stock sync runs (collapsible) */}
+      {syncStatus && syncStatus.recentRuns.length > 0 && (
+        <div className="bg-card border border-border rounded-lg">
+          <button
+            onClick={() => setSyncSectionOpen(!syncSectionOpen)}
+            className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/30 transition-colors"
+          >
+            <span className="flex items-center gap-2">
+              {syncSectionOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+              Recente stock sync runs ({syncStatus.recentRuns.length})
+            </span>
+          </button>
+          {syncSectionOpen && (
+            <div className="border-t border-border divide-y divide-border">
+              {syncStatus.pendingQueue.length > 0 && (
+                <div className="px-4 py-3 bg-blue-50/50">
+                  <p className="text-xs font-medium text-blue-700 mb-2">
+                    Pending queue ({syncStatus.pendingQueue.length})
+                  </p>
+                  <div className="flex flex-wrap gap-1">
+                    {syncStatus.pendingQueue.slice(0, 20).map((item) => (
+                      <span key={item.id} className="px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-700 font-mono">
+                        {item.picqer_product_id}
+                      </span>
+                    ))}
+                    {syncStatus.pendingQueue.length > 20 && (
+                      <span className="px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-600">
+                        +{syncStatus.pendingQueue.length - 20} meer
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+              {syncStatus.recentRuns.map((run) => (
+                <div key={run.id} className="px-4 py-3 flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-3">
+                    <TriggerTypeBadge type={run.trigger_type} />
+                    <div className="flex items-center gap-2 text-xs">
+                      {run.products_synced > 0 && (
+                        <span className="text-emerald-600 font-medium">{run.products_synced} gesynct</span>
+                      )}
+                      {run.products_skipped > 0 && (
+                        <span className="text-muted-foreground">{run.products_skipped} overgeslagen</span>
+                      )}
+                      {run.products_errored > 0 && (
+                        <span className="text-red-600 font-medium">{run.products_errored} fouten</span>
+                      )}
+                      {run.drift_detected > 0 && (
+                        <span className="text-amber-600">{run.drift_detected} drift</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    {run.duration_ms != null && <span>{run.duration_ms}ms</span>}
+                    <span>{timeAgo(run.created_at)}</span>
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+          )}
         </div>
       )}
     </div>

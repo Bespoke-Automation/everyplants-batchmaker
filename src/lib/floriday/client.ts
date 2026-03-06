@@ -14,7 +14,7 @@
 //   Continuous stock: 10 req/sec (burst 1000)
 
 import { getFloridayToken, invalidateFloridayToken } from './auth'
-import type { FloridaySyncResponse, FloridayTradeItem, FloridaySalesOrder, FloridaySupplyLine, FloridayOrganization, FloridayFulfillmentOrder, FloridayWarehouse, WeeklyBaseSupply } from './types'
+import type { FloridaySyncResponse, FloridayTradeItem, FloridaySalesOrder, FloridaySupplyLine, FloridayOrganization, FloridayFulfillmentOrder, FloridayWarehouse, WeeklyBaseSupply, BulkBaseSupplyItem } from './types'
 
 import { getFloridayConfig } from './config'
 
@@ -364,6 +364,46 @@ export async function patchWeeklyBaseSupplyQuantity(
 ): Promise<void> {
   const path = `/trade-items/${tradeItemId}/base-supply/${year}/${week}?numberOfPieces=${numberOfPieces}`
   await floridayPatch(path)
+}
+
+/**
+ * Bulk upsert base supply for multiple trade items in a specific week.
+ * PUT /trade-items/base-supply/{year}/{week}
+ *
+ * Max 50 items per call. Caller moet chunken bij >50 producten.
+ * basePricePerPiece is NOT required in bulk — manualPriceGroupPrices: [] volstaat.
+ * Upsert semantiek: maakt aan als nieuw, overschrijft als bestaand.
+ *
+ * Throws on HTTP 423 (pricing freeze).
+ */
+export async function putWeeklyBaseSuppliesBulk(
+  year: number,
+  week: number,
+  items: BulkBaseSupplyItem[]
+): Promise<void> {
+  if (items.length === 0) return
+  if (items.length > 50) throw new Error(`Bulk base supply: max 50 items per call, got ${items.length}`)
+  await floridayPut(`/trade-items/base-supply/${year}/${week}`, items)
+}
+
+/**
+ * Create a base supply entry for a trade item in a specific week.
+ * PUT /trade-items/{tradeItemId}/base-supply/{year}/{week}
+ *
+ * basePricePerPiece is required by the schema. We set it to EUR 0.00 —
+ * pricing is managed manually in Floriday, never by our sync.
+ */
+export async function putWeeklyBaseSupply(
+  tradeItemId: string,
+  year: number,
+  week: number,
+  numberOfPieces: number
+): Promise<void> {
+  const path = `/trade-items/${tradeItemId}/base-supply/${year}/${week}`
+  await floridayPut(path, {
+    basePricePerPiece: { currency: 'EUR', value: 0 },
+    numberOfPieces,
+  })
 }
 
 // ─── Media Upload ────────────────────────────────────────────

@@ -1,37 +1,33 @@
 import { NextResponse } from 'next/server'
-import { syncProductCatalogSupply, syncAllKunstplantStock } from '@/lib/floriday/catalog-supply-service'
+import { syncAllKunstplantStock, syncSelectedProductsBulk } from '@/lib/floriday/catalog-supply-service'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * POST /api/floriday/sync-catalog-supply
  *
- * Sync de catalog supply (numberOfPieces) naar Floriday via het base-supply PATCH endpoint.
+ * Sync de catalog supply (numberOfPieces) naar Floriday via bulk PUT.
  *
  * Body:
- *   - picqerProductId (optional): sync 1 product (test modus)
- *   - dryRun (optional): bereken alleen, push niet naar Floriday
+ *   - picqerProductId (optional): sync 1 product via bulk PUT
  *
  * Zonder picqerProductId: sync alle producten met tag "kunstplant".
  */
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}))
-    const { picqerProductId, dryRun } = body as {
+    const { picqerProductId } = body as {
       picqerProductId?: number
-      dryRun?: boolean
     }
 
     if (picqerProductId) {
-      // Single product sync
-      const result = await syncProductCatalogSupply(picqerProductId, { dryRun })
+      const result = await syncSelectedProductsBulk([picqerProductId])
       return NextResponse.json(result, {
         status: result.success ? 200 : 422,
       })
     }
 
-    // Bulk sync: alle kunstplant-producten
-    const result = await syncAllKunstplantStock({ dryRun })
+    const result = await syncAllKunstplantStock()
     return NextResponse.json(result)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Onbekende fout'

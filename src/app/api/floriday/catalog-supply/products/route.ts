@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase/client'
 import { getFloridayEnv } from '@/lib/floriday/config'
 import { getFloridayProducts } from '@/lib/floriday/stock-service'
+import { getWeeklyBaseSupplies } from '@/lib/floriday/client'
 import { getNextNWeeks, weekKey } from '@/lib/floriday/utils'
 
 export const dynamic = 'force-dynamic'
@@ -12,7 +13,7 @@ const SYNC_WEEKS = 6
  * GET /api/floriday/catalog-supply/products
  *
  * Retourneert alle kunstplant-producten met hun Floriday mapping status,
- * alternatieve SKU en VBN code.
+ * alternatieve SKU, VBN code en actuele weekvoorraad uit Floriday.
  */
 export async function GET() {
   try {
@@ -22,65 +23,74 @@ export async function GET() {
     const products = await getFloridayProducts()
     const productIds = products.map(p => p.idproduct)
 
-    // Stap 2: enrichment queries gefilterd op alleen deze product IDs
-    const [mappingsResult, productIndexResult, tradeItemsResult] = await Promise.all([
-      supabase
-        .schema('floriday')
-        .from('product_mapping')
-        .select('picqer_product_id, floriday_trade_item_id, floriday_supplier_article_code, last_stock_sync_at')
-        .eq('environment', env)
-        .eq('is_active', true)
-        .in('picqer_product_id', productIds),
-      supabase
-        .schema('floriday')
-        .from('picqer_product_index')
-        .select('picqer_product_id, alt_sku')
-        .in('picqer_product_id', productIds),
-      supabase
-        .schema('floriday')
-        .from('trade_items')
-        .select('trade_item_id, vbn_product_code')
-        .eq('environment', env),
-    ])
+    // Stap 2: enrichment via view (1 query i.p.v. 3)
+    const { data: mappings } = await supabase
+      .schema('floriday')
+      .from('enriched_product_mapping')
+      .select('picqer_product_id, floriday_trade_item_id, floriday_trade_item_name, floriday_supplier_article_code, match_method, last_stock_sync_at, alt_sku, vbn_product_code')
+      .eq('environment', env)
+      .eq('is_active', true)
+      .in('picqer_product_id', productIds)
 
-    // Build lookup maps
     const mappingMap = new Map(
-      (mappingsResult.data ?? []).map(m => [
-        m.picqer_product_id,
-        {
-          tradeItemId: m.floriday_trade_item_id,
-          supplierArticleCode: m.floriday_supplier_article_code,
-          lastSyncedAt: m.last_stock_sync_at,
-        },
-      ])
-    )
-
-    const altSkuMap = new Map(
-      (productIndexResult.data ?? []).map(p => [p.picqer_product_id, p.alt_sku as string | null])
-    )
-
-    const vbnMap = new Map(
-      (tradeItemsResult.data ?? []).map(t => [t.trade_item_id, t.vbn_product_code as number | null])
+      (mappings ?? []).map(m => [m.picqer_product_id, m])
     )
 
     // Week headers voor UI
     const weeks = getNextNWeeks(SYNC_WEEKS)
     const weekHeaders = weeks.map(w => weekKey(w.year, w.week))
 
-    // Combineer product data + mapping status + alt sku + vbn
+    // Stap 3: actuele base supply ophalen uit Floriday (per week)
+    // tradeItemId → weekKey → numberOfPieces
+    const supplyMap = new Map<string, Map<string, number>>()
+
+    try {
+      const weekSupplies = await Promise.all(
+        weeks.map(w => getWeeklyBaseSupplies(w.year, w.week).catch(() => []))
+      )
+
+      for (let i = 0; i < weeks.length; i++) {
+        const wk = weekHeaders[i]
+        for (const supply of weekSupplies[i]) {
+          if (!supplyMap.has(supply.tradeItemId)) {
+            supplyMap.set(supply.tradeItemId, new Map())
+          }
+          supplyMap.get(supply.tradeItemId)!.set(wk, supply.numberOfPieces)
+        }
+      }
+    } catch (err) {
+      console.warn('Kon base supply data niet ophalen uit Floriday:', err)
+    }
+
+    // Combineer product data + mapping status + alt sku + vbn + weekstocks
     const result = products.map(p => {
-      const mapping = mappingMap.get(p.idproduct)
-      const altSku = altSkuMap.get(p.idproduct) ?? null
-      const vbnCode = mapping?.tradeItemId ? (vbnMap.get(mapping.tradeItemId) ?? null) : null
+      const m = mappingMap.get(p.idproduct)
+      const tradeItemId = m?.floriday_trade_item_id ?? null
+
+      // Weekvoorraad uit Floriday
+      const weekStocks: Record<string, number> = {}
+      if (tradeItemId) {
+        const tradeSupply = supplyMap.get(tradeItemId)
+        if (tradeSupply) {
+          for (const wh of weekHeaders) {
+            const qty = tradeSupply.get(wh)
+            if (qty !== undefined) weekStocks[wh] = qty
+          }
+        }
+      }
 
       return {
         picqerProductId: p.idproduct,
         productcode: p.productcode,
         name: p.name,
-        altSku,
-        tradeItemId: mapping?.tradeItemId ?? null,
-        vbnCode,
-        lastSyncedAt: mapping?.lastSyncedAt ?? null,
+        altSku: m?.alt_sku ?? null,
+        tradeItemId,
+        tradeItemName: m?.floriday_trade_item_name ?? null,
+        supplierArticleCode: m?.floriday_supplier_article_code ?? null,
+        matchMethod: m?.match_method ?? null,
+        vbnCode: m?.vbn_product_code ?? null,
+        lastSyncedAt: m?.last_stock_sync_at ?? null,
+        weekStocks,
       }
     })
 
