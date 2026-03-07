@@ -406,6 +406,40 @@ export async function putWeeklyBaseSupply(
   })
 }
 
+// ─── Trade Item Availability Per Week ────────────────────────
+
+/**
+ * Bulk edit availability per week for trade items.
+ * PUT /trade-items/availabilities-per-week
+ *
+ * Accepteert meerdere tradeItemIds en een week range (inclusive).
+ * Rate limit: 10 req/sec (continuous stock category).
+ */
+export async function editTradeItemAvailabilityPerWeek(
+  tradeItemIds: string[],
+  fromWeek: { week: number; year: number },
+  tillWeek: { week: number; year: number },
+  isAvailable: boolean
+): Promise<void> {
+  if (tradeItemIds.length === 0) return
+  await floridayPut('/trade-items/availabilities-per-week', {
+    tradeItemIds,
+    fromWeek,
+    tillWeek,
+    isAvailable,
+    alwaysAvailableForCustomerOrganizationIds: [],
+    neverAvailableForCustomerOrganizationIds: [],
+  })
+}
+
+/**
+ * Get max sequence number voor availability per week sync.
+ * Nuttig voor toekomstige reconciliation.
+ */
+export async function getAvailabilitiesPerWeekMaxSequence(): Promise<number> {
+  return getMaxSequence('trade-items/availabilities-per-week')
+}
+
 // ─── Media Upload ────────────────────────────────────────────
 
 export async function uploadMedia(

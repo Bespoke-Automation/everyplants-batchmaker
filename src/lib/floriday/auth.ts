@@ -8,7 +8,7 @@
 
 import { getFloridayConfig, type FloridayEnv } from './config'
 
-// Staging heeft alle scopes; live mist supply:write, sales-order:write, fulfillment:write
+// Staging heeft alle scopes; live mist sales-order:write, fulfillment:write
 const SCOPES_BY_ENV: Record<FloridayEnv, string> = {
   staging: [
     'role:app',

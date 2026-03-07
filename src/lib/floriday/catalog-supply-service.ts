@@ -14,7 +14,7 @@
 
 import { supabase } from '@/lib/supabase/client'
 import { getFloridayEnv } from './config'
-import { putWeeklyBaseSuppliesBulk, getWeeklyBaseSupplies, patchWeeklyBaseSupplyQuantity } from './client'
+import { putWeeklyBaseSuppliesBulk, getWeeklyBaseSupplies, patchWeeklyBaseSupplyQuantity, editTradeItemAvailabilityPerWeek } from './client'
 import { calcExpectedStockByWeek, getFloridayProducts, type WeekStockResult } from './stock-service'
 import { getProductFull } from '@/lib/picqer/client'
 import { findTradeItemByArticleCode } from './sync/trade-item-sync'
@@ -29,6 +29,10 @@ const BULK_CHUNK_SIZE = 50  // Floriday max per bulk PUT call
 
 export function isCatalogSupplySyncDisabled(): boolean {
   return process.env.FLORIDAY_CATALOG_SUPPLY_SYNC_DISABLED === 'true'
+}
+
+export function isAvailabilitySyncDisabled(): boolean {
+  return process.env.FLORIDAY_AVAILABILITY_SYNC_DISABLED === 'true'
 }
 
 // ─── Product → Trade Item mapping ────────────────────────────
@@ -113,7 +117,7 @@ export interface WeekSyncDetail {
   year: number
   week: number
   totalStock: number
-  action: 'bulk_put' | 'skipped_frozen' | 'skipped_unmapped' | 'error'
+  action: 'bulk_put' | 'skipped_frozen' | 'skipped_unmapped' | 'error' | 'availability_set' | 'availability_error'
   error?: string
 }
 
@@ -353,6 +357,78 @@ async function executeBulkSync(
         console.error(`Bulk PUT ${wk}: fout — ${message}`)
       }
     }
+  }
+
+  // ── Availability per week toggle (best-effort) ───────────────
+  if (!isAvailabilitySyncDisabled()) {
+    for (const w of weeks) {
+      const wk = weekKey(w.year, w.week)
+
+      // Groepeer trade item IDs per availability status
+      const availableIds: string[] = []
+      const unavailableIds: string[] = []
+
+      for (const product of resolved) {
+        const weekStock = product.weekStocks.find(ws => ws.year === w.year && ws.week === w.week)
+        if (!weekStock) continue
+
+        // Alleen availability togglen voor producten waar de base supply succesvol gepusht is
+        const prodResults = weekResults.get(product.picqerProductId) ?? []
+        const weekPushed = prodResults.some(r => r.year === w.year && r.week === w.week && r.action === 'bulk_put')
+        if (!weekPushed) continue
+
+        if (weekStock.totalStock > 0) {
+          availableIds.push(product.tradeItemId)
+        } else {
+          unavailableIds.push(product.tradeItemId)
+        }
+      }
+
+      const weekObj = { week: w.week, year: w.year }
+
+      // Bulk PUT: available
+      if (availableIds.length > 0) {
+        try {
+          await editTradeItemAvailabilityPerWeek(availableIds, weekObj, weekObj, true)
+          console.log(`Availability ${wk}: ${availableIds.length} producten → beschikbaar`)
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          console.error(`Availability ${wk} (available) fout: ${msg}`)
+          // Registreer error per product — best-effort, laat sync niet falen
+          for (const product of resolved) {
+            if (availableIds.includes(product.tradeItemId)) {
+              weekResults.get(product.picqerProductId)!.push({
+                year: w.year, week: w.week, totalStock: 0,
+                action: 'availability_error', error: msg,
+              })
+            }
+          }
+          hasErrors = true
+        }
+      }
+
+      // Bulk PUT: unavailable
+      if (unavailableIds.length > 0) {
+        try {
+          await editTradeItemAvailabilityPerWeek(unavailableIds, weekObj, weekObj, false)
+          console.log(`Availability ${wk}: ${unavailableIds.length} producten → niet beschikbaar`)
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          console.error(`Availability ${wk} (unavailable) fout: ${msg}`)
+          for (const product of resolved) {
+            if (unavailableIds.includes(product.tradeItemId)) {
+              weekResults.get(product.picqerProductId)!.push({
+                year: w.year, week: w.week, totalStock: 0,
+                action: 'availability_error', error: msg,
+              })
+            }
+          }
+          hasErrors = true
+        }
+      }
+    }
+  } else {
+    console.log('Availability sync overgeslagen (FLORIDAY_AVAILABILITY_SYNC_DISABLED=true)')
   }
 
   return { weekResults, frozenWeeks, hasErrors }
