@@ -1,4 +1,4 @@
-import { inngest } from "../client"
+import { floridayInngest } from "../floriday-client"
 import {
   getShipmentLabelsByBatch,
   updateShipmentLabel,
@@ -28,7 +28,7 @@ interface BatchEventData {
  * Inngest function to process all shipment labels in a batch.
  * Uses step.run() for each label to enable checkpointing and automatic retries.
  */
-export const processSingleOrderBatch = inngest.createFunction(
+export const processSingleOrderBatch = floridayInngest.createFunction(
   {
     id: "process-single-order-batch",
     retries: 3,

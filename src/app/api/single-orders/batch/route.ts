@@ -5,7 +5,7 @@ import {
   createSingleOrderBatch,
   updateSingleOrderBatch,
 } from '@/lib/supabase/shipmentLabels'
-import { inngest } from '@/inngest/client'
+import { floridayInngest } from '@/inngest/floriday-client'
 
 export const dynamic = 'force-dynamic'
 
@@ -153,7 +153,7 @@ export async function POST(request: Request) {
     // ========================================
     // Trigger Inngest function for durable background processing
     // ========================================
-    await inngest.send({
+    await floridayInngest.send({
       name: 'batch/process.requested',
       data: { batchId },
     })
