@@ -1,4 +1,4 @@
-import { inngest } from '../client'
+import { floridayInngest } from '../floriday-client'
 import { supabase } from '@/lib/supabase/client'
 import { isStockSyncDisabled } from '@/lib/floriday/stock-sync-config'
 import { isCatalogSupplySyncDisabled, syncSelectedProductsBulk } from '@/lib/floriday/catalog-supply-service'
@@ -15,7 +15,7 @@ const SYNC_WEEKS = 6
  *
  * Runs at 0:30, 6:30, 12:30, 18:30 UTC.
  */
-export const reconcileFloridayStock = inngest.createFunction(
+export const reconcileFloridayStock = floridayInngest.createFunction(
   { id: 'reconcile-floriday-stock', retries: 1 },
   { cron: '30 */6 * * *' },
   async ({ step }) => {

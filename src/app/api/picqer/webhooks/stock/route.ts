@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase/client'
 import { getPurchaseOrder } from '@/lib/picqer/client'
 import { getFloridayEnv } from '@/lib/floriday/config'
 import { isStockSyncDisabled, PICQER_STOCK_WEBHOOK_EVENTS } from '@/lib/floriday/stock-sync-config'
-import { inngest } from '@/inngest/client'
+import { floridayInngest } from '@/inngest/floriday-client'
 
 // ── In-memory cache for mapped product IDs (1 min TTL) ──────
 
@@ -179,7 +179,7 @@ export async function POST(request: Request) {
     // 7. Trigger debounced Inngest function
     let inngestResult: unknown
     try {
-      inngestResult = await inngest.send({
+      inngestResult = await floridayInngest.send({
         name: 'floriday/stock-sync.requested',
         data: {
           productIds: relevantProductIds,

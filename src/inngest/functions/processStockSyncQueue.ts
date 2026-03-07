@@ -1,4 +1,4 @@
-import { inngest } from '../client'
+import { floridayInngest } from '../floriday-client'
 import { supabase } from '@/lib/supabase/client'
 import { syncSelectedProductsBulk } from '@/lib/floriday/catalog-supply-service'
 import { isStockSyncDisabled } from '@/lib/floriday/stock-sync-config'
@@ -10,7 +10,7 @@ import { isStockSyncDisabled } from '@/lib/floriday/stock-sync-config'
  * Debounce: waits 10s after last event, max 30s total. This means 20 stock changes
  * within 10 seconds result in 1 Inngest run with all products deduplicated.
  */
-export const processStockSyncQueue = inngest.createFunction(
+export const processStockSyncQueue = floridayInngest.createFunction(
   {
     id: 'process-floriday-stock-queue',
     debounce: { period: '10s', timeout: '30s' },

@@ -1,9 +1,9 @@
-import { inngest } from "../client"
+import { floridayInngest } from "../floriday-client"
 import { syncAllKunstplantStock, isCatalogSupplySyncDisabled } from "@/lib/floriday/catalog-supply-service"
 import { isStockSyncDisabled } from "@/lib/floriday/stock-sync-config"
 import { supabase } from "@/lib/supabase/client"
 
-export const syncCatalogSupply = inngest.createFunction(
+export const syncCatalogSupply = floridayInngest.createFunction(
   { id: "sync-catalog-supply", retries: 1 },
   { cron: "0 * * * *" },
   async ({ step }) => {
