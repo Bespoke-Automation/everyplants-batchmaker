@@ -7,4 +7,5 @@ export const { GET, POST, PUT } = serve({
   functions: [
     processSingleOrderBatch,
   ],
+  signingKey: process.env.INNGEST_SIGNING_KEY,
 })
