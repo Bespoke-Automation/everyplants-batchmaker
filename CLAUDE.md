@@ -505,11 +505,42 @@ FLORIDAY_API_URL=                     # API base URL
 
 # Optioneel
 N8N_BATCH_WEBHOOK_URL=                # n8n webhook voor batch creatie
-INNGEST_EVENT_KEY=                    # Inngest event key
-INNGEST_SIGNING_KEY=                  # Inngest signing key
+INNGEST_EVENT_KEY=                    # Inngest event key (batchmaker app)
+INNGEST_SIGNING_KEY=                  # Inngest signing key (batchmaker app)
+INNGEST_FLORIDAY_EVENT_KEY=           # Inngest event key (floriday app)
+INNGEST_FLORIDAY_SIGNING_KEY=         # Inngest signing key (floriday app)
 FACTURATIE_SUPABASE_URL=              # Facturatie project URL
 FACTURATIE_SUPABASE_ANON_KEY=         # Facturatie project key
 ```
+
+---
+
+## Inngest Dual-Client Architectuur
+
+Het project gebruikt **2 aparte Inngest apps**, elk met eigen event keys en signing keys. Dit scheidt batch processing van Floriday-specifieke functies.
+
+| App ID | Client | Serve Route | Env vars |
+|--------|--------|-------------|----------|
+| `everyplants-batchmaker` | `inngest` | `/api/inngest` | `INNGEST_EVENT_KEY` + `INNGEST_SIGNING_KEY` |
+| `everyplants-floriday` | `floridayInngest` | `/api/floriday/inngest` | `INNGEST_FLORIDAY_EVENT_KEY` + `INNGEST_FLORIDAY_SIGNING_KEY` |
+
+### Functies per client
+
+**`inngest`** (`src/inngest/client.ts`):
+- `processSingleOrderBatch` — Single order batch verwerking (shipments + labels)
+
+**`floridayInngest`** (`src/inngest/floriday-client.ts`):
+- `syncFloridayOrders` — Floriday orders syncen (cron: elke 15 min)
+- `syncCatalogSupply` — Catalogus supply syncen (cron: dagelijks)
+- `processStockSyncQueue` — Stock sync queue verwerken (event: debounce 10s)
+- `reconcileFloridayStock` — Stock reconciliatie (cron: elke 6 uur)
+
+### Regels bij nieuwe Inngest functies
+
+- **Floriday-gerelateerd** → gebruik `floridayInngest` uit `@/inngest/floriday-client`, registreer in `/api/floriday/inngest/route.ts`
+- **Overig (batchmaker, verpakking, etc.)** → gebruik `inngest` uit `@/inngest/client`, registreer in `/api/inngest/route.ts`
+- **`.send()` calls** moeten dezelfde client gebruiken als de functie die het event afhandelt
+- **Key files**: `src/inngest/client.ts`, `src/inngest/floriday-client.ts`, `src/inngest/functions/`
 
 ---
 
