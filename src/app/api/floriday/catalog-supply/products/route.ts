@@ -83,6 +83,7 @@ export async function GET() {
         picqerProductId: p.idproduct,
         productcode: p.productcode,
         name: p.name,
+        tags: Object.values(p.tags ?? {}).map(t => t.title),
         altSku: m?.alt_sku ?? null,
         tradeItemId,
         tradeItemName: m?.floriday_trade_item_name ?? null,

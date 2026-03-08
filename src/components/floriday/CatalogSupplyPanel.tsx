@@ -10,6 +10,7 @@ interface CatalogProduct {
   picqerProductId: number
   productcode: string
   name: string
+  tags: string[]
   altSku: string | null
   tradeItemId: string | null
   tradeItemName: string | null
@@ -351,6 +352,7 @@ export default function CatalogSupplyPanel() {
                       />
                     </th>
                     <th className="text-left px-3 py-2 font-medium text-muted-foreground">Product</th>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Tags</th>
                     <th className="text-left px-3 py-2 font-medium text-muted-foreground">Code</th>
                     <th className="text-left px-3 py-2 font-medium text-muted-foreground">Alt. SKU</th>
                     <th className="text-left px-3 py-2 font-medium text-muted-foreground">Trade Item</th>
@@ -385,6 +387,18 @@ export default function CatalogSupplyPanel() {
                         </td>
                         <td className="px-3 py-2 font-medium max-w-[200px] truncate" title={product.name}>
                           {product.name}
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex flex-wrap gap-1">
+                            {product.tags.map(tag => (
+                              <span
+                                key={tag}
+                                className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground"
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
                         </td>
                         <td className="px-3 py-2 text-muted-foreground font-mono text-xs">
                           {product.productcode}
