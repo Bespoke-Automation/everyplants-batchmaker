@@ -21,8 +21,8 @@ export const PICQER_STOCK_WEBHOOK_EVENTS = [
   'products.free_stock_changed',
   'products.stock_changed',
   'receipts.product_received',
+  'purchase_orders.purchased',
   'purchase_orders.changed',
-  'purchase_orders.created',
 ] as const
 
 export type PicqerStockWebhookEvent = typeof PICQER_STOCK_WEBHOOK_EVENTS[number]

@@ -71,7 +71,9 @@ async function extractProductIds(
   }
 
   // Purchase order events: fetch the PO to get product IDs
-  if (event === 'purchase_orders.changed' || event === 'purchase_orders.created') {
+  // Only react to 'purchased' (PO confirmed) and 'changed' (products/dates modified).
+  // 'created' is ignored because new POs are concept status and not yet in /expected.
+  if (event === 'purchase_orders.purchased' || event === 'purchase_orders.changed') {
     const poId = data.idpurchaseorder
     if (typeof poId !== 'number') return []
 
