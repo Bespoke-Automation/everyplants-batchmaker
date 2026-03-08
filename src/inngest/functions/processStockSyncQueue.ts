@@ -2,6 +2,7 @@ import { floridayInngest } from '../floriday-client'
 import { supabase } from '@/lib/supabase/client'
 import { syncSelectedProductsBulk } from '@/lib/floriday/catalog-supply-service'
 import { isStockSyncDisabled } from '@/lib/floriday/stock-sync-config'
+import { insertSyncLogItems } from '@/lib/floriday/stock-sync-logging'
 
 /**
  * Debounced processor for the stock sync queue.
@@ -109,8 +110,8 @@ export const processStockSyncQueue = floridayInngest.createFunction(
     })
 
     // 5. Log sync result
-    await step.run('log-sync-result', async () => {
-      await supabase
+    const logEntry = await step.run('log-sync-result', async () => {
+      const { data, error } = await supabase
         .schema('floriday')
         .from('stock_sync_log')
         .insert({
@@ -124,7 +125,26 @@ export const processStockSyncQueue = floridayInngest.createFunction(
             frozenWeeks: syncResult.frozenWeeks,
           },
         })
+        .select('id')
+        .single()
+
+      if (error) console.error('Failed to insert sync log:', error.message)
+      console.log('log-sync-result: logEntry =', JSON.stringify(data), 'details count =', syncResult.details.length)
+      return data
     })
+
+    // 6. Log per-product items
+    const hasLogId = logEntry?.id != null
+    const hasDetails = syncResult.details?.length > 0
+    console.log(`log-sync-items gate: hasLogId=${hasLogId} (${logEntry?.id}), hasDetails=${hasDetails} (${syncResult.details?.length})`)
+
+    if (hasLogId && hasDetails) {
+      await step.run('log-sync-items', async () => {
+        await insertSyncLogItems(logEntry!.id, syncResult.details)
+      })
+    } else {
+      console.warn(`Skipping log-sync-items: logEntry.id=${logEntry?.id}, details.length=${syncResult.details?.length}`)
+    }
 
     return {
       synced: syncResult.synced,
