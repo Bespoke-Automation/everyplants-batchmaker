@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { RefreshCw, CheckCircle, XCircle, AlertTriangle, Send, Package, Link2, Link2Off, Wand2, ChevronDown, ChevronRight } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { RefreshCw, CheckCircle, XCircle, AlertTriangle, Send, Package, Link2, Link2Off, Wand2, ChevronDown, ChevronRight, Search } from 'lucide-react'
 import MappingModal from './MappingModal'
 
 // ─── Types ──────────────────────────────────────────────────
@@ -98,6 +98,9 @@ export default function CatalogSupplyPanel() {
   const [autoMapping, setAutoMapping] = useState(false)
   const [autoMapResult, setAutoMapResult] = useState<{ mapped: number; message: string } | null>(null)
 
+  // Search state
+  const [search, setSearch] = useState('')
+
   // Collapsible state
   const [panelOpen, setPanelOpen] = useState(false)
 
@@ -122,8 +125,19 @@ export default function CatalogSupplyPanel() {
 
   useEffect(() => { loadProducts() }, [loadProducts])
 
-  const mappedProducts = products.filter(p => p.tradeItemId)
-  const unmappedProducts = products.filter(p => !p.tradeItemId)
+  const filteredProducts = useMemo(() => {
+    if (!search.trim()) return products
+    const q = search.toLowerCase().trim()
+    return products.filter(p =>
+      p.name.toLowerCase().includes(q) ||
+      p.productcode.toLowerCase().includes(q) ||
+      (p.altSku && p.altSku.toLowerCase().includes(q)) ||
+      (p.tradeItemId && p.tradeItemId.toLowerCase().includes(q))
+    )
+  }, [products, search])
+
+  const mappedProducts = filteredProducts.filter(p => p.tradeItemId)
+  const unmappedProducts = filteredProducts.filter(p => !p.tradeItemId)
 
   const toggleSelect = (id: number) => {
     setSelected(prev => {
@@ -284,6 +298,18 @@ export default function CatalogSupplyPanel() {
         </div>
       ) : (
         <>
+          {/* Zoekbalk */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Zoek op naam, productcode, alt. SKU of trade item ID..."
+              className="w-full pl-9 pr-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+
           {/* Action bar */}
           <div className="flex items-center gap-3 flex-wrap">
             <button
@@ -339,7 +365,7 @@ export default function CatalogSupplyPanel() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {products.map((product) => {
+                  {filteredProducts.map((product) => {
                     const isMapped = !!product.tradeItemId
                     const syncDetail = getProductSyncDetail(product.picqerProductId)
 
