@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { RefreshCw, TrendingUp, Package, AlertTriangle, Send, CheckCircle, Search, Clock, Activity, XCircle, ChevronDown, ChevronRight } from 'lucide-react'
+import { RefreshCw, TrendingUp, Package, AlertTriangle, Send, CheckCircle, Search, Clock, Activity, XCircle, ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
 import CatalogSupplyPanel from './CatalogSupplyPanel'
 
 // ─── Stock Sync Status Types ─────────────────────────────────
@@ -294,6 +294,179 @@ function SingleProductPanel() {
             </>
           ) : (
             result.error
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Sync Log Item Types ─────────────────────────────────────
+
+interface SyncLogItem {
+  id: number
+  picqer_product_id: number
+  productcode: string | null
+  name: string | null
+  trade_item_id: string | null
+  status: 'synced' | 'skipped' | 'errored'
+  error_message: string | null
+  week_data: WeekSyncDetail[]
+}
+
+interface WeekSyncDetail {
+  year: number
+  week: number
+  totalStock: number
+  action: 'bulk_put' | 'skipped_frozen' | 'skipped_unmapped' | 'error'
+  error?: string
+}
+
+function ItemStatusBadge({ status }: { status: string }) {
+  const styles: Record<string, string> = {
+    synced: 'bg-emerald-100 text-emerald-700',
+    skipped: 'bg-gray-100 text-gray-600',
+    errored: 'bg-red-100 text-red-700',
+  }
+  const labels: Record<string, string> = {
+    synced: 'Gesynct',
+    skipped: 'Overgeslagen',
+    errored: 'Fout',
+  }
+  return (
+    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${styles[status] || 'bg-gray-100 text-gray-700'}`}>
+      {labels[status] || status}
+    </span>
+  )
+}
+
+function WeekChip({ detail }: { detail: WeekSyncDetail }) {
+  const actionStyles: Record<string, string> = {
+    bulk_put: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    skipped_frozen: 'bg-blue-50 text-blue-600 border-blue-200',
+    skipped_unmapped: 'bg-gray-50 text-gray-500 border-gray-200',
+    error: 'bg-red-50 text-red-600 border-red-200',
+  }
+  const actionLabels: Record<string, string> = {
+    bulk_put: 'PUT',
+    skipped_frozen: 'Frozen',
+    skipped_unmapped: 'Unmapped',
+    error: 'Error',
+  }
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border ${actionStyles[detail.action] || 'bg-gray-50 text-gray-500 border-gray-200'}`}
+      title={detail.error || `W${detail.week} ${detail.year}: ${detail.totalStock} st.`}
+    >
+      W{detail.week}: {detail.totalStock}st
+      <span className="opacity-60">{actionLabels[detail.action] || detail.action}</span>
+    </span>
+  )
+}
+
+function SyncRunRow({ run }: { run: StockSyncLogEntry }) {
+  const [expanded, setExpanded] = useState(false)
+  const [items, setItems] = useState<SyncLogItem[] | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  const handleToggle = async () => {
+    if (!expanded && items === null) {
+      setLoading(true)
+      try {
+        const res = await fetch(`/api/floriday/stock-sync-status/${run.id}/items`)
+        if (res.ok) {
+          const data = await res.json()
+          setItems(data.items)
+        } else {
+          setItems([])
+        }
+      } catch {
+        setItems([])
+      } finally {
+        setLoading(false)
+      }
+    }
+    setExpanded(!expanded)
+  }
+
+  return (
+    <div>
+      <button
+        onClick={handleToggle}
+        className="w-full px-4 py-3 flex items-center justify-between text-sm hover:bg-muted/30 transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          {expanded ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />}
+          <TriggerTypeBadge type={run.trigger_type} />
+          <div className="flex items-center gap-2 text-xs">
+            {run.products_synced > 0 && (
+              <span className="text-emerald-600 font-medium">{run.products_synced} gesynct</span>
+            )}
+            {run.products_skipped > 0 && (
+              <span className="text-muted-foreground">{run.products_skipped} overgeslagen</span>
+            )}
+            {run.products_errored > 0 && (
+              <span className="text-red-600 font-medium">{run.products_errored} fouten</span>
+            )}
+            {run.drift_detected > 0 && (
+              <span className="text-amber-600">{run.drift_detected} drift</span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          {run.duration_ms != null && <span>{run.duration_ms}ms</span>}
+          <span>{timeAgo(run.created_at)}</span>
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="px-4 pb-3">
+          {loading ? (
+            <div className="flex items-center gap-2 py-3 text-xs text-muted-foreground">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              Productdetails laden...
+            </div>
+          ) : items && items.length > 0 ? (
+            <div className="border border-border rounded-lg overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/50 border-b border-border">
+                  <tr>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Product</th>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Code</th>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Status</th>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Weken</th>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Fout</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {items.map((item) => (
+                    <tr key={item.id} className="hover:bg-muted/20">
+                      <td className="px-3 py-2 font-medium max-w-[200px] truncate" title={item.name ?? undefined}>
+                        {item.name ?? '—'}
+                      </td>
+                      <td className="px-3 py-2 font-mono text-muted-foreground">{item.productcode ?? '—'}</td>
+                      <td className="px-3 py-2"><ItemStatusBadge status={item.status} /></td>
+                      <td className="px-3 py-2">
+                        <div className="flex flex-wrap gap-1">
+                          {item.week_data.length > 0
+                            ? item.week_data.map((wd, i) => <WeekChip key={i} detail={wd} />)
+                            : <span className="text-muted-foreground">—</span>
+                          }
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-red-600 max-w-[200px] truncate" title={item.error_message ?? undefined}>
+                        {item.error_message ?? '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="py-2 text-xs text-muted-foreground italic">
+              Geen productdetails beschikbaar voor deze run.
+            </p>
           )}
         </div>
       )}
@@ -610,29 +783,7 @@ export default function FloridayStock() {
                 </div>
               )}
               {syncStatus.recentRuns.map((run) => (
-                <div key={run.id} className="px-4 py-3 flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-3">
-                    <TriggerTypeBadge type={run.trigger_type} />
-                    <div className="flex items-center gap-2 text-xs">
-                      {run.products_synced > 0 && (
-                        <span className="text-emerald-600 font-medium">{run.products_synced} gesynct</span>
-                      )}
-                      {run.products_skipped > 0 && (
-                        <span className="text-muted-foreground">{run.products_skipped} overgeslagen</span>
-                      )}
-                      {run.products_errored > 0 && (
-                        <span className="text-red-600 font-medium">{run.products_errored} fouten</span>
-                      )}
-                      {run.drift_detected > 0 && (
-                        <span className="text-amber-600">{run.drift_detected} drift</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                    {run.duration_ms != null && <span>{run.duration_ms}ms</span>}
-                    <span>{timeAgo(run.created_at)}</span>
-                  </div>
-                </div>
+                <SyncRunRow key={run.id} run={run} />
               ))}
             </div>
           )}

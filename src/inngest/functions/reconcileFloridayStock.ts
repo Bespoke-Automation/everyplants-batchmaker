@@ -1,11 +1,12 @@
 import { floridayInngest } from '../floriday-client'
 import { supabase } from '@/lib/supabase/client'
 import { isStockSyncDisabled } from '@/lib/floriday/stock-sync-config'
-import { isCatalogSupplySyncDisabled, syncSelectedProductsBulk } from '@/lib/floriday/catalog-supply-service'
+import { isCatalogSupplySyncDisabled, syncSelectedProductsBulk, type CatalogSyncResult } from '@/lib/floriday/catalog-supply-service'
 import { getFloridayProducts, calcExpectedStockByWeek } from '@/lib/floriday/stock-service'
 import { getWeeklyBaseSupplies } from '@/lib/floriday/client'
 import { getFloridayEnv } from '@/lib/floriday/config'
 import { getNextNWeeks, weekKey } from '@/lib/floriday/utils'
+import { insertSyncLogItems } from '@/lib/floriday/stock-sync-logging'
 
 const SYNC_WEEKS = 6
 
@@ -124,7 +125,7 @@ export const reconcileFloridayStock = floridayInngest.createFunction(
     })
 
     // 4. Sync drifted products
-    let syncResult = { synced: 0, skipped: 0, errors: 0, frozenWeeks: [] as string[] }
+    let syncResult = { synced: 0, skipped: 0, errors: 0, frozenWeeks: [] as string[], details: [] as CatalogSyncResult[] }
 
     if (driftedProductIds.length > 0) {
       syncResult = await step.run('sync-drifted-products', async () => {
@@ -135,6 +136,7 @@ export const reconcileFloridayStock = floridayInngest.createFunction(
           skipped: result.skipped,
           errors: result.errors,
           frozenWeeks: result.frozenWeeks,
+          details: result.details,
         }
       })
     }
@@ -142,8 +144,8 @@ export const reconcileFloridayStock = floridayInngest.createFunction(
     const durationMs = Date.now() - startTime
 
     // 5. Log result
-    await step.run('log-reconciliation', async () => {
-      await supabase
+    const logEntry = await step.run('log-reconciliation', async () => {
+      const { data, error } = await supabase
         .schema('floriday')
         .from('stock_sync_log')
         .insert({
@@ -159,7 +161,19 @@ export const reconcileFloridayStock = floridayInngest.createFunction(
             frozenWeeks: syncResult.frozenWeeks,
           },
         })
+        .select('id')
+        .single()
+
+      if (error) console.error('Failed to insert reconciliation log:', error.message)
+      return data
     })
+
+    // 6. Log per-product items
+    if (logEntry?.id && syncResult.details.length > 0) {
+      await step.run('log-reconciliation-items', async () => {
+        await insertSyncLogItems(logEntry.id, syncResult.details)
+      })
+    }
 
     return {
       totalMapped: mappedProducts.length,

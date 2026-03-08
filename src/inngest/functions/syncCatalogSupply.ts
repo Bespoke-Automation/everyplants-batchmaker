@@ -2,6 +2,7 @@ import { floridayInngest } from "../floriday-client"
 import { syncAllKunstplantStock, isCatalogSupplySyncDisabled } from "@/lib/floriday/catalog-supply-service"
 import { isStockSyncDisabled } from "@/lib/floriday/stock-sync-config"
 import { supabase } from "@/lib/supabase/client"
+import { insertSyncLogItems } from "@/lib/floriday/stock-sync-logging"
 
 export const syncCatalogSupply = floridayInngest.createFunction(
   { id: "sync-catalog-supply", retries: 1 },
@@ -22,8 +23,8 @@ export const syncCatalogSupply = floridayInngest.createFunction(
     const durationMs = Date.now() - startTime
 
     // Log to stock_sync_log
-    await step.run("log-sync-result", async () => {
-      await supabase
+    const logEntry = await step.run("log-sync-result", async () => {
+      const { data, error } = await supabase
         .schema('floriday')
         .from('stock_sync_log')
         .insert({
@@ -36,7 +37,19 @@ export const syncCatalogSupply = floridayInngest.createFunction(
             frozenWeeks: result.frozenWeeks,
           },
         })
+        .select('id')
+        .single()
+
+      if (error) console.error('Failed to insert sync log:', error.message)
+      return data
     })
+
+    // Log per-product items
+    if (logEntry?.id && result.details.length > 0) {
+      await step.run("log-sync-items", async () => {
+        await insertSyncLogItems(logEntry.id, result.details)
+      })
+    }
 
     // Cleanup old queue entries (synced/error > 24h) and old logs (> 30 days)
     await step.run("cleanup-old-entries", async () => {
