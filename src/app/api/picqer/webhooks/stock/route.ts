@@ -6,31 +6,45 @@ import { supabase } from '@/lib/supabase/client'
 import { getPurchaseOrder } from '@/lib/picqer/client'
 import { getFloridayEnv } from '@/lib/floriday/config'
 import { isStockSyncDisabled, PICQER_STOCK_WEBHOOK_EVENTS } from '@/lib/floriday/stock-sync-config'
+import { getFloridayProducts } from '@/lib/floriday/stock-service'
 import { floridayInngest } from '@/inngest/floriday-client'
 
-// ── In-memory cache for mapped product IDs (1 min TTL) ──────
+// ── In-memory cache for eligible product IDs (1 min TTL) ─────
+// Cross-references product_mapping (active) with Kunstplant-tagged products
+// so only products that are both mapped AND have the required tags get synced.
 
-let mappedProductIdsCache: Set<number> | null = null
-let mappedProductIdsCacheTime = 0
+let eligibleProductIdsCache: Set<number> | null = null
+let eligibleProductIdsCacheTime = 0
 const CACHE_TTL_MS = 60_000
 
-async function getMappedProductIds(): Promise<Set<number>> {
+async function getEligibleProductIds(): Promise<Set<number>> {
   const now = Date.now()
-  if (mappedProductIdsCache && now - mappedProductIdsCacheTime < CACHE_TTL_MS) {
-    return mappedProductIdsCache
+  if (eligibleProductIdsCache && now - eligibleProductIdsCacheTime < CACHE_TTL_MS) {
+    return eligibleProductIdsCache
   }
 
   const env = getFloridayEnv()
-  const { data } = await supabase
-    .schema('floriday')
-    .from('product_mapping')
-    .select('picqer_product_id')
-    .eq('environment', env)
-    .eq('is_active', true)
 
-  mappedProductIdsCache = new Set((data ?? []).map(r => r.picqer_product_id))
-  mappedProductIdsCacheTime = now
-  return mappedProductIdsCache
+  // Parallel: get mapped products + tagged Kunstplant products
+  const [mappingResult, taggedProducts] = await Promise.all([
+    supabase
+      .schema('floriday')
+      .from('product_mapping')
+      .select('picqer_product_id')
+      .eq('environment', env)
+      .eq('is_active', true),
+    getFloridayProducts(),
+  ])
+
+  const mappedIds = new Set((mappingResult.data ?? []).map(r => r.picqer_product_id))
+  const taggedIds = new Set(taggedProducts.map(p => p.idproduct))
+
+  // Only products that are BOTH mapped and have the required tags
+  eligibleProductIdsCache = new Set([...mappedIds].filter(id => taggedIds.has(id)))
+  eligibleProductIdsCacheTime = now
+
+  console.log(`Eligible products: ${eligibleProductIdsCache.size} (mapped: ${mappedIds.size}, tagged: ${taggedIds.size})`)
+  return eligibleProductIdsCache
 }
 
 // ── HMAC validation ─────────────────────────────────────────
@@ -147,8 +161,8 @@ export async function POST(request: Request) {
     }
 
     // 5. Filter to mapped products only
-    const mappedIds = await getMappedProductIds()
-    const relevantProductIds = allProductIds.filter(id => mappedIds.has(id))
+    const eligibleIds = await getEligibleProductIds()
+    const relevantProductIds = allProductIds.filter(id => eligibleIds.has(id))
 
     if (relevantProductIds.length === 0) {
       return NextResponse.json({

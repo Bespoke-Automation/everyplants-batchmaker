@@ -172,6 +172,18 @@ async function resolveAndCalcProducts(
     const results = await Promise.all(
       batch.map(async (pid) => {
         const product = productMap.get(pid)
+
+        // Skip products not in the Kunstplant-tagged list (safety net)
+        if (!product) {
+          skipped.push({
+            success: false,
+            picqerProductId: pid,
+            weekResults: [],
+            error: 'Product mist vereiste tags (Kunstplant + Floriday product)',
+          })
+          return null
+        }
+
         const tradeItemId = await resolveTradeItemId(pid)
 
         if (!tradeItemId) {
