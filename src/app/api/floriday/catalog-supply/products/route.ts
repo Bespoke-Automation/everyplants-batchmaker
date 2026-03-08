@@ -23,17 +23,28 @@ export async function GET() {
     const products = await getFloridayProducts()
     const productIds = products.map(p => p.idproduct)
 
-    // Stap 2: enrichment via view (1 query i.p.v. 3)
-    const { data: mappings } = await supabase
-      .schema('floriday')
-      .from('enriched_product_mapping')
-      .select('picqer_product_id, floriday_trade_item_id, floriday_trade_item_name, floriday_supplier_article_code, match_method, last_stock_sync_at, alt_sku, vbn_product_code')
-      .eq('environment', env)
-      .eq('is_active', true)
-      .in('picqer_product_id', productIds)
+    // Stap 2: enrichment via view + product index (parallel)
+    const [{ data: mappings }, { data: indexRows }] = await Promise.all([
+      supabase
+        .schema('floriday')
+        .from('enriched_product_mapping')
+        .select('picqer_product_id, floriday_trade_item_id, floriday_trade_item_name, floriday_supplier_article_code, match_method, last_stock_sync_at, alt_sku, vbn_product_code')
+        .eq('environment', env)
+        .eq('is_active', true)
+        .in('picqer_product_id', productIds),
+      // Alt SKU voor alle producten (ook zonder mapping)
+      supabase
+        .schema('floriday')
+        .from('picqer_product_index')
+        .select('picqer_product_id, alt_sku')
+        .in('picqer_product_id', productIds),
+    ])
 
     const mappingMap = new Map(
       (mappings ?? []).map(m => [m.picqer_product_id, m])
+    )
+    const altSkuMap = new Map(
+      (indexRows ?? []).filter(r => r.alt_sku).map(r => [r.picqer_product_id, r.alt_sku as string])
     )
 
     // Week headers voor UI
@@ -84,7 +95,7 @@ export async function GET() {
         productcode: p.productcode,
         name: p.name,
         tags: Object.values(p.tags ?? {}).map(t => t.title),
-        altSku: m?.alt_sku ?? null,
+        altSku: m?.alt_sku ?? altSkuMap.get(p.idproduct) ?? null,
         tradeItemId,
         tradeItemName: m?.floriday_trade_item_name ?? null,
         supplierArticleCode: m?.floriday_supplier_article_code ?? null,
