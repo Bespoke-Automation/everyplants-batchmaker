@@ -32,7 +32,7 @@ interface StockSyncLogEntry {
 
 interface UnifiedLogEntry {
   id: string
-  source: 'order' | 'stock'
+  source: 'order' | 'stock' | 'catalog'
   action: string
   status: string
   duration_ms: number | null
@@ -41,7 +41,7 @@ interface UnifiedLogEntry {
   created_at: string
 }
 
-type FilterType = 'all' | 'order' | 'stock'
+type FilterType = 'all' | 'order' | 'stock' | 'catalog'
 
 // ─── Helpers ─────────────────────────────────────────────────
 
@@ -62,19 +62,32 @@ const TRIGGER_LABELS: Record<string, string> = {
   webhook: 'Webhook stock sync',
   cron_hourly: 'Uurlijkse stock sync',
   reconciliation: 'Stock reconciliation',
+  daily_catalog_sync: 'Dagelijkse catalogus sync',
 }
 
 function normalizeStockLog(log: StockSyncLogEntry): UnifiedLogEntry {
-  const details: Record<string, unknown> = {
-    products_synced: log.products_synced,
-    products_skipped: log.products_skipped,
-    products_errored: log.products_errored,
-    ...(log.drift_detected > 0 ? { drift_detected: log.drift_detected } : {}),
-  }
+  const isCatalog = log.trigger_type === 'daily_catalog_sync'
+
+  const catalogDetails = log.details as { productIndex?: { synced?: number }; tradeItems?: { upserted?: number }; autoMap?: { newMappings?: number; noMatch?: number; alreadyMapped?: number } } | null
+
+  const details: Record<string, unknown> = isCatalog
+    ? {
+        nieuw_gemapt: log.products_synced,
+        geen_match: catalogDetails?.autoMap?.noMatch ?? 0,
+        al_gemapt: catalogDetails?.autoMap?.alreadyMapped ?? 0,
+        product_index: catalogDetails?.productIndex?.synced ?? 0,
+        trade_items: catalogDetails?.tradeItems?.upserted ?? 0,
+      }
+    : {
+        products_synced: log.products_synced,
+        products_skipped: log.products_skipped,
+        products_errored: log.products_errored,
+        ...(log.drift_detected > 0 ? { drift_detected: log.drift_detected } : {}),
+      }
 
   return {
-    id: `stock-${log.id}`,
-    source: 'stock',
+    id: `${isCatalog ? 'catalog' : 'stock'}-${log.id}`,
+    source: isCatalog ? 'catalog' : 'stock',
     action: TRIGGER_LABELS[log.trigger_type] || log.trigger_type,
     status: log.products_errored > 0 ? 'error' : 'success',
     duration_ms: log.duration_ms,
@@ -84,9 +97,12 @@ function normalizeStockLog(log: StockSyncLogEntry): UnifiedLogEntry {
   }
 }
 
-function SourceBadge({ source }: { source: 'order' | 'stock' }) {
+function SourceBadge({ source }: { source: 'order' | 'stock' | 'catalog' }) {
   if (source === 'order') {
     return <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-700">Order</span>
+  }
+  if (source === 'catalog') {
+    return <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700">Catalog</span>
   }
   return <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-100 text-violet-700">Stock</span>
 }
@@ -140,6 +156,7 @@ export default function FloridaySyncLog() {
     { key: 'all', label: 'Alle' },
     { key: 'order', label: 'Order sync' },
     { key: 'stock', label: 'Stock sync' },
+    { key: 'catalog', label: 'Catalog sync' },
   ]
 
   return (
@@ -182,7 +199,7 @@ export default function FloridaySyncLog() {
           <p className="text-muted-foreground">
             {filter === 'all'
               ? 'Geen sync logs beschikbaar. Start een sync om logs te genereren.'
-              : `Geen ${filter === 'order' ? 'order' : 'stock'} sync logs gevonden.`}
+              : `Geen ${filter === 'order' ? 'order' : filter === 'stock' ? 'stock' : 'catalog'} sync logs gevonden.`}
           </p>
         </div>
       ) : (
