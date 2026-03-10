@@ -29,6 +29,14 @@ function extractTagTitles(tags: Record<string, PicqerTag> | undefined): string[]
 }
 
 /**
+ * Extract tag IDs from tags object
+ */
+function extractTagIds(tags: Record<string, PicqerTag> | undefined): number[] {
+  if (!tags || typeof tags !== 'object') return []
+  return Object.values(tags).map(tag => tag.idtag)
+}
+
+/**
  * Extract full tag objects with colors from tags object
  */
 function extractTags(tags: Record<string, PicqerTag> | undefined): OrderTag[] {
@@ -112,6 +120,7 @@ function getEligiblePicklist(order: PicqerOrder) {
  */
 export function transformOrder(order: PicqerOrder): TransformedOrder {
   const tagTitles = extractTagTitles(order.tags)
+  const tagIds = extractTagIds(order.tags)
   const tags = extractTags(order.tags)
   const picklist = getEligiblePicklist(order)
   const plantnummer = getOrderfieldValue(order, ORDERFIELD_IDS.PLANTNUMMER)
@@ -121,6 +130,7 @@ export function transformOrder(order: PicqerOrder): TransformedOrder {
     reference: order.reference || `#${order.orderid}`,
     retailerName: extractRetailerFromTags(tagTitles),
     tagTitles,
+    tagIds,
     tags,
     bezorgland: order.deliverycountry || 'NL',
     leverdag: normalizeLeverdag(getOrderfieldValue(order, ORDERFIELD_IDS.LEVERDAG)),

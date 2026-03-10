@@ -45,7 +45,7 @@ export function useSingleOrders() {
 
   return {
     groups: data?.groups ?? [],
-    totalSingleOrders: data?.totalSingleOrders ?? 0,
+    totalMatchedOrders: data?.totalMatchedOrders ?? 0,
     metadata: data?.metadata ?? { retailers: [], tags: [], countries: [], leverdagen: [] },
     fetchedAt: data?.fetchedAt,
     isLoading,

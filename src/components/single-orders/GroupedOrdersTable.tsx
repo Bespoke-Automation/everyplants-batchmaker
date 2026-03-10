@@ -10,7 +10,7 @@ interface GroupedOrdersTableProps {
   groups: ProductGroup[]
   isLoading: boolean
   onRefresh: () => void
-  totalSingleOrders: number
+  totalMatchedOrders: number
   selectedGroups: ProductGroup[]
   onSelectionChange: (groups: ProductGroup[]) => void
 }
@@ -28,15 +28,15 @@ export default function GroupedOrdersTable({
   groups,
   isLoading,
   onRefresh,
-  totalSingleOrders,
+  totalMatchedOrders,
   selectedGroups,
   onSelectionChange,
 }: GroupedOrdersTableProps) {
-  const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set())
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
   const searchableFields = useMemo(() => [
-    'productName' as const,
-    'productCode' as const,
+    'displayName' as const,
+    (group: ProductGroup) => group.combinationProducts.map(p => p.productcode).join(' '),
     (group: ProductGroup) => Object.keys(group.retailerBreakdown).join(' '),
     (group: ProductGroup) => group.orders.map(o => o.reference).join(' '),
   ], [])
@@ -46,20 +46,20 @@ export default function GroupedOrdersTable({
     searchableFields
   )
 
-  const toggleExpanded = (productId: number) => {
+  const toggleExpanded = (fingerprint: string) => {
     const newExpanded = new Set(expandedGroups)
-    if (newExpanded.has(productId)) {
-      newExpanded.delete(productId)
+    if (newExpanded.has(fingerprint)) {
+      newExpanded.delete(fingerprint)
     } else {
-      newExpanded.add(productId)
+      newExpanded.add(fingerprint)
     }
     setExpandedGroups(newExpanded)
   }
 
   const toggleGroupSelection = (group: ProductGroup) => {
-    const isSelected = selectedGroups.some(g => g.productId === group.productId)
+    const isSelected = selectedGroups.some(g => g.fingerprint === group.fingerprint)
     if (isSelected) {
-      onSelectionChange(selectedGroups.filter(g => g.productId !== group.productId))
+      onSelectionChange(selectedGroups.filter(g => g.fingerprint !== group.fingerprint))
     } else {
       onSelectionChange([...selectedGroups, group])
     }
@@ -74,7 +74,7 @@ export default function GroupedOrdersTable({
   }
 
   const isGroupSelected = (group: ProductGroup) =>
-    selectedGroups.some(g => g.productId === group.productId)
+    selectedGroups.some(g => g.fingerprint === group.fingerprint)
 
   const getRetailerColor = (retailer: string) =>
     RETAILER_COLORS[retailer] || 'bg-gray-100 text-gray-700 border-gray-200'
@@ -82,14 +82,13 @@ export default function GroupedOrdersTable({
   const totalSelectedOrders = selectedGroups.reduce((sum, g) => sum + g.totalCount, 0)
 
   const exportToCSV = useCallback(() => {
-    const headers = ['Product Code', 'Product Name', 'Reference', 'Retailer', 'Retailer Order Number', 'Country', 'Delivery Day', 'Picklist ID', 'Invoice Name', 'Order ID', 'ID Order', 'Plantnummer', 'ID Shipping']
+    const headers = ['Combination', 'Product Codes', 'Reference', 'Retailer', 'Retailer Order Number', 'Country', 'Delivery Day', 'Picklist ID', 'Invoice Name', 'Order ID', 'ID Order', 'Plantnummer', 'ID Shipping']
 
-    // Flatten all groups into individual order rows
     const rows = groups.flatMap(group =>
       group.orders.map(order => {
         const values = [
-          group.productCode,
-          group.productName,
+          group.displayName,
+          group.combinationProducts.map(p => p.productcode).join('; '),
           order.reference,
           order.retailerName,
           order.retailerOrderNumber,
@@ -131,7 +130,7 @@ export default function GroupedOrdersTable({
       <div className="p-4 border-b border-border flex items-center justify-between bg-muted/5">
         <div className="flex items-center gap-4">
           <h2 className="font-semibold text-lg flex items-center gap-2">
-            <Package className="w-5 h-5 text-primary" /> Single Orders by Product
+            <Package className="w-5 h-5 text-primary" /> Orders by Combination
           </h2>
           {selectedGroups.length > 0 && (
             <span className="bg-primary/10 text-primary text-xs font-bold px-2 py-1 rounded-full border border-primary/20">
@@ -168,14 +167,14 @@ export default function GroupedOrdersTable({
           <div className="flex items-center justify-center py-20">
             <div className="flex flex-col items-center gap-3">
               <RefreshCw className="w-8 h-8 animate-spin text-primary" />
-              <p className="text-sm text-muted-foreground">Loading single orders from Picqer...</p>
+              <p className="text-sm text-muted-foreground">Loading orders from Picqer...</p>
               <p className="text-xs text-muted-foreground">This may take a moment as we analyze each order</p>
             </div>
           </div>
         ) : searchedGroups.length === 0 ? (
           <div className="flex items-center justify-center py-20">
             <div className="text-center">
-              <p className="text-sm text-muted-foreground">No product groups found with 5+ single orders</p>
+              <p className="text-sm text-muted-foreground">No combination groups found with 5+ orders</p>
               <p className="text-xs text-muted-foreground mt-1">Try selecting more retailers or adjusting filters</p>
             </div>
           </div>
@@ -192,15 +191,14 @@ export default function GroupedOrdersTable({
                   />
                 </th>
                 <th className="px-4 py-3 w-8"></th>
-                <th className="px-4 py-3 min-w-[250px]">Product Name</th>
-                <th className="px-4 py-3 min-w-[120px]">SKU</th>
+                <th className="px-4 py-3 min-w-[300px]">Combination</th>
                 <th className="px-4 py-3 w-[100px] text-center">Total Orders</th>
                 <th className="px-4 py-3 min-w-[300px]">Retailer Breakdown</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {searchedGroups.map((group) => (
-                <Fragment key={group.productId}>
+                <Fragment key={group.fingerprint}>
                   <tr
                     className={`hover:bg-muted/50 transition-colors ${isGroupSelected(group) ? 'bg-primary/5' : ''}`}
                   >
@@ -214,10 +212,10 @@ export default function GroupedOrdersTable({
                     </td>
                     <td className="px-4 py-4">
                       <button
-                        onClick={() => toggleExpanded(group.productId)}
+                        onClick={() => toggleExpanded(group.fingerprint)}
                         className="p-1 hover:bg-muted rounded transition-colors"
                       >
-                        {expandedGroups.has(group.productId) ? (
+                        {expandedGroups.has(group.fingerprint) ? (
                           <ChevronDown className="w-4 h-4 text-muted-foreground" />
                         ) : (
                           <ChevronRight className="w-4 h-4 text-muted-foreground" />
@@ -225,12 +223,16 @@ export default function GroupedOrdersTable({
                       </button>
                     </td>
                     <td className="px-4 py-4">
-                      <span className="font-medium">{group.productName}</span>
-                    </td>
-                    <td className="px-4 py-4">
-                      <span className="font-mono text-muted-foreground text-xs bg-muted px-2 py-1 rounded">
-                        {group.productCode}
-                      </span>
+                      <div className="flex flex-col gap-1">
+                        <span className="font-medium">{group.displayName}</span>
+                        <div className="flex flex-wrap gap-1">
+                          {group.combinationProducts.map(p => (
+                            <span key={p.idproduct} className="font-mono text-muted-foreground text-xs bg-muted px-2 py-0.5 rounded">
+                              {p.productcode}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
                     </td>
                     <td className="px-4 py-4 text-center">
                       <span className="bg-primary/10 text-primary font-bold px-3 py-1 rounded-full">
@@ -252,9 +254,9 @@ export default function GroupedOrdersTable({
                       </div>
                     </td>
                   </tr>
-                  {expandedGroups.has(group.productId) && (
+                  {expandedGroups.has(group.fingerprint) && (
                     <tr>
-                      <td colSpan={6} className="bg-muted/30 px-8 py-3">
+                      <td colSpan={5} className="bg-muted/30 px-8 py-3">
                         <div className="text-xs">
                           <div className="font-bold text-muted-foreground uppercase mb-2">
                             Orders in this group
@@ -287,7 +289,7 @@ export default function GroupedOrdersTable({
       </div>
 
       <div className="p-3 border-t border-border bg-muted/20 flex items-center justify-center text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-        {isLoading ? 'Loading...' : `${searchedGroups.length} product groups${searchQuery ? ' (searched)' : ''} | ${totalSingleOrders} total single orders`}
+        {isLoading ? 'Loading...' : `${searchedGroups.length} combination groups${searchQuery ? ' (searched)' : ''} | ${totalMatchedOrders} total matched orders`}
       </div>
     </div>
   )

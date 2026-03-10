@@ -1,73 +1,76 @@
 import { PicqerOrderProduct } from './types'
+import { CombinationProduct } from '@/types/singleOrder'
 
-export interface SingleOrderAnalysis {
-  isSingleOrder: boolean
-  plantProduct: {
-    idproduct: number
-    productcode: string
-    name: string
-  } | null
+export interface OrderCombinationAnalysis {
+  fingerprint: string
+  plantProducts: CombinationProduct[]
   totalPlantCount: number
   excludedProductCount: number
 }
 
 /**
- * Analyze order products to determine if it's a single order
+ * Analyze order products to build a combination fingerprint.
  *
- * Rules:
- * - Must have exactly 1 plant (non-excluded product) with amount 1
- * - Products with excluded productcodes (from Supabase, tagged "Overig" in Picqer) don't count
- * - Parts of virtual compositions are skipped (only parent counts)
+ * - Skips virtual composition parts (partof_idorder_product !== null)
+ * - Skips excluded products (boxes, fertilizer, etc.)
+ * - Builds a sorted fingerprint from idproduct:amount pairs
  *
- * Example single orders:
- * - 1x Strelitzia Nicolai ✓
- * - 1x Strelitzia + 1x Box (excluded) ✓
- *
- * Example NOT single orders:
- * - 2x Strelitzia Nicolai ✗
- * - 1x Strelitzia + 1x Philodendron ✗
- * - 1x Strelitzia + 1x Fertilizer (not excluded) ✗
+ * Returns null if the order has no plant products.
  */
-export function analyzeSingleOrder(
+export function analyzeOrderCombination(
   products: PicqerOrderProduct[],
   excludedProductCodes: Set<string>
-): SingleOrderAnalysis {
-  let plantProduct: SingleOrderAnalysis['plantProduct'] = null
+): OrderCombinationAnalysis | null {
+  const plantProducts: CombinationProduct[] = []
   let totalPlantCount = 0
   let excludedProductCount = 0
 
   for (const product of products) {
-    // Skip parts of virtual compositions (they're already counted via parent)
+    // Skip parts of virtual compositions (already counted via parent)
     if (product.partof_idorder_product !== null) {
       continue
     }
 
-    // Check if product is excluded (tagged "Overig" in Picqer, synced to Supabase)
     if (excludedProductCodes.has(product.productcode)) {
       excludedProductCount += product.amount
       continue
     }
 
-    // This is a plant product - add its amount to total
     totalPlantCount += product.amount
-
-    // If this is the first plant product, capture it
-    if (plantProduct === null) {
-      plantProduct = {
-        idproduct: product.idproduct,
-        productcode: product.productcode,
-        name: product.name,
-      }
-    }
+    plantProducts.push({
+      idproduct: product.idproduct,
+      productcode: product.productcode,
+      name: product.name,
+      amount: product.amount,
+    })
   }
 
-  // It's a single order only if total plant count is exactly 1
-  const isSingleOrder = totalPlantCount === 1
+  if (totalPlantCount === 0) return null
+
+  // Sort by idproduct for consistent fingerprint
+  plantProducts.sort((a, b) => a.idproduct - b.idproduct)
+
+  const fingerprint = plantProducts
+    .map(p => `${p.idproduct}:${p.amount}`)
+    .join('|')
 
   return {
-    isSingleOrder,
-    plantProduct: isSingleOrder ? plantProduct : null,
+    fingerprint,
+    plantProducts,
     totalPlantCount,
     excludedProductCount,
   }
+}
+
+/**
+ * Build a display-friendly name for a product combination.
+ *
+ * - Single product, amount 1: "Trachycarpus Fortunei"
+ * - Single product, amount >1: "2x Trachycarpus Fortunei"
+ * - Multi product: "Trachycarpus Fortunei + Pot X" (with amounts if >1)
+ */
+export function buildCombinationDisplayName(products: CombinationProduct[]): string {
+  return products
+    .map(p => p.amount > 1 ? `${p.amount}x ${p.name}` : p.name)
+    .join(' + ')
 }

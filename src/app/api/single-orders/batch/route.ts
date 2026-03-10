@@ -19,9 +19,7 @@ interface OrderInGroup {
 }
 
 interface ProductGroupInput {
-  productId: number
-  productCode: string
-  productName: string
+  displayName: string
   orders: OrderInGroup[]
 }
 
@@ -131,8 +129,7 @@ export async function POST(request: Request) {
         order_id: order.id,
         order_reference: order.reference,
         retailer: order.retailerName,
-        plant_name: productGroup.productName,
-        plant_product_code: productGroup.productCode,
+        plant_name: productGroup.displayName,
         country: order.country,
       })
     }

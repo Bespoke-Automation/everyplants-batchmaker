@@ -23,7 +23,7 @@ interface BatchResult {
 }
 
 export default function SingleOrdersClient() {
-  const { groups, totalSingleOrders, metadata, isLoading, error, refetch, fetchedAt } = useSingleOrders()
+  const { groups, totalMatchedOrders, metadata, isLoading, error, refetch, fetchedAt } = useSingleOrders()
   const { regions: postalRegions } = usePostalRegions()
   const { filters, filteredGroups, updateFilter, resetFilters, applyPreset, maxResults, updateMaxResults } = useSingleOrderFilters(groups, postalRegions)
   const { presets, isLoading: presetsLoading, removePreset, addPreset } = usePresets('single_order')
@@ -34,7 +34,7 @@ export default function SingleOrdersClient() {
     setSelectedGroups(prev => {
       if (prev.length === 0) return prev
       const updated = prev
-        .map(selected => filteredGroups.find(fg => fg.productId === selected.productId))
+        .map(selected => filteredGroups.find(fg => fg.fingerprint === selected.fingerprint))
         .filter((g): g is ProductGroup => g !== undefined)
       // Only update if something actually changed
       if (updated.length === prev.length && updated.every((g, i) => g === prev[i])) return prev
@@ -100,9 +100,7 @@ export default function SingleOrdersClient() {
     try {
       // Prepare product groups for API, filtering out orders without a valid picklist
       const productGroupsPayload = selectedGroups.map(group => ({
-        productId: group.productId,
-        productCode: group.productCode,
-        productName: group.productName,
+        displayName: group.displayName,
         orders: group.orders
           .filter(order => order.idPicklist !== null && order.idPicklist !== undefined)
           .map(order => ({
@@ -282,7 +280,7 @@ export default function SingleOrdersClient() {
           groups={filteredGroups}
           isLoading={isLoading}
           onRefresh={refetch}
-          totalSingleOrders={totalSingleOrders}
+          totalMatchedOrders={totalMatchedOrders}
           selectedGroups={selectedGroups}
           onSelectionChange={setSelectedGroups}
         />

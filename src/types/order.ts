@@ -9,6 +9,7 @@ export interface TransformedOrder {
   reference: string
   retailerName: string
   tagTitles: string[]
+  tagIds: number[]
   tags: OrderTag[]
   bezorgland: string
   leverdag: string

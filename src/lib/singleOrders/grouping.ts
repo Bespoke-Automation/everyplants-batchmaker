@@ -1,29 +1,29 @@
 import { SingleOrderWithProduct, ProductGroup } from '@/types/singleOrder'
+import { buildCombinationDisplayName } from '@/lib/picqer/singleOrders'
 
 /**
- * Group single orders by product
+ * Group orders by combination fingerprint.
  *
- * Groups orders by plant product and filters to only include groups
- * that meet the minimum size threshold (default: 5 orders).
+ * Groups orders that share the same product combination (same products
+ * in same quantities) and filters to groups meeting minimum size.
  *
- * Cross-retailer grouping: If Everspring has 3 orders for Strelitzia
- * and Green Bubble has 3 orders for Strelitzia, they combine to 6 orders
- * in the same group.
+ * Cross-retailer: orders from different retailers with the same combination
+ * are merged into one group.
  */
-export function groupSingleOrdersByProduct(
+export function groupOrdersByCombination(
   orders: SingleOrderWithProduct[],
   minimumGroupSize: number = 5
 ): ProductGroup[] {
-  const groupMap = new Map<number, ProductGroup>()
+  const groupMap = new Map<string, ProductGroup>()
 
   for (const order of orders) {
-    const productId = order.plantProduct.idproduct
+    const fp = order.combinationFingerprint
 
-    if (!groupMap.has(productId)) {
-      groupMap.set(productId, {
-        productId,
-        productCode: order.plantProduct.productcode,
-        productName: order.plantProduct.name,
+    if (!groupMap.has(fp)) {
+      groupMap.set(fp, {
+        fingerprint: fp,
+        combinationProducts: order.combinationProducts,
+        displayName: buildCombinationDisplayName(order.combinationProducts),
         orders: [],
         totalCount: 0,
         retailerBreakdown: {},
@@ -31,24 +31,23 @@ export function groupSingleOrdersByProduct(
       })
     }
 
-    const group = groupMap.get(productId)!
+    const group = groupMap.get(fp)!
     group.orders.push(order)
     group.totalCount++
     group.retailerBreakdown[order.retailerName] =
       (group.retailerBreakdown[order.retailerName] || 0) + 1
   }
 
-  // Filter to only groups with minimum size and sort by count descending
   return Array.from(groupMap.values())
     .filter(group => group.totalCount >= minimumGroupSize)
     .sort((a, b) => b.totalCount - a.totalCount)
 }
 
 /**
- * Filter product groups based on selected retailers
+ * Filter product groups based on selected retailers.
  *
- * When filtering by retailer, only count orders from selected retailers
- * towards the group total. Remove groups that fall below minimum after filtering.
+ * Only count orders from selected retailers towards the group total.
+ * Remove groups that fall below minimum after filtering.
  */
 export function filterGroupsByRetailers(
   groups: ProductGroup[],
@@ -61,12 +60,10 @@ export function filterGroupsByRetailers(
 
   return groups
     .map(group => {
-      // Filter orders to only selected retailers
       const filteredOrders = group.orders.filter(order =>
         selectedRetailers.includes(order.retailerName)
       )
 
-      // Recalculate retailer breakdown
       const retailerBreakdown: Record<string, number> = {}
       for (const order of filteredOrders) {
         retailerBreakdown[order.retailerName] =

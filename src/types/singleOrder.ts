@@ -1,19 +1,21 @@
 import { TransformedOrder } from './order'
 
-export interface SingleOrderProduct {
+export interface CombinationProduct {
   idproduct: number
   productcode: string
   name: string
+  amount: number
 }
 
 export interface SingleOrderWithProduct extends TransformedOrder {
-  plantProduct: SingleOrderProduct
+  combinationProducts: CombinationProduct[]
+  combinationFingerprint: string
 }
 
 export interface ProductGroup {
-  productId: number
-  productCode: string
-  productName: string
+  fingerprint: string
+  combinationProducts: CombinationProduct[]
+  displayName: string
   orders: SingleOrderWithProduct[]
   totalCount: number
   retailerBreakdown: Record<string, number>
@@ -22,7 +24,7 @@ export interface ProductGroup {
 
 export interface SingleOrdersResponse {
   groups: ProductGroup[]
-  totalSingleOrders: number
+  totalMatchedOrders: number
   metadata: {
     retailers: string[]
     tags: string[]
