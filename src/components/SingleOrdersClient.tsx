@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { History } from 'lucide-react'
 import { useSingleOrders } from '@/hooks/useSingleOrders'
@@ -50,6 +50,23 @@ export default function SingleOrdersClient() {
 
   const totalSelectedOrders = selectedGroups.reduce((sum, g) => sum + g.totalCount, 0)
 
+  // Compute shipping profile breakdown across selected orders
+  const shippingProfileBreakdown = useMemo(() => {
+    const map = new Map<number | null, { count: number }>()
+    for (const group of selectedGroups) {
+      for (const order of group.orders) {
+        const id = order.idShippingProvider
+        const entry = map.get(id)
+        if (entry) {
+          entry.count++
+        } else {
+          map.set(id, { count: 1 })
+        }
+      }
+    }
+    return map
+  }, [selectedGroups])
+
   // Auto-dismiss success notification after 5 seconds
   useEffect(() => {
     if (batchResult?.success) {
@@ -77,7 +94,7 @@ export default function SingleOrdersClient() {
   }
 
   // Handler for actual batch creation
-  const handleConfirmBatch = async (shippingProviderId: number, packagingId: number | null, name?: string) => {
+  const handleConfirmBatch = async (shippingProviderId: number | null, packagingId: number | null, name?: string) => {
     setIsCreatingBatch(true)
 
     try {
@@ -113,7 +130,7 @@ export default function SingleOrdersClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           productGroups: productGroupsPayload,
-          idShippingProvider: shippingProviderId,
+          idShippingProvider: shippingProviderId ?? undefined,
           idPackaging: packagingId,
           name,
         }),
@@ -280,7 +297,7 @@ export default function SingleOrdersClient() {
         onConfirm={handleConfirmBatch}
         totalOrders={totalSelectedOrders}
         totalGroups={selectedGroups.length}
-        defaultShippingProviderId={selectedGroups[0]?.orders[0]?.idShippingProvider ?? null}
+        shippingProfileBreakdown={shippingProfileBreakdown}
         firstPicklistId={selectedGroups[0]?.orders[0]?.idPicklist ?? null}
         isLoading={isCreatingBatch}
       />

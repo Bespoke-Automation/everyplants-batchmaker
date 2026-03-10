@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Loader2, ChevronDown } from 'lucide-react'
 import Dialog from './Dialog'
 
 interface ShippingMethod {
   idshippingprovider_profile: number
   name: string
-  carrier?: string  // Optional - may not be returned by Picqer API
+  carrier?: string
 }
 
 interface Packaging {
@@ -15,13 +15,17 @@ interface Packaging {
   name: string
 }
 
+interface ShippingProfileEntry {
+  count: number
+}
+
 interface CreateShipmentsDialogProps {
   open: boolean
   onClose: () => void
-  onConfirm: (shippingProviderId: number, packagingId: number | null, name?: string) => Promise<void>
+  onConfirm: (shippingProviderId: number | null, packagingId: number | null, name?: string) => Promise<void>
   totalOrders: number
   totalGroups: number
-  defaultShippingProviderId: number | null
+  shippingProfileBreakdown: Map<number | null, ShippingProfileEntry>
   firstPicklistId: number | null
   isLoading: boolean
 }
@@ -32,7 +36,7 @@ export default function CreateShipmentsDialog({
   onConfirm,
   totalOrders,
   totalGroups,
-  defaultShippingProviderId,
+  shippingProfileBreakdown,
   firstPicklistId,
   isLoading,
 }: CreateShipmentsDialogProps) {
@@ -42,51 +46,26 @@ export default function CreateShipmentsDialog({
   const [selectedPackagingId, setSelectedPackagingId] = useState<number | null>(null)
   const [batchName, setBatchName] = useState('')
   const [isLoadingData, setIsLoadingData] = useState(false)
-  const [isChangingShipping, setIsChangingShipping] = useState(false)
+  const [isOverriding, setIsOverriding] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [wasAutoSelected, setWasAutoSelected] = useState(false)
 
   // Fetch data when dialog opens
   useEffect(() => {
     if (open) {
       fetchData()
     } else {
-      // Reset state when dialog closes
-      setIsChangingShipping(false)
+      setIsOverriding(false)
       setError(null)
-      setWasAutoSelected(false)
       setBatchName('')
+      setSelectedShippingId(null)
     }
   }, [open, firstPicklistId])
-
-  // Set default shipping ID when methods are loaded
-  useEffect(() => {
-    if (shippingMethods.length > 0) {
-      if (defaultShippingProviderId) {
-        // Check if the default ID exists in the available methods
-        const exists = shippingMethods.some(m => m.idshippingprovider_profile === defaultShippingProviderId)
-        if (exists) {
-          setSelectedShippingId(defaultShippingProviderId)
-          setWasAutoSelected(false)
-        } else {
-          // Fall back to first available method
-          setSelectedShippingId(shippingMethods[0].idshippingprovider_profile)
-          setWasAutoSelected(true)
-        }
-      } else {
-        // No default - use first available method
-        setSelectedShippingId(shippingMethods[0].idshippingprovider_profile)
-        setWasAutoSelected(true)
-      }
-    }
-  }, [shippingMethods, defaultShippingProviderId])
 
   const fetchData = async () => {
     setIsLoadingData(true)
     setError(null)
 
     try {
-      // Fetch packagings and shipping methods in parallel
       const [packagingsRes, methodsRes] = await Promise.all([
         fetch('/api/picqer/packagings'),
         firstPicklistId ? fetch(`/api/picqer/shipping-methods?picklistId=${firstPicklistId}`) : Promise.resolve(null),
@@ -109,8 +88,6 @@ export default function CreateShipmentsDialog({
     }
   }
 
-  const selectedMethod = shippingMethods.find(m => m.idshippingprovider_profile === selectedShippingId)
-
   // Format shipping method display name
   const formatMethodName = (method: ShippingMethod) => {
     if (method.carrier) {
@@ -119,12 +96,24 @@ export default function CreateShipmentsDialog({
     return method.name
   }
 
+  // Build display list of profiles in the breakdown
+  const breakdownDisplay = useMemo(() => {
+    const entries: Array<{ id: number | null; name: string; count: number }> = []
+    for (const [id, { count }] of shippingProfileBreakdown) {
+      const method = id != null ? shippingMethods.find(m => m.idshippingprovider_profile === id) : null
+      const name = method ? formatMethodName(method) : id != null ? `Profiel #${id}` : 'Geen profiel'
+      entries.push({ id, name, count })
+    }
+    return entries
+  }, [shippingProfileBreakdown, shippingMethods])
+
   const handleConfirm = async () => {
-    if (!selectedShippingId) {
+    if (isOverriding && !selectedShippingId) {
       setError('Selecteer een verzendprofiel')
       return
     }
-    await onConfirm(selectedShippingId, selectedPackagingId, batchName.trim() || undefined)
+    const shippingId = isOverriding ? selectedShippingId : null
+    await onConfirm(shippingId, selectedPackagingId, batchName.trim() || undefined)
   }
 
   return (
@@ -145,20 +134,47 @@ export default function CreateShipmentsDialog({
         ) : (
           <>
             {/* Shipping Profile Section */}
-            <div className="space-y-1">
-              <div className="flex items-start justify-between">
-                <label className="text-sm font-medium text-muted-foreground w-32 pt-1">
-                  Verzendprofiel
-                </label>
-                <div className="flex-1">
-                  {isChangingShipping ? (
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-muted-foreground">
+                Verzendprofiel
+              </label>
+
+              {!isOverriding ? (
+                <div className="space-y-2">
+                  {/* Breakdown list */}
+                  <div className="border border-border rounded-md divide-y divide-border">
+                    {breakdownDisplay.map((entry) => (
+                      <div key={entry.id ?? 'null'} className="flex items-center justify-between px-3 py-2 text-sm">
+                        <span className="font-medium">{entry.name}</span>
+                        <span className="text-muted-foreground">
+                          {entry.count} {entry.count === 1 ? 'order' : 'orders'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Elke order behoudt het eigen verzendprofiel uit Picqer.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsOverriding(true)
+                      if (shippingMethods.length > 0 && !selectedShippingId) {
+                        setSelectedShippingId(shippingMethods[0].idshippingprovider_profile)
+                      }
+                    }}
+                    className="text-primary text-sm hover:underline"
+                  >
+                    Overschrijf alle met één profiel
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="relative">
                     <select
                       value={selectedShippingId || ''}
-                      onChange={(e) => {
-                        setSelectedShippingId(Number(e.target.value))
-                        setIsChangingShipping(false)
-                      }}
-                      className="w-full px-3 py-2 border border-border rounded-md bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      onChange={(e) => setSelectedShippingId(Number(e.target.value))}
+                      className="w-full px-3 py-2 border border-border rounded-md bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 appearance-none pr-8"
                     >
                       {shippingMethods.map((method) => (
                         <option key={method.idshippingprovider_profile} value={method.idshippingprovider_profile}>
@@ -166,29 +182,20 @@ export default function CreateShipmentsDialog({
                         </option>
                       ))}
                     </select>
-                  ) : (
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">
-                          {selectedMethod ? formatMethodName(selectedMethod) : 'Geen profiel geselecteerd'}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setIsChangingShipping(true)}
-                          className="text-primary text-sm hover:underline"
-                        >
-                          Wijzig
-                        </button>
-                      </div>
-                      <p className="text-sm text-muted-foreground mt-0.5">
-                        {wasAutoSelected
-                          ? 'Automatisch geselecteerd (geen standaard profiel ingesteld)'
-                          : 'Dit profiel is voorgeselecteerd'}
-                      </p>
-                    </div>
-                  )}
+                    <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Alle {totalOrders} orders krijgen dit verzendprofiel.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setIsOverriding(false)}
+                    className="text-primary text-sm hover:underline"
+                  >
+                    Annuleer overschrijving
+                  </button>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Packaging Section */}
@@ -251,7 +258,7 @@ export default function CreateShipmentsDialog({
           </button>
           <button
             onClick={handleConfirm}
-            disabled={isLoading || isLoadingData || !selectedShippingId}
+            disabled={isLoading || isLoadingData || (isOverriding && !selectedShippingId)}
             className="px-4 py-2 text-sm font-medium rounded-md bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2"
           >
             {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
