@@ -7,4 +7,5 @@ export interface Preset {
   leverdag: string[]
   pps: boolean
   postal_regions?: string[]
+  vervoerders?: string[]
 }

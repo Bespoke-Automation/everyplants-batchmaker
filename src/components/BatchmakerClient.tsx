@@ -7,6 +7,7 @@ import { useOrders } from '@/hooks/useOrders'
 import { useFilters } from '@/hooks/useFilters'
 import { usePresets } from '@/hooks/usePresets'
 import { usePostalRegions } from '@/hooks/usePostalRegions'
+import { useVervoerders } from '@/hooks/useVervoerders'
 import FilterPanel from '@/components/filters/FilterPanel'
 import PresetsPanel from '@/components/presets/PresetsPanel'
 import OrdersTable from '@/components/orders/OrdersTable'
@@ -17,7 +18,8 @@ import BatchCreationNotification, { type BatchCreationResult } from '@/component
 export default function BatchmakerClient() {
   const { orders, metadata, total, isLoading, error, refetch, fetchedAt } = useOrders()
   const { regions: postalRegions } = usePostalRegions()
-  const { filters, filteredOrders, updateFilter, resetFilters, applyPreset, sortOrder, maxResults, updateSortOrder, updateMaxResults } = useFilters(orders, postalRegions)
+  const { vervoerders } = useVervoerders()
+  const { filters, filteredOrders, updateFilter, resetFilters, applyPreset, sortOrder, maxResults, updateSortOrder, updateMaxResults } = useFilters(orders, postalRegions, vervoerders)
   const { presets, isLoading: presetsLoading, removePreset, addPreset } = usePresets('batch')
 
   // Batch creation state
@@ -150,6 +152,7 @@ export default function BatchmakerClient() {
             maxResults={maxResults}
             onSortOrderChange={updateSortOrder}
             onMaxResultsChange={updateMaxResults}
+            vervoerders={vervoerders}
           />
           <PresetsPanel
             presets={presets}

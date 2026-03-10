@@ -5,6 +5,7 @@ import { FilterState, initialFilterState } from '@/types/filters'
 import { ProductGroup, SingleOrderWithProduct } from '@/types/singleOrder'
 import { Preset } from '@/types/preset'
 import { PostalRegion, matchesPostalRegion } from '@/lib/supabase/postalRegions'
+import type { Vervoerder } from '@/lib/supabase/vervoerders'
 
 // Main countries for the "Overig" logic
 const KNOWN_COUNTRIES = ['NL', 'BE', 'DE', 'FR', 'AT', 'LU', 'ES', 'IT', 'SE']
@@ -18,7 +19,8 @@ function normalizeTag(tag: string): string {
 function orderMatchesFilters(
   order: SingleOrderWithProduct,
   filters: FilterState,
-  postalRegions: PostalRegion[]
+  postalRegions: PostalRegion[],
+  vervoerderProfileIds: Set<number>
 ): boolean {
   // Always exclude PPS orders (orders with plantnummer) from single orders
   if (order.hasPlantnummer) {
@@ -76,22 +78,41 @@ function orderMatchesFilters(
     }
   }
 
+  // Vervoerder filter
+  if (vervoerderProfileIds.size > 0) {
+    if (order.idShippingProvider === null || !vervoerderProfileIds.has(order.idShippingProvider)) {
+      return false
+    }
+  }
+
   return true
 }
 
 // Minimum orders for a group to be shown
 const MIN_GROUP_SIZE = 5
 
-export function useSingleOrderFilters(groups: ProductGroup[], postalRegions: PostalRegion[] = []) {
+export function useSingleOrderFilters(groups: ProductGroup[], postalRegions: PostalRegion[] = [], vervoerders: Vervoerder[] = []) {
   const [filters, setFilters] = useState<FilterState>(initialFilterState)
   const [maxResults, setMaxResults] = useState<number | null>(null)
 
   const filteredGroups = useMemo(() => {
+    // Build set of shipping profile IDs for selected vervoerders
+    const vervoerderProfileIds = new Set<number>()
+    if (filters.vervoerders?.length) {
+      for (const v of vervoerders) {
+        if (filters.vervoerders.includes(v.id)) {
+          for (const p of v.profiles) {
+            vervoerderProfileIds.add(p.shipping_profile_id)
+          }
+        }
+      }
+    }
+
     return groups
       .map(group => {
         // Filter orders within the group
         let filteredOrders = group.orders.filter(order =>
-          orderMatchesFilters(order, filters, postalRegions)
+          orderMatchesFilters(order, filters, postalRegions, vervoerderProfileIds)
         )
 
         // Limit orders per group: sort oldest first, take first N
@@ -118,7 +139,7 @@ export function useSingleOrderFilters(groups: ProductGroup[], postalRegions: Pos
       .filter(group => group.totalCount >= MIN_GROUP_SIZE)
       // Sort by total count descending
       .sort((a, b) => b.totalCount - a.totalCount)
-  }, [groups, filters, postalRegions, maxResults])
+  }, [groups, filters, postalRegions, vervoerders, maxResults])
 
   const updateFilter = useCallback(<K extends keyof FilterState>(
     key: K,
@@ -140,6 +161,7 @@ export function useSingleOrderFilters(groups: ProductGroup[], postalRegions: Pos
       leverdagen: preset.leverdag,
       pps: preset.pps ? 'ja' : 'nee',
       postalRegions: preset.postal_regions?.length ? preset.postal_regions : undefined,
+      vervoerders: preset.vervoerders?.length ? preset.vervoerders : undefined,
     })
   }, [])
 

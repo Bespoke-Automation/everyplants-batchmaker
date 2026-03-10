@@ -5,6 +5,7 @@ import { FilterState, initialFilterState } from '@/types/filters'
 import { TransformedOrder } from '@/types/order'
 import { Preset } from '@/types/preset'
 import { PostalRegion, matchesPostalRegion } from '@/lib/supabase/postalRegions'
+import type { Vervoerder } from '@/lib/supabase/vervoerders'
 
 // Main countries for the "Overig" logic
 const KNOWN_COUNTRIES = ['NL', 'BE', 'DE', 'FR', 'AT', 'LU', 'ES', 'IT', 'SE']
@@ -16,7 +17,7 @@ function normalizeTag(tag: string): string {
 
 export type SortOrder = 'oldest' | 'newest'
 
-export function useFilters(orders: TransformedOrder[], postalRegions: PostalRegion[] = []) {
+export function useFilters(orders: TransformedOrder[], postalRegions: PostalRegion[] = [], vervoerders: Vervoerder[] = []) {
   const [filters, setFilters] = useState<FilterState>(initialFilterState)
   const [sortOrder, setSortOrder] = useState<SortOrder>('oldest')
   const [maxResults, setMaxResults] = useState<number | null>(null)
@@ -24,6 +25,18 @@ export function useFilters(orders: TransformedOrder[], postalRegions: PostalRegi
   const filteredOrders = useMemo(() => {
     // Pre-normalize filter tags for comparison
     const normalizedFilterTags = filters.tags.map(normalizeTag)
+
+    // Build set of shipping profile IDs for selected vervoerders
+    const vervoerderProfileIds = new Set<number>()
+    if (filters.vervoerders?.length) {
+      for (const v of vervoerders) {
+        if (filters.vervoerders.includes(v.id)) {
+          for (const p of v.profiles) {
+            vervoerderProfileIds.add(p.shipping_profile_id)
+          }
+        }
+      }
+    }
 
     const filtered = orders.filter(order => {
       // Retailer filter
@@ -85,6 +98,13 @@ export function useFilters(orders: TransformedOrder[], postalRegions: PostalRegi
         }
       }
 
+      // Vervoerder filter (matches if order's shipping profile belongs to a selected vervoerder)
+      if (filters.vervoerders?.length && vervoerderProfileIds.size > 0) {
+        if (order.idShippingProvider === null || !vervoerderProfileIds.has(order.idShippingProvider)) {
+          return false
+        }
+      }
+
       return true
     })
 
@@ -100,7 +120,7 @@ export function useFilters(orders: TransformedOrder[], postalRegions: PostalRegi
     }
 
     return filtered
-  }, [orders, filters, postalRegions, sortOrder, maxResults])
+  }, [orders, filters, postalRegions, vervoerders, sortOrder, maxResults])
 
   const updateFilter = useCallback(<K extends keyof FilterState>(
     key: K,
@@ -123,6 +143,7 @@ export function useFilters(orders: TransformedOrder[], postalRegions: PostalRegi
       leverdagen: preset.leverdag,
       pps: preset.pps ? 'ja' : 'nee',
       postalRegions: preset.postal_regions?.length ? preset.postal_regions : undefined,
+      vervoerders: preset.vervoerders?.length ? preset.vervoerders : undefined,
     })
   }, [])
 

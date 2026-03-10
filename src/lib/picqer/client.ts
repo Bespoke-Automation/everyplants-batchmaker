@@ -345,6 +345,44 @@ export async function getTags(): Promise<PicqerTag[]> {
 }
 
 /**
+ * Get all shipping providers and their profiles
+ */
+export async function getAllShippingProviders(): Promise<ShippingMethod[]> {
+  try {
+    const response = await rateLimitedFetch(
+      `${PICQER_BASE_URL}/shippingproviders`,
+      {
+        method: 'GET',
+        headers: {
+          'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+          'User-Agent': 'EveryPlants-Batchmaker/2.0',
+          'Content-Type': 'application/json',
+        },
+      }
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('Picqer API error fetching shipping providers:', response.status, errorText)
+      return []
+    }
+
+    const providers: { idshippingprovider: number; name: string; profiles: { idshippingprovider_profile: number; name: string }[] }[] = await response.json()
+
+    return providers.flatMap(provider =>
+      provider.profiles.map(profile => ({
+        idshippingprovider_profile: profile.idshippingprovider_profile,
+        name: profile.name,
+        carrier: provider.name,
+      }))
+    )
+  } catch (error) {
+    console.error('Error fetching shipping providers:', error)
+    return []
+  }
+}
+
+/**
  * Get available shipping methods for a picklist
  */
 export async function getPicklistShippingMethods(picklistId: number): Promise<ShippingMethod[]> {

@@ -7,6 +7,7 @@ import { useSingleOrders } from '@/hooks/useSingleOrders'
 import { useSingleOrderFilters } from '@/hooks/useSingleOrderFilters'
 import { usePresets } from '@/hooks/usePresets'
 import { usePostalRegions } from '@/hooks/usePostalRegions'
+import { useVervoerders } from '@/hooks/useVervoerders'
 import { ProductGroup } from '@/types/singleOrder'
 import FilterPanel from '@/components/filters/FilterPanel'
 import PresetsPanel from '@/components/presets/PresetsPanel'
@@ -25,7 +26,8 @@ interface BatchResult {
 export default function SingleOrdersClient() {
   const { groups, totalMatchedOrders, metadata, isLoading, error, refetch, fetchedAt } = useSingleOrders()
   const { regions: postalRegions } = usePostalRegions()
-  const { filters, filteredGroups, updateFilter, resetFilters, applyPreset, maxResults, updateMaxResults } = useSingleOrderFilters(groups, postalRegions)
+  const { vervoerders } = useVervoerders()
+  const { filters, filteredGroups, updateFilter, resetFilters, applyPreset, maxResults, updateMaxResults } = useSingleOrderFilters(groups, postalRegions, vervoerders)
   const { presets, isLoading: presetsLoading, removePreset, addPreset } = usePresets('single_order')
   const [selectedGroups, setSelectedGroups] = useState<ProductGroup[]>([])
 
@@ -266,6 +268,7 @@ export default function SingleOrdersClient() {
             postalRegions={postalRegions}
             maxResults={maxResults}
             onMaxResultsChange={updateMaxResults}
+            vervoerders={vervoerders}
           />
           <PresetsPanel
             presets={presets}

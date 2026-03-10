@@ -8,6 +8,7 @@ import { COUNTRIES, COUNTRY_NAMES, DAYS } from '@/constants'
 import { Preset } from '@/types/preset'
 import PresetNameDialog from '@/components/ui/PresetNameDialog'
 import { PostalRegion } from '@/lib/supabase/postalRegions'
+import type { Vervoerder } from '@/lib/supabase/vervoerders'
 
 interface FilterPanelProps {
   filters: FilterState
@@ -29,6 +30,7 @@ interface FilterPanelProps {
   maxResults?: number | null
   onSortOrderChange?: (order: SortOrder) => void
   onMaxResultsChange?: (value: number | null) => void
+  vervoerders?: Vervoerder[]
 }
 
 interface MultiSelectDropdownProps {
@@ -331,6 +333,7 @@ export default function FilterPanel({
   maxResults = null,
   onSortOrderChange,
   onMaxResultsChange,
+  vervoerders = [],
 }: FilterPanelProps) {
   const [isPresetDialogOpen, setIsPresetDialogOpen] = useState(false)
   const [isCreatingPreset, setIsCreatingPreset] = useState(false)
@@ -392,6 +395,7 @@ export default function FilterPanel({
         leverdag: filters.leverdagen,
         pps: filters.pps === 'ja',
         postal_regions: filters.postalRegions || [],
+        vervoerders: filters.vervoerders || [],
       }
       await onCreatePreset(preset)
       setIsPresetDialogOpen(false)
@@ -485,6 +489,24 @@ export default function FilterPanel({
               placeholder="Alle regio's"
             />
           </div>
+
+          {/* Vervoerder Dropdown */}
+          {vervoerders.length > 0 && (
+            <div>
+              <label className="text-xs font-bold text-muted-foreground uppercase mb-1 block">
+                Vervoerder
+              </label>
+              <MultiSelectDropdown
+                label="Vervoerder"
+                options={vervoerders.map(v => v.id)}
+                selected={filters.vervoerders || []}
+                onChange={(selected) => onFilterChange('vervoerders', selected.length ? selected : undefined)}
+                disabled={isLoading}
+                placeholder="Alle vervoerders"
+                displayNames={Object.fromEntries(vervoerders.map(v => [v.id, v.name]))}
+              />
+            </div>
+          )}
 
           {/* Leverdag Dropdown & Label */}
           <div className="grid grid-cols-2 gap-4">
