@@ -68,8 +68,19 @@ export const processSingleOrderBatch = inngest.createFunction(
 
     // Process each label as a separate step (enables checkpointing)
     for (const label of queuedLabels) {
+      // Safety wrapper: ensure step NEVER throws so one label failure can't kill the function
       const result = await step.run(`process-label-${label.id}`, async () => {
-        return await processLabel(label, batchId, batch.shippingProviderId, batch.packagingId)
+        try {
+          return await processLabel(label, batchId, batch.shippingProviderId, batch.packagingId)
+        } catch (e) {
+          // processLabel's own catch failed (e.g. Supabase down during error recording)
+          const msg = e instanceof Error ? e.message : "Unknown error"
+          console.error(`[${batchId}] Unrecoverable error for label ${label.id}: ${msg}`)
+          try {
+            await updateShipmentLabel(label.id, { status: "error", error_message: `Processing failed: ${msg}` })
+          } catch { /* label stays in intermediate state, retry endpoint will catch it */ }
+          return { success: false, error: msg }
+        }
       })
 
       if (result.success) {

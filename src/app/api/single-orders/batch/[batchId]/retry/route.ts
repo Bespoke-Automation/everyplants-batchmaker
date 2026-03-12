@@ -44,7 +44,8 @@ export async function POST(
 
     if (errorLabelsErr) throw errorLabelsErr
 
-    // Find stuck labels (queued/pending older than 10 minutes)
+    // Find stuck labels (non-terminal statuses older than 10 minutes)
+    // Includes intermediate statuses that can occur when processing crashes mid-label
     const stuckCutoff = new Date(Date.now() - TEN_MINUTES_MS).toISOString()
 
     const { data: stuckLabels, error: stuckLabelsErr } = await supabase
@@ -52,7 +53,7 @@ export async function POST(
       .from('shipment_labels')
       .select('id')
       .eq('batch_id', batchId)
-      .in('status', ['queued', 'pending'])
+      .in('status', ['queued', 'pending', 'shipment_created', 'label_fetched', 'label_edited'])
       .lt('created_at', stuckCutoff)
 
     if (stuckLabelsErr) throw stuckLabelsErr

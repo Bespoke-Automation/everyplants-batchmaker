@@ -247,10 +247,16 @@ export interface FailedLabel {
   error_message: string | null
 }
 
+export interface StuckLabel {
+  order_reference: string | null
+  status: string
+}
+
 export interface EnrichedBatch extends SingleOrderBatch {
   plants: string[]
   retailers: string[]
   failed_labels: FailedLabel[]
+  stuck_labels: StuckLabel[]
   has_stuck_labels: boolean
 }
 
@@ -327,10 +333,12 @@ export async function getBatchHistory(
   // Group labels by batch_id
   const TEN_MINUTES_MS = 10 * 60 * 1000
   const now = Date.now()
+  const NON_TERMINAL_STATUSES = ['queued', 'pending', 'shipment_created', 'label_fetched', 'label_edited']
   const labelsByBatch = new Map<string, {
     plants: Set<string>
     retailers: Set<string>
     failed_labels: FailedLabel[]
+    stuck_labels: StuckLabel[]
     has_stuck_labels: boolean
   }>()
 
@@ -340,6 +348,7 @@ export async function getBatchHistory(
         plants: new Set(),
         retailers: new Set(),
         failed_labels: [],
+        stuck_labels: [],
         has_stuck_labels: false,
       })
     }
@@ -355,11 +364,15 @@ export async function getBatchHistory(
     }
 
     if (
-      (label.status === 'queued' || label.status === 'pending') &&
+      NON_TERMINAL_STATUSES.includes(label.status) &&
       label.created_at &&
       now - new Date(label.created_at).getTime() > TEN_MINUTES_MS
     ) {
       entry.has_stuck_labels = true
+      entry.stuck_labels.push({
+        order_reference: label.order_reference,
+        status: label.status,
+      })
     }
   }
 
@@ -371,6 +384,7 @@ export async function getBatchHistory(
       plants: labelData ? Array.from(labelData.plants).sort() : [],
       retailers: labelData ? Array.from(labelData.retailers).sort() : [],
       failed_labels: labelData?.failed_labels ?? [],
+      stuck_labels: labelData?.stuck_labels ?? [],
       has_stuck_labels: labelData?.has_stuck_labels ?? false,
     }
   })

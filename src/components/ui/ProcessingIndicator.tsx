@@ -83,7 +83,11 @@ export default function ProcessingIndicator({ newlyCreatedBatch }: ProcessingInd
             : stuckWithQueuedLabels ? `stuck: ${batch.queued} queued labels with no active processing for 5+ min`
             : 'no progress after 60s'
           console.log(`[ProcessingIndicator] Auto-recovering batch ${batch.batchId.slice(-8)}: ${reason}`)
-          fetch(`/api/single-orders/batch/${batch.batchId}/process`, { method: 'POST' })
+          // Use /process for finalization (all labels done), /retry for stuck labels (triggers Inngest)
+          const endpoint = stuckWithQueuedLabels && !allLabelsDone
+            ? `/api/single-orders/batch/${batch.batchId}/retry`
+            : `/api/single-orders/batch/${batch.batchId}/process`
+          fetch(endpoint, { method: 'POST' })
             .catch(err => console.error('Auto-recover failed:', err))
             .finally(() => {
               // Allow retry after 60s if still stuck

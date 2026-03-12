@@ -425,10 +425,33 @@ function BatchRow({
               )}
 
               {/* Stuck labels warning */}
-              {batch.has_stuck_labels && batch.failed_labels.length === 0 && (
-                <div className="flex items-center gap-2 text-xs text-yellow-700 bg-yellow-50 border border-yellow-100 rounded px-3 py-2">
-                  <Clock className="w-3.5 h-3.5 shrink-0" />
-                  <span>Er zijn labels die langer dan 10 minuten in de wachtrij staan.</span>
+              {batch.has_stuck_labels && (
+                <div>
+                  <h4 className="text-xs font-semibold text-yellow-700 mb-2 flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5" />
+                    Vastgelopen labels ({batch.stuck_labels?.length || '?'})
+                  </h4>
+                  {batch.stuck_labels && batch.stuck_labels.length > 0 ? (
+                    <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                      {batch.stuck_labels.map((label, i) => (
+                        <div
+                          key={i}
+                          className="flex items-start gap-2 text-xs bg-yellow-50 border border-yellow-100 rounded px-3 py-2"
+                        >
+                          <span className="font-medium text-yellow-800 shrink-0">
+                            {label.order_reference || `Label ${i + 1}`}
+                          </span>
+                          <span className="text-yellow-700">
+                            Status: {label.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-xs text-yellow-700 bg-yellow-50 border border-yellow-100 rounded px-3 py-2">
+                      <span>Er zijn labels die langer dan 10 minuten in de wachtrij staan.</span>
+                    </div>
+                  )}
                 </div>
               )}
 
