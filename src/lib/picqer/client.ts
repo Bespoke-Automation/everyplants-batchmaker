@@ -249,13 +249,17 @@ export interface CreateBatchResult {
   batchid: string
   status: string
   created: string
+  total_picklists: number
 }
 
 /**
- * Create a picklist batch from a list of picklist IDs
+ * Create a picklist batch from a list of picklist IDs.
+ * Validates that Picqer actually added all requested picklists to the batch.
+ * Throws if there's a mismatch (Picqer silently skips picklists that aren't in 'new' status).
  */
 export async function createPicklistBatch(picklistIds: number[]): Promise<CreateBatchResult> {
   console.log(`Creating batch with ${picklistIds.length} picklists...`)
+  console.log(`Picklist IDs: ${picklistIds.join(', ')}`)
 
   const response = await rateLimitedFetch(`${PICQER_BASE_URL}/picklists/batches`, {
     method: 'POST',
@@ -274,7 +278,28 @@ export async function createPicklistBatch(picklistIds: number[]): Promise<Create
   }
 
   const result = await response.json()
-  console.log(`Batch created: ${result.idpicklist_batch}`)
+  console.log(`Batch created: ${result.idpicklist_batch}, POST response total_picklists: ${result.total_picklists}, requested: ${picklistIds.length}`)
+
+  // Post-creation verification: fetch the batch back to confirm all picklists were added.
+  // Picqer silently skips picklists that aren't in 'new' status, returning success
+  // even when only a subset was added. This caused batch 8313996 to lose 42 of 48 picklists.
+  const verifiedBatch = await getPicklistBatch(result.idpicklist_batch)
+  const actualCount = verifiedBatch.total_picklists
+
+  console.log(`Batch ${result.idpicklist_batch} verified: ${actualCount} picklists confirmed (requested ${picklistIds.length})`)
+
+  if (actualCount !== picklistIds.length) {
+    // Log which picklists are missing if the detail response includes picklist IDs
+    if (verifiedBatch.picklists) {
+      const addedIds = new Set(verifiedBatch.picklists.map(p => p.idpicklist))
+      const missingIds = picklistIds.filter(id => !addedIds.has(id))
+      console.error(`Missing picklist IDs: ${missingIds.join(', ')}`)
+    }
+
+    const msg = `Picqer batch ${result.idpicklist_batch} only contains ${actualCount} of ${picklistIds.length} requested picklists. Some picklists may not be in 'new' status.`
+    console.error(msg)
+    throw new Error(msg)
+  }
 
   return result
 }

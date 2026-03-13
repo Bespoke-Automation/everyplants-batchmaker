@@ -110,7 +110,9 @@ export async function POST(request: Request) {
         {
           success: false,
           batchId,
-          error: 'Failed to create Picqer batch',
+          error: errorMsg.includes('only contains')
+            ? 'Niet alle picklists konden aan de batch worden toegevoegd. Sommige picklists zijn mogelijk al verwerkt of niet meer beschikbaar.'
+            : 'Failed to create Picqer batch',
           details: errorMsg,
         },
         { status: 500 }

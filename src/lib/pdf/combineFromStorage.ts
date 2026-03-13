@@ -35,9 +35,13 @@ export async function combineLabelsFromStorage(
     // Download chunk in parallel
     const downloads = await Promise.allSettled(
       chunk.map(async (label) => {
-        const url = new URL(label.edited_label_path!)
-        const pathParts = url.pathname.split('/storage/v1/object/public/shipment-labels/')
-        const filePath = pathParts[1]
+        // Extract storage path from public URL without using new URL() parser,
+        // which would strip everything after '#' (common in order references like #FLORD...)
+        const marker = '/storage/v1/object/public/shipment-labels/'
+        const markerIdx = label.edited_label_path!.indexOf(marker)
+        const filePath = markerIdx !== -1
+          ? decodeURIComponent(label.edited_label_path!.slice(markerIdx + marker.length))
+          : null
         if (!filePath) return null
 
         const { data, error } = await supabase.storage.from('shipment-labels').download(filePath)

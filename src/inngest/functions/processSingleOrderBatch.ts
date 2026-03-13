@@ -262,7 +262,9 @@ async function processLabel(
     await updateShipmentLabel(label.id, { status: "label_edited" })
 
     // Upload edited label to storage
-    const labelFileName = `${label.order_reference || label.picklist_id}_label.pdf`
+    // Sanitize filename: remove # (breaks URL parsing) and / (path separator)
+    const safeRef = (label.order_reference || String(label.picklist_id)).replace(/[#\/]/g, '_')
+    const labelFileName = `${safeRef}_label.pdf`
     const labelUrl = await uploadPdfToStorage(batchId, labelFileName, editedLabelBuffer)
 
     await updateShipmentLabel(label.id, {
