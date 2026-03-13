@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { calculateAdvice } from '@/lib/engine/packagingEngine'
+import { logActivity } from '@/lib/supabase/activityLog'
+import { getRequestUser } from '@/lib/supabase/getRequestUser'
 
 export const dynamic = 'force-dynamic'
 
@@ -69,6 +71,17 @@ export async function POST(request: Request) {
     console.log(`[engine/calculate] Calculating advice for order ${orderId} with ${products.length} products${countryCode ? ` (country: ${countryCode})` : ''}`)
 
     const advice = await calculateAdvice(orderId, picklistId, products, shippingProviderProfileId, countryCode?.toUpperCase())
+
+    const user = await getRequestUser()
+    await logActivity({
+      user_id: user?.id,
+      user_email: user?.email,
+      user_name: user?.name,
+      action: 'engine.advice_calculated',
+      module: 'verpakkingsmodule',
+      description: `Verpakkingsadvies berekend voor order ${orderId}`,
+      metadata: { order_id: orderId, product_count: products.length, confidence: advice?.confidence },
+    })
 
     return NextResponse.json({ success: true, advice })
   } catch (error) {

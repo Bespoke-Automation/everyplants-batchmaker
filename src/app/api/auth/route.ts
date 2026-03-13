@@ -1,53 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server'
+import { createAuthClient } from '@/lib/supabase/server'
 
-export async function POST(request: NextRequest) {
-  try {
-    const { password } = await request.json();
-    const correctPassword = process.env.APP_PASSWORD;
-
-    if (!correctPassword) {
-      return NextResponse.json(
-        { error: 'Server configuration error' },
-        { status: 500 }
-      );
-    }
-
-    if (password !== correctPassword) {
-      return NextResponse.json(
-        { error: 'Invalid password' },
-        { status: 401 }
-      );
-    }
-
-    const response = NextResponse.json({ success: true });
-
-    response.cookies.set('auth', 'authenticated', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 7, // 7 days
-      path: '/',
-    });
-
-    return response;
-  } catch {
-    return NextResponse.json(
-      { error: 'Invalid request' },
-      { status: 400 }
-    );
-  }
-}
+export const dynamic = 'force-dynamic'
 
 export async function DELETE() {
-  const response = NextResponse.json({ success: true });
-
-  response.cookies.set('auth', '', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 0,
-    path: '/',
-  });
-
-  return response;
+  const supabase = await createAuthClient()
+  await supabase.auth.signOut()
+  return NextResponse.json({ success: true })
 }

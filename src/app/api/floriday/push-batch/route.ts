@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { pushProductBatchLive } from '@/lib/floriday/push-batch-service'
+import { logActivity } from '@/lib/supabase/activityLog'
+import { getRequestUser } from '@/lib/supabase/getRequestUser'
 
 /**
  * POST /api/floriday/push-batch
@@ -25,6 +27,17 @@ export async function POST(request: NextRequest) {
     if (!result.success) {
       return NextResponse.json(result, { status: 422 })
     }
+
+    const user = await getRequestUser()
+    await logActivity({
+      user_id: user?.id,
+      user_email: user?.email,
+      user_name: user?.name,
+      action: 'floriday.stock_pushed',
+      module: 'floriday',
+      description: `Voorraad gepusht naar Floriday (product ${picqerProductId})`,
+      metadata: { picqer_product_id: picqerProductId },
+    })
 
     return NextResponse.json(result)
   } catch (error) {

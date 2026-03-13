@@ -2,17 +2,19 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Search, Bell, User, LogOut, Package, Settings } from 'lucide-react'
+import { Search, Bell, User, LogOut, Package } from 'lucide-react'
+import { useAuth } from '@/components/providers/AuthProvider'
 
 export type Tab = 'batches' | 'single-orders' | 'settings'
 
 export default function Header() {
   const pathname = usePathname()
   const router = useRouter()
+  const { profile, signOut } = useAuth()
   const activeTab: Tab = pathname === '/batchmaker/single-orders' ? 'single-orders' : pathname === '/batchmaker/settings' ? 'settings' : 'batches'
 
   const handleLogout = async () => {
-    await fetch('/api/auth', { method: 'DELETE' })
+    await signOut()
     router.push('/login')
     router.refresh()
   }
@@ -75,6 +77,12 @@ export default function Header() {
           <Bell className="w-5 h-5" />
           <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-destructive rounded-full"></span>
         </button>
+        {profile && (
+          <span className="hidden lg:flex items-center gap-1.5 text-sm text-muted-foreground">
+            <User className="w-4 h-4" />
+            {profile.display_name}
+          </span>
+        )}
         <button
           onClick={handleLogout}
           className="flex items-center gap-2 pl-2 border-l border-border hover:text-destructive transition-colors"

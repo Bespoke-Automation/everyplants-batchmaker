@@ -1,37 +1,38 @@
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+import { createMiddlewareClient } from '@/lib/supabase/middleware'
 
-export function middleware(request: NextRequest) {
-  const authCookie = request.cookies.get('auth');
-  const isAuthenticated = authCookie?.value === 'authenticated';
-  const isLoginPage = request.nextUrl.pathname === '/login';
-  const isApiRoute = request.nextUrl.pathname.startsWith('/api');
+export async function middleware(request: NextRequest) {
+  const response = NextResponse.next({ request })
+  const supabase = createMiddlewareClient(request, response)
 
-  // Allow API routes to pass through
-  if (isApiRoute) {
-    return NextResponse.next();
+  // Refresh session — critical for SSR auth cookie management
+  const { data: { user } } = await supabase.auth.getUser()
+
+  const isLoginPage = request.nextUrl.pathname === '/login'
+  const isApiRoute = request.nextUrl.pathname.startsWith('/api')
+
+  // API routes pass through (Inngest uses signing keys, others are internal)
+  if (isApiRoute) return response
+
+  // Redirect authenticated user away from login
+  if (isLoginPage && user) {
+    return NextResponse.redirect(new URL('/', request.url))
   }
 
-  // Redirect to home if already authenticated and trying to access login
-  if (isLoginPage && isAuthenticated) {
-    return NextResponse.redirect(new URL('/', request.url));
-  }
-
-  // Allow access to login page
-  if (isLoginPage) {
-    return NextResponse.next();
-  }
+  // Allow login page
+  if (isLoginPage) return response
 
   // Redirect to login if not authenticated
-  if (!isAuthenticated) {
-    return NextResponse.redirect(new URL('/login', request.url));
+  if (!user) {
+    return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  return NextResponse.next();
+  return response
 }
 
 export const config = {
   matcher: [
     '/((?!_next/static|_next/image|favicon.ico).*)',
   ],
-};
+}

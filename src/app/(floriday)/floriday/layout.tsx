@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
-import { Package, LogOut, ArrowLeft } from 'lucide-react'
+import { Package, LogOut, ArrowLeft, User } from 'lucide-react'
+import { useAuth } from '@/components/providers/AuthProvider'
 
 const NAV_LINKS = [
   { href: '/floriday', label: 'Dashboard' },
@@ -18,9 +19,10 @@ export default function FloridayLayout({
 }) {
   const router = useRouter()
   const pathname = usePathname()
+  const { profile, signOut } = useAuth()
 
   const handleLogout = async () => {
-    await fetch('/api/auth', { method: 'DELETE' })
+    await signOut()
     router.push('/login')
     router.refresh()
   }
@@ -65,14 +67,22 @@ export default function FloridayLayout({
             ))}
           </nav>
         </div>
-        <button
-          onClick={handleLogout}
-          className="flex items-center gap-2 hover:text-destructive transition-colors"
-          title="Uitloggen"
-        >
-          <LogOut className="w-5 h-5" />
-          <span className="text-sm font-medium hidden sm:inline-block">Uitloggen</span>
-        </button>
+        <div className="flex items-center gap-3">
+          {profile && (
+            <span className="hidden sm:flex items-center gap-1.5 text-sm text-muted-foreground">
+              <User className="w-4 h-4" />
+              {profile.display_name}
+            </span>
+          )}
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-2 hover:text-destructive transition-colors"
+            title="Uitloggen"
+          >
+            <LogOut className="w-5 h-5" />
+            <span className="text-sm font-medium hidden sm:inline-block">Uitloggen</span>
+          </button>
+        </div>
       </header>
       {children}
     </div>

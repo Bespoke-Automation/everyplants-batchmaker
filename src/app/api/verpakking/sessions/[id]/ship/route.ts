@@ -9,6 +9,8 @@ import {
 import { createShipment, getShipmentLabel, pickAllProducts, closePicklist, fetchPicklist, cancelShipment } from '@/lib/picqer/client'
 import { supabase } from '@/lib/supabase/client'
 import { recordSessionOutcome } from '@/lib/engine/feedbackTracking'
+import { logActivity } from '@/lib/supabase/activityLog'
+import { getRequestUser } from '@/lib/supabase/getRequestUser'
 
 export const dynamic = 'force-dynamic'
 
@@ -222,6 +224,17 @@ export async function POST(
         } catch (feedbackError) {
           console.error('[verpakking] Error recording session outcome:', feedbackError)
         }
+
+        const user = await getRequestUser()
+        await logActivity({
+          user_id: user?.id,
+          user_email: user?.email,
+          user_name: user?.name,
+          action: 'session.completed',
+          module: 'verpakkingsmodule',
+          description: `Inpaksessie afgerond (picklist ${session.picklist_id})`,
+          metadata: { session_id: sessionId, picklist_id: session.picklist_id },
+        })
 
         return NextResponse.json({
           success: true,

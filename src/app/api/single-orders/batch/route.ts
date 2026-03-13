@@ -6,6 +6,8 @@ import {
   updateSingleOrderBatch,
 } from '@/lib/supabase/shipmentLabels'
 import { inngest } from '@/inngest/client'
+import { logActivity } from '@/lib/supabase/activityLog'
+import { getRequestUser } from '@/lib/supabase/getRequestUser'
 
 export const dynamic = 'force-dynamic'
 
@@ -158,6 +160,17 @@ export async function POST(request: Request) {
     })
 
     console.log(`[${batchId}] Inngest function triggered, returning immediately`)
+
+    const user = await getRequestUser()
+    await logActivity({
+      user_id: user?.id,
+      user_email: user?.email,
+      user_name: user?.name,
+      action: 'single_order_batch.created',
+      module: 'batchmaker',
+      description: `Single order batch aangemaakt (${totalOrders} orders)`,
+      metadata: { batch_id: batchId, total_orders: totalOrders, picqer_batch_ids: picqerBatchIds },
+    })
 
     return NextResponse.json({
       success: true,

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createPicklistBatch } from '@/lib/picqer/client'
 import { createBatchCreation } from '@/lib/supabase/batchCreations'
+import { logActivity } from '@/lib/supabase/activityLog'
+import { getRequestUser } from '@/lib/supabase/getRequestUser'
 
 interface CreateBatchRequest {
   picklistIds: number[]
@@ -91,6 +93,17 @@ export async function POST(request: Request) {
     } catch (dbError) {
       console.error('Failed to save batch creation to Supabase:', dbError)
     }
+
+    const user = await getRequestUser()
+    await logActivity({
+      user_id: user?.id,
+      user_email: user?.email,
+      user_name: user?.name,
+      action: 'batch.created',
+      module: 'batchmaker',
+      description: `Batch aangemaakt met ${picklistIds.length} picklists`,
+      metadata: { picqer_batch_id: batchId, picklist_count: picklistIds.length },
+    })
 
     return NextResponse.json<CreateBatchResponse>({
       success: true,
