@@ -96,7 +96,12 @@ export default function SingleOrdersClient() {
   }
 
   // Handler for actual batch creation
-  const handleConfirmBatch = async (shippingProviderId: number | null, packagingId: number | null, name?: string) => {
+  const handleConfirmBatch = async (
+    shippingProviderId: number | null,
+    packagingId: number | null,
+    name?: string,
+    profileOverrides?: Map<number | null, number>
+  ) => {
     setIsCreatingBatch(true)
 
     try {
@@ -125,12 +130,27 @@ export default function SingleOrdersClient() {
         return
       }
 
+      // Convert profile-level overrides to per-order overrides
+      let shippingOverrides: Record<string, number> | undefined
+      if (profileOverrides && profileOverrides.size > 0) {
+        shippingOverrides = {}
+        for (const group of selectedGroups) {
+          for (const order of group.orders) {
+            const override = profileOverrides.get(order.idShippingProvider)
+            if (override != null) {
+              shippingOverrides[String(order.id)] = override
+            }
+          }
+        }
+      }
+
       const response = await fetch('/api/single-orders/batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           productGroups: productGroupsPayload,
           idShippingProvider: shippingProviderId ?? undefined,
+          shippingOverrides,
           idPackaging: packagingId,
           name,
         }),

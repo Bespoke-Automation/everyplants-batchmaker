@@ -28,6 +28,7 @@ interface ProductGroupInput {
 interface BatchRequestBody {
   productGroups: ProductGroupInput[]
   idShippingProvider?: number  // Override shipping provider for all orders
+  shippingOverrides?: Record<string, number>  // Per-order shipping overrides (orderId → shippingProviderId)
   idPackaging?: number | null  // Packaging to use for all shipments
   name?: string  // Optional internal name for the batch
 }
@@ -65,7 +66,7 @@ export async function POST(request: Request) {
 
   try {
     const body: BatchRequestBody = await request.json()
-    const { productGroups, idShippingProvider, idPackaging, name } = body
+    const { productGroups, idShippingProvider, shippingOverrides, idPackaging, name } = body
 
     if (!productGroups || productGroups.length === 0) {
       return NextResponse.json(
@@ -127,6 +128,11 @@ export async function POST(request: Request) {
     console.log(`[${batchId}] Creating ${totalOrders} shipment label records...`)
 
     for (const { order, productGroup } of allOrders) {
+      // Per-order override takes precedence over batch-level override
+      const orderShippingId = shippingOverrides?.[String(order.id)]
+        ?? idShippingProvider
+        ?? null
+
       await createShipmentLabel({
         batch_id: batchId,
         picklist_id: order.idPicklist,
@@ -135,6 +141,7 @@ export async function POST(request: Request) {
         retailer: order.retailerName,
         plant_name: productGroup.displayName,
         country: order.country,
+        shipping_provider_id: orderShippingId,
       })
     }
 

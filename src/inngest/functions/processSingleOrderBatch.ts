@@ -183,11 +183,12 @@ async function processLabel(
     // Update status to processing
     await updateShipmentLabel(label.id, { status: "pending" })
 
-    // Create shipment in Picqer
-    console.log(`[${batchId}] Creating shipment for picklist ${label.picklist_id}...`)
+    // Create shipment in Picqer (per-label override takes precedence over batch-level)
+    const effectiveShippingId = label.shipping_provider_id ?? shippingProviderId
+    console.log(`[${batchId}] Creating shipment for picklist ${label.picklist_id} (shipping: ${effectiveShippingId ?? 'default'})...`)
     const shipmentResult = await createShipment(
       label.picklist_id,
-      shippingProviderId ?? undefined,
+      effectiveShippingId ?? undefined,
       packagingId
     )
 

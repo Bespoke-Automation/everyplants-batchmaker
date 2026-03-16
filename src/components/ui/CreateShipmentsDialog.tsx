@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { Loader2, ChevronDown } from 'lucide-react'
+import { Loader2, ChevronDown, Pencil, X } from 'lucide-react'
 import Dialog from './Dialog'
 
 interface ShippingMethod {
@@ -22,7 +22,12 @@ interface ShippingProfileEntry {
 interface CreateShipmentsDialogProps {
   open: boolean
   onClose: () => void
-  onConfirm: (shippingProviderId: number | null, packagingId: number | null, name?: string) => Promise<void>
+  onConfirm: (
+    shippingProviderId: number | null,
+    packagingId: number | null,
+    name?: string,
+    shippingOverrides?: Map<number | null, number>
+  ) => Promise<void>
   totalOrders: number
   totalGroups: number
   shippingProfileBreakdown: Map<number | null, ShippingProfileEntry>
@@ -48,6 +53,10 @@ export default function CreateShipmentsDialog({
   const [isLoadingData, setIsLoadingData] = useState(false)
   const [isOverriding, setIsOverriding] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Per-profile overrides: maps original profile ID to new profile ID
+  const [profileOverrides, setProfileOverrides] = useState<Map<number | null, number>>(new Map())
+  // Which profile row is currently being edited
+  const [editingProfileId, setEditingProfileId] = useState<number | null | undefined>(undefined)
 
   // Fetch data when dialog opens
   useEffect(() => {
@@ -58,6 +67,8 @@ export default function CreateShipmentsDialog({
       setError(null)
       setBatchName('')
       setSelectedShippingId(null)
+      setProfileOverrides(new Map())
+      setEditingProfileId(undefined)
     }
   }, [open, firstPicklistId])
 
@@ -96,16 +107,47 @@ export default function CreateShipmentsDialog({
     return method.name
   }
 
+  const getProfileDisplayName = (id: number | null) => {
+    if (id == null) return 'Geen profiel'
+    const method = shippingMethods.find(m => m.idshippingprovider_profile === id)
+    return method ? formatMethodName(method) : `Profiel #${id}`
+  }
+
   // Build display list of profiles in the breakdown
   const breakdownDisplay = useMemo(() => {
-    const entries: Array<{ id: number | null; name: string; count: number }> = []
+    const entries: Array<{ id: number | null; name: string; count: number; overrideName?: string }> = []
     for (const [id, { count }] of shippingProfileBreakdown) {
-      const method = id != null ? shippingMethods.find(m => m.idshippingprovider_profile === id) : null
-      const name = method ? formatMethodName(method) : id != null ? `Profiel #${id}` : 'Geen profiel'
-      entries.push({ id, name, count })
+      const name = getProfileDisplayName(id)
+      const overrideId = profileOverrides.get(id)
+      const overrideName = overrideId != null ? getProfileDisplayName(overrideId) : undefined
+      entries.push({ id, name, count, overrideName })
     }
     return entries
-  }, [shippingProfileBreakdown, shippingMethods])
+  }, [shippingProfileBreakdown, shippingMethods, profileOverrides])
+
+  const hasOverrides = profileOverrides.size > 0
+
+  const handleSetProfileOverride = (originalId: number | null, newId: number) => {
+    setProfileOverrides(prev => {
+      const next = new Map(prev)
+      // If setting back to original, remove the override
+      if (originalId === newId) {
+        next.delete(originalId)
+      } else {
+        next.set(originalId, newId)
+      }
+      return next
+    })
+    setEditingProfileId(undefined)
+  }
+
+  const handleRemoveOverride = (originalId: number | null) => {
+    setProfileOverrides(prev => {
+      const next = new Map(prev)
+      next.delete(originalId)
+      return next
+    })
+  }
 
   const handleConfirm = async () => {
     if (isOverriding && !selectedShippingId) {
@@ -113,7 +155,9 @@ export default function CreateShipmentsDialog({
       return
     }
     const shippingId = isOverriding ? selectedShippingId : null
-    await onConfirm(shippingId, selectedPackagingId, batchName.trim() || undefined)
+    // Pass per-profile overrides if any exist and not doing full override
+    const overrides = !isOverriding && hasOverrides ? profileOverrides : undefined
+    await onConfirm(shippingId, selectedPackagingId, batchName.trim() || undefined, overrides)
   }
 
   return (
@@ -141,24 +185,99 @@ export default function CreateShipmentsDialog({
 
               {!isOverriding ? (
                 <div className="space-y-2">
-                  {/* Breakdown list */}
+                  {/* Breakdown list with per-row editing */}
                   <div className="border border-border rounded-md divide-y divide-border">
-                    {breakdownDisplay.map((entry) => (
-                      <div key={entry.id ?? 'null'} className="flex items-center justify-between px-3 py-2 text-sm">
-                        <span className="font-medium">{entry.name}</span>
-                        <span className="text-muted-foreground">
-                          {entry.count} {entry.count === 1 ? 'order' : 'orders'}
-                        </span>
-                      </div>
-                    ))}
+                    {breakdownDisplay.map((entry) => {
+                      const isEditing = editingProfileId === entry.id
+                      const hasOverride = profileOverrides.has(entry.id)
+
+                      return (
+                        <div key={entry.id ?? 'null'} className="px-3 py-2 text-sm">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              {hasOverride ? (
+                                <span className="flex items-center gap-1 min-w-0">
+                                  <span className="text-muted-foreground line-through truncate">{entry.name}</span>
+                                  <span className="text-muted-foreground">→</span>
+                                  <span className="font-medium text-primary truncate">{entry.overrideName}</span>
+                                </span>
+                              ) : (
+                                <span className="font-medium truncate">{entry.name}</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 ml-2 shrink-0">
+                              <span className="text-muted-foreground">
+                                {entry.count} {entry.count === 1 ? 'order' : 'orders'}
+                              </span>
+                              {hasOverride ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveOverride(entry.id)}
+                                  className="p-1 text-muted-foreground hover:text-foreground rounded transition-colors"
+                                  title="Overschrijving ongedaan maken"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingProfileId(isEditing ? undefined : entry.id)}
+                                  className="p-1 text-muted-foreground hover:text-foreground rounded transition-colors"
+                                  title="Verzendprofiel wijzigen"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Inline dropdown when editing */}
+                          {isEditing && (
+                            <div className="mt-2 flex items-center gap-2">
+                              <div className="relative flex-1">
+                                <select
+                                  autoFocus
+                                  defaultValue=""
+                                  onChange={(e) => {
+                                    if (e.target.value) {
+                                      handleSetProfileOverride(entry.id, Number(e.target.value))
+                                    }
+                                  }}
+                                  className="w-full px-3 py-1.5 border border-border rounded-md bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 appearance-none pr-8"
+                                >
+                                  <option value="" disabled>Kies verzendprofiel...</option>
+                                  {shippingMethods.map((method) => (
+                                    <option key={method.idshippingprovider_profile} value={method.idshippingprovider_profile}>
+                                      {formatMethodName(method)}
+                                    </option>
+                                  ))}
+                                </select>
+                                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setEditingProfileId(undefined)}
+                                className="text-xs text-muted-foreground hover:text-foreground"
+                              >
+                                Annuleer
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Elke order behoudt het eigen verzendprofiel uit Picqer.
+                    {hasOverrides
+                      ? 'Gewijzigde profielen worden overschreven, overige orders behouden hun eigen profiel.'
+                      : 'Elke order behoudt het eigen verzendprofiel uit Picqer.'}
                   </p>
                   <button
                     type="button"
                     onClick={() => {
                       setIsOverriding(true)
+                      setProfileOverrides(new Map())
+                      setEditingProfileId(undefined)
                       if (shippingMethods.length > 0 && !selectedShippingId) {
                         setSelectedShippingId(shippingMethods[0].idshippingprovider_profile)
                       }
