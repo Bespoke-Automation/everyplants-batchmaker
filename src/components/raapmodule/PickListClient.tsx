@@ -66,7 +66,7 @@ export default function PickListClient({ category, label }: Props) {
   useEffect(() => { load() }, [load])
 
   const toggleCheck = async (productId: number, location: string) => {
-    if (!sessionId) return
+    if (!sessionId || isSaving) return
 
     const key = `${productId}::${location}`
     const updatedItems = items.map(item => {

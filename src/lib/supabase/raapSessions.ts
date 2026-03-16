@@ -71,7 +71,8 @@ export async function createSession(
     completeQuery = completeQuery.is('vervoerder_id', null)
   }
 
-  await completeQuery
+  const { error: completeError } = await completeQuery
+  if (completeError) throw completeError
 
   // Create new session
   const { data, error } = await supabase
@@ -120,11 +121,12 @@ export async function upsertSessionItems(
   items: Omit<RaapSessionItem, 'id' | 'session_id' | 'created_at' | 'updated_at'>[]
 ): Promise<void> {
   // Replace all items for this session
-  await supabase
+  const { error: deleteError } = await supabase
     .schema('batchmaker')
     .from('raap_session_items')
     .delete()
     .eq('session_id', sessionId)
+  if (deleteError) throw deleteError
 
   if (items.length === 0) return
 
