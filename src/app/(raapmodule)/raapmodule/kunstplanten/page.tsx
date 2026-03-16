@@ -1,3 +1,5 @@
+import PickListClient from '@/components/raapmodule/PickListClient'
+
 export default function KunstplantenPage() {
-  return <div className="flex-1 p-6"><p>Kunstplanten — coming soon</p></div>
+  return <PickListClient category="kunstplanten" label="Kunstplanten" />
 }
