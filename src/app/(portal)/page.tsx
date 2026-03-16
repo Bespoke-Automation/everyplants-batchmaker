@@ -16,6 +16,16 @@ const MODULES = [
     iconColor: 'text-primary',
   },
   {
+    key: 'module_raapmodule' as const,
+    href: '/raapmodule',
+    label: 'Raapmodule',
+    description: 'Rapen per categorie en vervoerder',
+    icon: Leaf,
+    hoverBorder: 'hover:border-primary',
+    iconBg: 'bg-primary/10 group-hover:bg-primary/20',
+    iconColor: 'text-primary',
+  },
+  {
     key: 'module_verpakkingsmodule' as const,
     href: '/verpakkingsmodule',
     label: 'Verpakkingsmodule',
@@ -34,16 +44,6 @@ const MODULES = [
     hoverBorder: 'hover:border-emerald-500',
     iconBg: 'bg-emerald-600/10 group-hover:bg-emerald-600/20',
     iconColor: 'text-emerald-600',
-  },
-  {
-    key: 'module_raapmodule' as const,
-    href: '/raapmodule',
-    label: 'Raapmodule',
-    description: 'Rapen per categorie en vervoerder',
-    icon: Leaf,
-    hoverBorder: 'hover:border-primary',
-    iconBg: 'bg-primary/10 group-hover:bg-primary/20',
-    iconColor: 'text-primary',
   },
 ]
 
