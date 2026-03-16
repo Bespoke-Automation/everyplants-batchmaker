@@ -1,4 +1,4 @@
-import { PicqerOrder, PicqerPicklist, PicqerPicklistWithProducts, PicqerProduct, PicqerTag, PicqerShipment, CreateShipmentResult, CancelShipmentResult, GetLabelResult, PicqerPackaging, PicqerPackingStation, ShippingMethod, PicqerUser, PicqerPicklistBatch, PicqerBatchPicklist, type MulticolloParcelInput, PicqerProductFull, PicqerCompositionPart, PicqerCustomer, CreateOrderInput, PicqerProductStock, PicqerPurchaseOrder, PicqerExpectedPurchaseOrder, PicqerWebhook } from './types'
+import { PicqerOrder, PicqerPicklist, PicqerPicklistWithProducts, PicqerProduct, PicqerTag, PicqerShipment, CreateShipmentResult, CancelShipmentResult, GetLabelResult, PicqerPackaging, PicqerPackingStation, ShippingMethod, PicqerUser, PicqerPicklistBatch, PicqerBatchPicklist, type MulticolloParcelInput, PicqerProductFull, PicqerCompositionPart, PicqerCustomer, CreateOrderInput, PicqerProductStock, PicqerPurchaseOrder, PicqerExpectedPurchaseOrder, PicqerWebhook, PicqerLocation } from './types'
 
 const PICQER_SUBDOMAIN = process.env.PICQER_SUBDOMAIN!
 const PICQER_API_KEY = process.env.PICQER_API_KEY!
@@ -2521,6 +2521,55 @@ export async function reactivateWebhook(idhook: number): Promise<PicqerWebhook> 
   if (!response.ok) {
     const errorText = await response.text()
     throw new Error(`Picqer API error reactivating webhook ${idhook}: ${response.status} - ${errorText}`)
+  }
+
+  return response.json()
+}
+
+/**
+ * Fetch all warehouse locations from Picqer.
+ * Note: returns first page only (up to 100 locations). Sufficient for typical warehouses.
+ */
+export async function getLocations(): Promise<PicqerLocation[]> {
+  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/locations`, {
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      'Content-Type': 'application/json',
+    },
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error('Picqer API error fetching locations:', response.status, errorText)
+    throw new Error(`Picqer API error: ${response.status}`)
+  }
+
+  return response.json()
+}
+
+/**
+ * Fetch all picklists within a specific batch.
+ * Returns PicqerBatchPicklist[] (summary, without products).
+ * Use fetchPicklist(idpicklist) to get full picklist with products + idshippingprovider_profile.
+ */
+export async function getPicklistBatchPicklists(batchId: number): Promise<PicqerBatchPicklist[]> {
+  const response = await rateLimitedFetch(
+    `${PICQER_BASE_URL}/picklists/batches/${batchId}/picklists`,
+    {
+      headers: {
+        'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+        'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      },
+      cache: 'no-store',
+    }
+  )
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Picqer API error fetching picklists for batch ${batchId}:`, response.status, errorText)
+    throw new Error(`Picqer API error: ${response.status}`)
   }
 
   return response.json()

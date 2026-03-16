@@ -111,6 +111,8 @@ export interface PicqerPicklistProduct {
   image?: string | null // Enriched from batch products (not in Picqer response)
   stocklocation?: string | null // Deprecated but still returned by Picqer
   pick_locations?: PicqerPickLocation[]
+  idlocation?: number | null   // warehouse location ID
+  location?: string | null     // warehouse location name
 }
 
 // Extended picklist with products
@@ -442,4 +444,11 @@ export interface PicqerWebhook {
   active: boolean
   created: string
   updated: string
+}
+
+export interface PicqerLocation {
+  idlocation: number
+  name: string
+  idwarehouse: number
+  num_products?: number
 }
