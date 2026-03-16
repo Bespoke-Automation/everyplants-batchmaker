@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Package, Box, Flower2, Shield } from 'lucide-react'
+import { Package, Box, Flower2, Shield, Leaf } from 'lucide-react'
 import { useAuth } from '@/components/providers/AuthProvider'
 
 const MODULES = [
@@ -34,6 +34,16 @@ const MODULES = [
     hoverBorder: 'hover:border-emerald-500',
     iconBg: 'bg-emerald-600/10 group-hover:bg-emerald-600/20',
     iconColor: 'text-emerald-600',
+  },
+  {
+    key: 'module_raapmodule' as const,
+    href: '/raapmodule',
+    label: 'Raapmodule',
+    description: 'Rapen per categorie en vervoerder',
+    icon: Leaf,
+    hoverBorder: 'hover:border-primary',
+    iconBg: 'bg-primary/10 group-hover:bg-primary/20',
+    iconColor: 'text-primary',
   },
 ]
 
