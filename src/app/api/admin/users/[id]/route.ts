@@ -10,6 +10,7 @@ const ALLOWED_FIELDS = [
   'module_batchmaker',
   'module_verpakkingsmodule',
   'module_floriday',
+  'module_raapmodule',
 ]
 
 export async function PATCH(

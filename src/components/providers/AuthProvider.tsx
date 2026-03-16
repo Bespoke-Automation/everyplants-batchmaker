@@ -12,6 +12,7 @@ export interface UserProfile {
   module_batchmaker: boolean
   module_verpakkingsmodule: boolean
   module_floriday: boolean
+  module_raapmodule: boolean
   picqer_user_id: number | null
 }
 
