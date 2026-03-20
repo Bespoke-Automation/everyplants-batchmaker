@@ -309,6 +309,14 @@ export async function POST(
           console.error('[ship-all] Error recording session outcome:', feedbackError)
         }
 
+        // Analyze session for capacity learning (non-blocking)
+        try {
+          const { analyzeCompletedSession } = await import('@/lib/engine/sessionAnalyzer')
+          await analyzeCompletedSession(sessionId)
+        } catch (analyzerError) {
+          console.error('[ship-all] Error analyzing session for capacity feedback:', analyzerError)
+        }
+
         return NextResponse.json({
           boxes: results,
           multicollo: isMulticollo,

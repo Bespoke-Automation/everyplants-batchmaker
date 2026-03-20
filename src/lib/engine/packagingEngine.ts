@@ -32,6 +32,8 @@ export interface ShippingUnitEntry {
 export interface ClassificationResult {
   shippingUnits: Map<string, ShippingUnitEntry>  // keyed by shipping_unit id
   unclassified: string[]                          // productcodes that couldn't be classified
+  excludedPackaging: string[]                     // productcodes skipped because they are packaging/box products
+  excludedNonShippable: string[]                  // productcodes skipped because they are accessories/flyers/logistics
 }
 
 export interface PackagingMatch {
@@ -107,12 +109,36 @@ interface ProductAttributeRow {
   picqer_product_id: number
   productcode: string
   product_name: string
+  product_type: string
   is_composition: boolean
   weight: number | null
   is_fragile: boolean
   is_mixable: boolean
   shipping_unit_id: string | null
   classification_status: string
+}
+
+// Cache of packaging barcodes from the packagings table (refreshed per engine call)
+let _packagingBarcodesCache: Set<string> | null = null
+let _packagingBarcodesCacheTime = 0
+const PACKAGING_BARCODES_CACHE_TTL = 60_000 // 1 minute
+
+async function getPackagingBarcodes(): Promise<Set<string>> {
+  if (_packagingBarcodesCache && Date.now() - _packagingBarcodesCacheTime < PACKAGING_BARCODES_CACHE_TTL) {
+    return _packagingBarcodesCache
+  }
+  const { data } = await supabase
+    .schema('batchmaker')
+    .from('packagings')
+    .select('barcode')
+    .eq('active', true)
+  const barcodes = new Set<string>()
+  for (const row of data || []) {
+    if (row.barcode) barcodes.add(row.barcode)
+  }
+  _packagingBarcodesCache = barcodes
+  _packagingBarcodesCacheTime = Date.now()
+  return barcodes
 }
 
 interface CompositionPartRow {
@@ -159,18 +185,35 @@ export async function classifyOrderProducts(
 ): Promise<ClassificationResult> {
   const shippingUnits = new Map<string, ShippingUnitEntry>()
   const unclassified: string[] = []
+  const excludedPackaging: string[] = []
+  const excludedNonShippable: string[] = []
 
   if (products.length === 0) {
-    return { shippingUnits, unclassified }
+    return { shippingUnits, unclassified, excludedPackaging, excludedNonShippable }
   }
 
-  // Fetch product attributes for all products in the order
-  const productIds = products.map(p => p.picqer_product_id)
+  // Pre-filter: exclude products whose productcode matches a known packaging barcode
+  const packagingBarcodes = await getPackagingBarcodes()
+  const realProducts: OrderProduct[] = []
+  for (const p of products) {
+    if (packagingBarcodes.has(p.productcode)) {
+      excludedPackaging.push(p.productcode)
+    } else {
+      realProducts.push(p)
+    }
+  }
+
+  if (realProducts.length === 0) {
+    return { shippingUnits, unclassified, excludedPackaging, excludedNonShippable }
+  }
+
+  // Fetch product attributes for all non-packaging products in the order
+  const productIds = realProducts.map(p => p.picqer_product_id)
 
   const { data: attributes, error: attrError } = await supabase
     .schema('batchmaker')
     .from('product_attributes')
-    .select('id, picqer_product_id, productcode, product_name, is_composition, weight, is_fragile, is_mixable, shipping_unit_id, classification_status')
+    .select('id, picqer_product_id, productcode, product_name, product_type, is_composition, weight, is_fragile, is_mixable, shipping_unit_id, classification_status')
     .in('picqer_product_id', productIds)
 
   if (attrError) {
@@ -183,8 +226,48 @@ export async function classifyOrderProducts(
     attrMap.set(row.picqer_product_id, row)
   }
 
+  // Pre-filter: exclude non-shippable products (accessories, flyers, logistics items)
+  // These don't need packaging advice and shouldn't block the engine.
+  const NON_SHIPPABLE_TYPES = new Set(['accessoire'])
+  const NON_SHIPPABLE_CODES = new Set(['100000011', '100000012', '100000013']) // Platen, Deense kar, Veiling kar
+  const shippableProducts: OrderProduct[] = []
+  for (const p of realProducts) {
+    const attr = attrMap.get(p.picqer_product_id)
+    const productType = attr?.product_type?.toLowerCase() || ''
+
+    // Known non-shippable product types
+    if (NON_SHIPPABLE_TYPES.has(productType)) {
+      excludedNonShippable.push(p.productcode)
+      continue
+    }
+
+    // Products with type "Onbekend" and no pot/height data are likely flyers/accessories
+    if (productType === 'onbekend' && attr && attr.classification_status === 'missing_data') {
+      excludedNonShippable.push(p.productcode)
+      continue
+    }
+
+    // Short numeric codes without attributes (flyers like "1", "2")
+    if (!attr && /^[0-9]{1,3}$/.test(p.productcode)) {
+      excludedNonShippable.push(p.productcode)
+      continue
+    }
+
+    // Known logistics item codes
+    if (NON_SHIPPABLE_CODES.has(p.productcode)) {
+      excludedNonShippable.push(p.productcode)
+      continue
+    }
+
+    shippableProducts.push(p)
+  }
+
+  if (shippableProducts.length === 0) {
+    return { shippingUnits, unclassified, excludedPackaging, excludedNonShippable }
+  }
+
   // ── On-demand classification: fetch missing or unclassified products from Picqer ──────
-  const missingProductIds = products
+  const missingProductIds = shippableProducts
     .filter(p => {
       const attr = attrMap.get(p.picqer_product_id)
       // Fetch if not in DB, or if not yet classified (data may have been updated in Picqer)
@@ -220,7 +303,7 @@ export async function classifyOrderProducts(
           const { data: attr } = await supabase
             .schema('batchmaker')
             .from('product_attributes')
-            .select('id, picqer_product_id, productcode, product_name, is_composition, weight, is_fragile, is_mixable, shipping_unit_id, classification_status')
+            .select('id, picqer_product_id, productcode, product_name, product_type, is_composition, weight, is_fragile, is_mixable, shipping_unit_id, classification_status')
             .eq('picqer_product_id', pid)
             .single()
 
@@ -252,7 +335,7 @@ export async function classifyOrderProducts(
   }
 
   // Identify composition products that need part expansion
-  const compositionProductIds = products
+  const compositionProductIds = shippableProducts
     .filter(p => {
       const attr = attrMap.get(p.picqer_product_id)
       return attr && attr.is_composition && attr.classification_status !== 'classified'
@@ -326,8 +409,8 @@ export async function classifyOrderProducts(
     }
   }
 
-  // Process each product
-  for (const product of products) {
+  // Process each product (packaging + non-shippable products already filtered out above)
+  for (const product of shippableProducts) {
     const attr = attrMap.get(product.picqer_product_id)
 
     if (!attr) {
@@ -375,8 +458,8 @@ export async function classifyOrderProducts(
     }
   }
 
-  console.log(`[packagingEngine] Classification result: ${shippingUnits.size} shipping unit types, ${unclassified.length} unclassified`)
-  return { shippingUnits, unclassified }
+  console.log(`[packagingEngine] Classification result: ${shippingUnits.size} shipping unit types, ${unclassified.length} unclassified, ${excludedPackaging.length} excluded packaging, ${excludedNonShippable.length} excluded non-shippable`)
+  return { shippingUnits, unclassified, excludedPackaging, excludedNonShippable }
 }
 
 // ── 2. matchCompartments ──────────────────────────────────────────────────
@@ -1477,7 +1560,7 @@ export async function calculateAdvice(
   console.log(`[packagingEngine] Calculating advice for order ${orderId} with ${products.length} products...`)
 
   // Step 1: Classify
-  const { shippingUnits, unclassified } = await classifyOrderProducts(products)
+  const { shippingUnits, unclassified, excludedPackaging, excludedNonShippable } = await classifyOrderProducts(products)
 
   // Step 1b: Build fingerprint (includes country to prevent cross-country cache collisions)
   const effectiveCountry = countryCode ?? 'UNKNOWN'
@@ -1561,9 +1644,12 @@ export async function calculateAdvice(
 
   // Step 1e: Single-SKU fast path
   // Orders with 1 unique product that has a default packaging mapping bypass compartment rules
-  const uniqueProductIds = new Set(products.map(p => p.picqer_product_id))
+  // Exclude packaging products (boxes added by Everspring) from the count
+  const excludedSet = new Set([...excludedPackaging, ...excludedNonShippable])
+  const realProducts = products.filter(p => !excludedSet.has(p.productcode))
+  const uniqueProductIds = new Set(realProducts.map(p => p.picqer_product_id))
   if (uniqueProductIds.size === 1 && unclassified.length === 0) {
-    const productId = products[0].picqer_product_id
+    const productId = realProducts[0].picqer_product_id
 
     const { data: productAttr } = await supabase
       .schema('batchmaker')
@@ -1582,13 +1668,13 @@ export async function calculateAdvice(
         .single()
 
       if (defaultPkg && defaultPkg.active) {
-        console.log(`[packagingEngine] Single-SKU fast path: product ${products[0].productcode} → ${defaultPkg.name}`)
+        console.log(`[packagingEngine] Single-SKU fast path: product ${realProducts[0].productcode} → ${defaultPkg.name}`)
 
         // Build the product list for this box
         const unitName = shippingUnits.values().next()?.value?.name || 'Unknown'
-        const totalQty = products.reduce((sum, p) => sum + p.quantity, 0)
+        const totalQty = realProducts.reduce((sum, p) => sum + p.quantity, 0)
         const boxProducts = [{
-          productcode: products[0].productcode,
+          productcode: realProducts[0].productcode,
           shipping_unit_name: unitName,
           quantity: totalQty,
         }]
@@ -1999,4 +2085,342 @@ export async function applyTags(
 
   console.log(`[packagingEngine] Applied ${tagsWritten.length} tags to order ${orderId}`)
   return tagsWritten
+}
+
+// ── 7. previewAdvice (dry-run, no persistence) ───────────────────────────
+
+export interface PreviewAdviceResult {
+  confidence: 'full_match' | 'partial_match' | 'no_match'
+  advice_boxes: AdviceBox[]
+  alternatives: AlternativePackaging[]
+  all_matches: {
+    packaging_id: string
+    packaging_name: string
+    idpackaging: number
+    facturatie_box_sku: string | null
+    rule_group: number
+    specificity_score: number
+    volume: number
+    box_cost: number
+    box_pick_cost: number
+    box_pack_cost: number
+    transport_cost: number
+    total_cost: number
+    carrier_code: string | null
+    max_weight: number
+    covers_all: boolean
+  }[]
+  shipping_units_detected: { shipping_unit_id: string; shipping_unit_name: string; quantity: number }[]
+  unclassified_products: string[]
+  excluded_packaging: string[]
+  excluded_non_shippable: string[]
+  weight_exceeded: boolean
+  cost_data_available: boolean
+  country_code: string
+  // Single-SKU fast path info
+  is_single_sku: boolean
+  default_packaging: {
+    packaging_id: string
+    packaging_name: string
+    idpackaging: number
+    facturatie_box_sku: string | null
+  } | null
+}
+
+/**
+ * Preview engine advice without any side-effects.
+ * Does NOT: insert into packaging_advice, write tags to Picqer, invalidate existing advice.
+ * Returns all matches for cost comparison.
+ */
+export async function previewAdvice(
+  products: OrderProduct[],
+  countryCode: string
+): Promise<PreviewAdviceResult> {
+  console.log(`[packagingEngine:preview] Previewing advice for ${products.length} products (country: ${countryCode})`)
+
+  // Step 1: Classify
+  const { shippingUnits, unclassified, excludedPackaging, excludedNonShippable } = await classifyOrderProducts(products)
+
+  // Step 1b: Cost data
+  let costDataAvailable = false
+  let costMap: Map<string, CostEntry[]> | null = null
+
+  if (countryCode) {
+    costMap = await getAllCostsForCountry(countryCode)
+    costDataAvailable = costMap !== null
+  }
+
+  // Step 1c: Single-SKU detection (packaging products already excluded by classifyOrderProducts)
+  const excludedSet = new Set([...excludedPackaging, ...excludedNonShippable])
+  const realProducts = products.filter(p => !excludedSet.has(p.productcode))
+  const uniqueProductIds = new Set(realProducts.map(p => p.picqer_product_id))
+  const isSingleSku = uniqueProductIds.size === 1 && unclassified.length === 0
+  let defaultPackaging: PreviewAdviceResult['default_packaging'] = null
+
+  if (isSingleSku) {
+    const productId = realProducts[0].picqer_product_id
+    const { data: productAttr } = await supabase
+      .schema('batchmaker')
+      .from('product_attributes')
+      .select('default_packaging_id')
+      .eq('picqer_product_id', productId)
+      .single()
+
+    if (productAttr?.default_packaging_id) {
+      const { data: pkg } = await supabase
+        .schema('batchmaker')
+        .from('packagings')
+        .select('id, name, idpackaging, facturatie_box_sku, active')
+        .eq('id', productAttr.default_packaging_id)
+        .single()
+
+      if (pkg && pkg.active) {
+        defaultPackaging = {
+          packaging_id: pkg.id,
+          packaging_name: pkg.name,
+          idpackaging: pkg.idpackaging,
+          facturatie_box_sku: pkg.facturatie_box_sku,
+        }
+        console.log(`[packagingEngine:preview] Single-SKU fast path: default packaging = ${pkg.name}`)
+
+        // Build the advice box from the default packaging
+        const unitName = shippingUnits.values().next()?.value?.name || 'Unknown'
+        const totalQty = realProducts.reduce((sum, p) => sum + p.quantity, 0)
+
+        const defaultBox: AdviceBox = {
+          packaging_id: pkg.id,
+          packaging_name: pkg.name,
+          idpackaging: pkg.idpackaging,
+          products: [{ productcode: realProducts[0].productcode, shipping_unit_name: unitName, quantity: totalQty }],
+        }
+
+        // Enrich with cost data
+        if (costMap && pkg.facturatie_box_sku) {
+          const entries = costMap.get(pkg.facturatie_box_sku)
+          if (entries && entries.length > 0) {
+            const entry = selectCostForWeight(entries, 0)
+            if (entry) {
+              defaultBox.box_cost = entry.boxMaterialCost ?? entry.boxCost
+              defaultBox.box_pick_cost = entry.boxPickCost
+              defaultBox.box_pack_cost = entry.boxPackCost
+              defaultBox.transport_cost = entry.transportCost
+              defaultBox.total_cost = entry.totalCost
+              defaultBox.carrier_code = entry.carrier
+              costDataAvailable = true
+            }
+          }
+        }
+
+        const shippingUnitsDetected = Array.from(shippingUnits.values()).map(entry => ({
+          shipping_unit_id: entry.id,
+          shipping_unit_name: entry.name,
+          quantity: entry.quantity,
+        }))
+
+        return {
+          confidence: 'full_match' as const,
+          advice_boxes: [defaultBox],
+          alternatives: [],
+          all_matches: [],
+          shipping_units_detected: shippingUnitsDetected,
+          unclassified_products: unclassified,
+          excluded_packaging: excludedPackaging,
+          excluded_non_shippable: excludedNonShippable,
+          weight_exceeded: false,
+          cost_data_available: costDataAvailable,
+          country_code: countryCode,
+          is_single_sku: true,
+          default_packaging: defaultPackaging,
+        }
+      }
+    }
+  }
+
+  // Step 2: Try capacity-based optimizer first (country-aware cost optimization)
+  const { getBoxCapacitiesMap } = await import('@/lib/supabase/boxCapacities')
+  const capacitiesMap = await getBoxCapacitiesMap()
+
+  let boxes: AdviceBox[] = []
+  let confidence: 'full_match' | 'partial_match' | 'no_match' = 'no_match'
+  let alternatives: AlternativePackaging[] = []
+  let allMatches: PreviewAdviceResult['all_matches'] = []
+  let weightExceeded = false
+
+  if (capacitiesMap.size > 0 && costMap) {
+    // Fetch packaging info for the optimizer
+    const { data: allPackagings } = await supabase
+      .schema('batchmaker')
+      .from('packagings')
+      .select('id, name, idpackaging, facturatie_box_sku')
+      .eq('active', true)
+
+    const pkgInfoMap = new Map<string, import('./boxOptimizer').PackagingInfo>()
+    for (const p of allPackagings || []) {
+      pkgInfoMap.set(p.id, {
+        id: p.id,
+        name: p.name,
+        idpackaging: p.idpackaging,
+        facturatieBoxSku: p.facturatie_box_sku,
+      })
+    }
+
+    // Convert shipping units to optimizer demand format
+    const demand = new Map<string, import('./boxOptimizer').ShippingUnitDemand>()
+    for (const [unitId, entry] of shippingUnits) {
+      demand.set(unitId, { id: unitId, name: entry.name, quantity: entry.quantity })
+    }
+
+    const { solveOptimalBoxes } = await import('./boxOptimizer')
+    const solution = solveOptimalBoxes(demand, capacitiesMap, pkgInfoMap, costMap)
+
+    console.log(`[packagingEngine:preview] Optimizer: ${solution.boxes.length} boxes, cost=${solution.totalCost.toFixed(2)}, complete=${solution.isComplete}`)
+
+    if (solution.isComplete && solution.boxes.length > 0) {
+      // Convert optimizer result to AdviceBox format
+      boxes = solution.boxes.map(box => {
+        const boxProducts: AdviceBox['products'] = []
+        for (const [unitId, qty] of box.assignment) {
+          const unitEntry = shippingUnits.get(unitId)
+          // Find a productcode that maps to this unit
+          const productcode = realProducts.find(p => {
+            // This is approximate — the product's shipping unit matches
+            return true // We'll use the unit name as identifier
+          })?.productcode ?? ''
+          boxProducts.push({
+            productcode,
+            shipping_unit_name: unitEntry?.name ?? unitId,
+            quantity: qty,
+          })
+        }
+
+        return {
+          packaging_id: box.packagingId,
+          packaging_name: box.packagingName,
+          idpackaging: box.idpackaging,
+          products: boxProducts,
+          box_cost: box.cost?.boxMaterialCost ?? box.cost?.boxCost,
+          box_pick_cost: box.cost?.boxPickCost,
+          box_pack_cost: box.cost?.boxPackCost,
+          transport_cost: box.cost?.transportCost,
+          total_cost: box.cost?.totalCost,
+          carrier_code: box.cost?.carrier,
+          weight_bracket: box.cost?.weightBracket,
+        }
+      })
+
+      confidence = unclassified.length > 0 ? 'partial_match' : 'full_match'
+
+      // Build alternatives: try single-box solutions for comparison
+      const singleBoxAlts: AlternativePackaging[] = []
+      for (const [packagingId, unitCaps] of capacitiesMap) {
+        const info = pkgInfoMap.get(packagingId)
+        if (!info || !info.facturatieBoxSku) continue
+
+        // Can this single box hold everything?
+        let fitsAll = true
+        let fillRatio = 0
+        for (const [unitId, entry] of shippingUnits) {
+          const maxCap = unitCaps.get(unitId)
+          if (!maxCap || entry.quantity > maxCap) { fitsAll = false; break }
+          fillRatio += entry.quantity / maxCap
+        }
+        if (!fitsAll || fillRatio > 1.0) continue
+
+        const entries = costMap.get(info.facturatieBoxSku)
+        if (!entries) continue
+        const cost = selectCostForWeight(entries, 0)
+        if (!cost) continue
+
+        const isRecommended = boxes.length === 1 && boxes[0].packaging_id === packagingId
+        singleBoxAlts.push({
+          packaging_id: packagingId,
+          name: info.name,
+          idpackaging: info.idpackaging,
+          box_cost: cost.boxMaterialCost ?? cost.boxCost,
+          box_pick_cost: cost.boxPickCost,
+          box_pack_cost: cost.boxPackCost,
+          transport_cost: cost.transportCost,
+          total_cost: cost.totalCost,
+          carrier_code: cost.carrier,
+          is_recommended: isRecommended,
+          is_cheapest: false,
+        })
+      }
+
+      // Mark cheapest
+      if (singleBoxAlts.length > 0) {
+        const cheapest = singleBoxAlts.reduce((a, b) => (a.total_cost ?? Infinity) < (b.total_cost ?? Infinity) ? a : b)
+        cheapest.is_cheapest = true
+      }
+      alternatives = singleBoxAlts.sort((a, b) => (a.total_cost ?? Infinity) - (b.total_cost ?? Infinity))
+    } else if (solution.boxes.length > 0) {
+      // Partial solution — optimizer found some boxes but not all
+      confidence = 'partial_match'
+      // Fall through to compartment rules for remaining
+    }
+  }
+
+  // Fallback: compartment rules (if optimizer didn't find a complete solution)
+  if (boxes.length === 0) {
+    const matches = await matchCompartments(shippingUnits)
+    const enrichedMatches = enrichWithCosts(matches, costMap)
+    const ranked = rankPackagings(enrichedMatches, costDataAvailable)
+
+    allMatches = ranked.map(m => ({
+      packaging_id: m.packaging_id,
+      packaging_name: m.packaging_name,
+      idpackaging: m.idpackaging,
+      facturatie_box_sku: m.facturatie_box_sku,
+      rule_group: m.rule_group,
+      specificity_score: m.specificity_score,
+      volume: m.volume,
+      box_cost: m.box_cost,
+      box_pick_cost: m.box_pick_cost,
+      box_pack_cost: m.box_pack_cost,
+      transport_cost: m.transport_cost,
+      total_cost: m.total_cost,
+      carrier_code: m.carrier_code,
+      max_weight: m.max_weight,
+      covers_all: m.leftover_units.size === 0,
+    }))
+
+    const multiBoxResult = await solveMultiBox(
+      shippingUnits, unclassified, ranked, products,
+      costMap, costDataAvailable
+    )
+    boxes = multiBoxResult.boxes
+    confidence = multiBoxResult.confidence
+
+    const recommendedPkgId = boxes.length === 1 ? boxes[0].packaging_id : null
+    alternatives = buildAlternatives(ranked, recommendedPkgId)
+    if (alternatives.length === 0 && shippingUnits.size > 0 && costDataAvailable && costMap) {
+      alternatives = await buildAlternativesByShippingUnit(shippingUnits, recommendedPkgId, costMap)
+    }
+
+    weightExceeded = !(await validateWeightsForBoxes(boxes, products))
+  }
+
+  const shippingUnitsDetected = Array.from(shippingUnits.values()).map(entry => ({
+    shipping_unit_id: entry.id,
+    shipping_unit_name: entry.name,
+    quantity: entry.quantity,
+  }))
+
+  console.log(`[packagingEngine:preview] Done: confidence=${confidence}, boxes=${boxes.length}, singleSku=${isSingleSku}`)
+
+  return {
+    confidence,
+    advice_boxes: boxes,
+    alternatives,
+    all_matches: allMatches,
+    shipping_units_detected: shippingUnitsDetected,
+    unclassified_products: unclassified,
+    excluded_packaging: excludedPackaging,
+    excluded_non_shippable: excludedNonShippable,
+    weight_exceeded: weightExceeded,
+    cost_data_available: costDataAvailable,
+    country_code: countryCode,
+    is_single_sku: isSingleSku,
+    default_packaging: defaultPackaging,
+  }
 }

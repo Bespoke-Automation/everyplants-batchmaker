@@ -30,7 +30,6 @@
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.17",
     "tsx": "^4.21.0",
-    "typescript": "^5.8.2",
-    "xlsx": "^0.18.5"
+    "typescript": "^5.8.2"
   }
 }

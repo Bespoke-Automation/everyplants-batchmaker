@@ -1295,126 +1295,142 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
               }`} />
             </button>
             {adviceDetailsExpanded && (
-              <div className={`mt-1 px-3 py-2 rounded-lg text-xs space-y-1.5 ${
+              <div className={`mt-1 rounded-lg text-xs overflow-hidden border ${
                 engineAdvice.confidence === 'full_match'
-                  ? 'bg-emerald-50/50 border border-emerald-100 text-emerald-700'
+                  ? 'border-emerald-200'
                   : engineAdvice.confidence === 'partial_match'
-                    ? 'bg-blue-50/50 border border-blue-100 text-blue-700'
-                    : 'bg-amber-50/50 border border-amber-100 text-amber-700'
+                    ? 'border-blue-200'
+                    : 'border-amber-200'
               }`}>
-                {engineAdvice.shipping_units_detected.length > 0 && (
-                  <div>
-                    <span className="font-medium">Verzendeenheden: </span>
-                    {engineAdvice.shipping_units_detected.map((su) =>
-                      `${su.quantity}x ${su.shipping_unit_name}`
-                    ).join(', ')}
-                  </div>
-                )}
+                {/* Context row */}
+                <div className={`px-3 py-2 flex flex-wrap gap-x-4 gap-y-1 ${
+                  engineAdvice.confidence === 'full_match' ? 'bg-emerald-50/50 text-emerald-700'
+                    : engineAdvice.confidence === 'partial_match' ? 'bg-blue-50/50 text-blue-700'
+                      : 'bg-amber-50/50 text-amber-700'
+                }`}>
+                  {order?.deliverycountry && (
+                    <span className="inline-flex items-center gap-1">
+                      <MapPin className="w-3 h-3" />
+                      {getCountryName(order.deliverycountry)}
+                    </span>
+                  )}
+                  {engineAdvice.shipping_units_detected.length > 0 && (
+                    <span>
+                      {engineAdvice.shipping_units_detected.map((su) =>
+                        `${su.quantity}x ${su.shipping_unit_name}`
+                      ).join(', ')}
+                    </span>
+                  )}
+                </div>
+
+                {/* Warnings */}
                 {engineAdvice.unclassified_products.length > 0 && (
-                  <div>
-                    <span className="font-medium">Niet geclassificeerd: </span>
-                    {engineAdvice.unclassified_products.join(', ')}
+                  <div className="px-3 py-1.5 bg-amber-50 border-t border-amber-200 text-amber-700 flex items-center gap-1.5">
+                    <AlertTriangle className="w-3 h-3 shrink-0" />
+                    Niet geclassificeerd: {engineAdvice.unclassified_products.join(', ')}
                   </div>
                 )}
                 {engineAdvice.confidence === 'no_match' && engineAdvice.shipping_units_detected.length > 0 && (
-                  <div className="text-amber-600">
-                    Geen verpakking gevonden die past bij de gedetecteerde verzendeenheden. Compartment rules ontbreken.
-                  </div>
-                )}
-                {engineAdvice.confidence === 'no_match' && engineAdvice.shipping_units_detected.length === 0 && engineAdvice.unclassified_products.length > 0 && (
-                  <div className="text-amber-600">
-                    Geen producten konden geclassificeerd worden. Controleer of de productattributen in Picqer zijn ingevuld.
-                  </div>
-                )}
-                {order?.deliverycountry && (
-                  <div className="flex items-center gap-1.5">
-                    <MapPin className="w-3 h-3 flex-shrink-0" />
-                    <span className="font-medium">Bestemming:</span>
-                    <span>{getCountryName(order.deliverycountry)}</span>
-                  </div>
-                )}
-                {engineAdvice.cost_data_available !== false && engineAdvice.advice_boxes.some(b => b.total_cost !== undefined) && (
-                  <div>
-                    <span className="font-medium">Kosten per doos:</span>
-                    <div className="mt-0.5 space-y-1">
-                      {engineAdvice.advice_boxes.map((box, idx) => (
-                        box.total_cost !== undefined ? (
-                          <div key={idx} className="flex flex-col gap-0.5">
-                            <div className="flex items-center justify-between">
-                              <span className="font-medium">{box.packaging_name}</span>
-                              <span className="tabular-nums font-semibold">{formatCost(box.total_cost)}</span>
-                            </div>
-                            <div className="flex items-center justify-between text-[11px] opacity-75">
-                              <span>
-                                {formatCost(box.box_cost)} doos
-                                {(box.box_pick_cost !== undefined || box.box_pack_cost !== undefined) && (
-                                  <> + {formatCost((box.box_pick_cost ?? 0) + (box.box_pack_cost ?? 0))} pick/pack</>
-                                )}
-                                {' '}+ {formatCost(box.transport_cost)} transport
-                              </span>
-                              {box.carrier_code && (
-                                <span className="ml-2">{box.carrier_code}{box.weight_bracket ? ` (${box.weight_bracket})` : ''}</span>
-                              )}
-                            </div>
-                          </div>
-                        ) : null
-                      ))}
-                      {engineAdvice.advice_boxes.length > 1 && engineAdvice.advice_boxes.some(b => b.total_cost !== undefined) && (
-                        <div className="flex items-center justify-between font-semibold border-t border-current/10 pt-1 mt-1">
-                          <span>Totaal ({engineAdvice.advice_boxes.length} dozen)</span>
-                          <span className="tabular-nums">
-                            {formatCost(engineAdvice.advice_boxes.reduce((sum, b) => sum + (b.total_cost ?? 0), 0))}
-                          </span>
-                        </div>
-                      )}
-                    </div>
+                  <div className="px-3 py-1.5 bg-amber-50 border-t border-amber-200 text-amber-700 flex items-center gap-1.5">
+                    <AlertTriangle className="w-3 h-3 shrink-0" />
+                    Geen verpakking past bij deze verzendeenheden. Compartment rules ontbreken.
                   </div>
                 )}
                 {engineAdvice.cost_data_available === false && (
-                  <div className="flex items-center gap-1.5 text-amber-700 bg-amber-50 rounded px-2 py-1.5">
-                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span>
-                      <strong>Specificiteit-advies</strong> — Kostdata is niet beschikbaar.
-                      Advies is gebaseerd op doosgrootte en specificiteit, niet op kosten.
-                    </span>
+                  <div className="px-3 py-1.5 bg-amber-50 border-t border-amber-200 text-amber-700 flex items-center gap-1.5">
+                    <AlertTriangle className="w-3 h-3 shrink-0" />
+                    Kostdata niet beschikbaar — advies gebaseerd op specificiteit.
                   </div>
                 )}
-                {/* Alternatives comparison table */}
-                {engineAdvice.alternatives && engineAdvice.alternatives.length > 1 && engineAdvice.cost_data_available !== false && (
-                  <div>
-                    <span className="font-medium">Alle passende verpakkingen:</span>
-                    <div className="mt-1 overflow-x-auto">
-                      <table className="w-full text-[11px]">
-                        <thead>
-                          <tr className="border-b border-current/10">
-                            <th className="text-left py-1 pr-2 font-medium">Verpakking</th>
-                            <th className="text-right py-1 px-1 font-medium">Doos</th>
-                            <th className="text-right py-1 px-1 font-medium">Pick/Pack</th>
-                            <th className="text-right py-1 px-1 font-medium">Transport</th>
-                            <th className="text-right py-1 pl-1 font-medium">Totaal</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {engineAdvice.alternatives.map((alt) => (
-                            <tr key={alt.packaging_id} className={alt.is_recommended ? 'font-semibold' : 'opacity-80'}>
-                              <td className="py-1 pr-2">
-                                <span>{alt.name}</span>
-                                {alt.is_recommended && (
-                                  <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-100 text-emerald-700">Aanbevolen</span>
-                                )}
-                                {alt.is_cheapest && !alt.is_recommended && (
-                                  <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-700">Goedkoopst</span>
-                                )}
+
+                {/* Cost breakdown per box */}
+                {engineAdvice.advice_boxes.some(b => b.total_cost !== undefined) && (
+                  <div className="border-t border-inherit">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-muted/30 text-muted-foreground">
+                          <th className="text-left py-1.5 px-3 font-medium">Advies</th>
+                          <th className="text-right py-1.5 px-2 font-medium">Materiaal</th>
+                          <th className="text-right py-1.5 px-2 font-medium">Pick</th>
+                          <th className="text-right py-1.5 px-2 font-medium">Pack</th>
+                          <th className="text-right py-1.5 px-2 font-medium">Transport</th>
+                          <th className="text-right py-1.5 px-3 font-medium">Totaal</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {engineAdvice.advice_boxes.map((box, idx) => (
+                          box.total_cost !== undefined ? (
+                            <tr key={idx} className="border-t border-inherit">
+                              <td className="py-1.5 px-3">
+                                <div className="font-medium">{box.packaging_name}</div>
+                                <div className="text-[10px] text-muted-foreground">
+                                  {box.products.map(p => `${p.quantity}x ${p.shipping_unit_name}`).join(', ')}
+                                  {box.carrier_code && <span className="ml-1">— {box.carrier_code}{box.weight_bracket ? ` (${box.weight_bracket})` : ''}</span>}
+                                </div>
                               </td>
-                              <td className="text-right py-1 px-1 tabular-nums">{formatCost(alt.box_cost)}</td>
-                              <td className="text-right py-1 px-1 tabular-nums">{formatCost((alt.box_pick_cost ?? 0) + (alt.box_pack_cost ?? 0) || undefined)}</td>
-                              <td className="text-right py-1 px-1 tabular-nums">{formatCost(alt.transport_cost)}</td>
-                              <td className="text-right py-1 pl-1 tabular-nums font-semibold">{formatCost(alt.total_cost)}</td>
+                              <td className="text-right py-1.5 px-2 tabular-nums">{formatCost(box.box_cost)}</td>
+                              <td className="text-right py-1.5 px-2 tabular-nums">{formatCost(box.box_pick_cost)}</td>
+                              <td className="text-right py-1.5 px-2 tabular-nums">{formatCost(box.box_pack_cost)}</td>
+                              <td className="text-right py-1.5 px-2 tabular-nums">{formatCost(box.transport_cost)}</td>
+                              <td className="text-right py-1.5 px-3 tabular-nums font-semibold">{formatCost(box.total_cost)}</td>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          ) : null
+                        ))}
+                        {engineAdvice.advice_boxes.length > 1 && (
+                          <tr className="border-t-2 border-inherit font-semibold">
+                            <td className="py-1.5 px-3">Totaal ({engineAdvice.advice_boxes.length} dozen)</td>
+                            <td className="text-right py-1.5 px-2 tabular-nums">{formatCost(engineAdvice.advice_boxes.reduce((s, b) => s + (b.box_cost ?? 0), 0))}</td>
+                            <td className="text-right py-1.5 px-2 tabular-nums">{formatCost(engineAdvice.advice_boxes.reduce((s, b) => s + (b.box_pick_cost ?? 0), 0))}</td>
+                            <td className="text-right py-1.5 px-2 tabular-nums">{formatCost(engineAdvice.advice_boxes.reduce((s, b) => s + (b.box_pack_cost ?? 0), 0))}</td>
+                            <td className="text-right py-1.5 px-2 tabular-nums">{formatCost(engineAdvice.advice_boxes.reduce((s, b) => s + (b.transport_cost ?? 0), 0))}</td>
+                            <td className="text-right py-1.5 px-3 tabular-nums">{formatCost(engineAdvice.advice_boxes.reduce((s, b) => s + (b.total_cost ?? 0), 0))}</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Alternatives comparison */}
+                {engineAdvice.alternatives && engineAdvice.alternatives.length > 1 && engineAdvice.cost_data_available !== false && (
+                  <div className="border-t border-inherit">
+                    <div className="px-3 py-1.5 bg-muted/20 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                      Alle passende verpakkingen
                     </div>
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-muted/10 text-muted-foreground">
+                          <th className="text-left py-1.5 px-3 font-medium">Verpakking</th>
+                          <th className="text-right py-1.5 px-2 font-medium">Materiaal</th>
+                          <th className="text-right py-1.5 px-2 font-medium">Pick</th>
+                          <th className="text-right py-1.5 px-2 font-medium">Pack</th>
+                          <th className="text-right py-1.5 px-2 font-medium">Transport</th>
+                          <th className="text-left py-1.5 px-2 font-medium">Carrier</th>
+                          <th className="text-right py-1.5 px-3 font-medium">Totaal</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {engineAdvice.alternatives.map((alt) => (
+                          <tr key={alt.packaging_id} className={`border-t border-inherit ${alt.is_recommended ? 'bg-emerald-50/30' : ''}`}>
+                            <td className="py-1.5 px-3">
+                              <span className={alt.is_recommended ? 'font-semibold' : ''}>{alt.name}</span>
+                              {alt.is_recommended && (
+                                <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-100 text-emerald-700">Aanbevolen</span>
+                              )}
+                              {alt.is_cheapest && !alt.is_recommended && (
+                                <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-700">Goedkoopst</span>
+                              )}
+                            </td>
+                            <td className="text-right py-1.5 px-2 tabular-nums">{formatCost(alt.box_cost)}</td>
+                            <td className="text-right py-1.5 px-2 tabular-nums">{formatCost(alt.box_pick_cost)}</td>
+                            <td className="text-right py-1.5 px-2 tabular-nums">{formatCost(alt.box_pack_cost)}</td>
+                            <td className="text-right py-1.5 px-2 tabular-nums">{formatCost(alt.transport_cost)}</td>
+                            <td className="text-left py-1.5 px-2 text-muted-foreground">{alt.carrier_code || '—'}</td>
+                            <td className="text-right py-1.5 px-3 tabular-nums font-semibold">{formatCost(alt.total_cost)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>

@@ -39,7 +39,7 @@ interface BatchQueueProps {
   worker: Worker
   onClearWorker: () => void
   onBatchPreview: (batchId: number) => void
-  onBatchClaimed: (batchSessionId: string) => void
+  onBatchClaimed: (batchSessionId: string, batchId?: number) => void
 }
 
 export default function BatchQueue({
@@ -72,7 +72,7 @@ export default function BatchQueue({
     (batch: QueueBatch) => {
       // Already claimed by me → go directly to batch overview
       if (batch.batchSessionId) {
-        onBatchClaimed(batch.batchSessionId)
+        onBatchClaimed(batch.batchSessionId, batch.idpicklistBatch)
         return
       }
 

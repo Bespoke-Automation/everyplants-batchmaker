@@ -280,6 +280,7 @@ export interface PicqerProductFull {
   active: boolean
   productfields?: PicqerProductField[]
   tags?: PicqerTag[]
+  images?: string[] // Array of image URLs
   created?: string
   updated?: string
 }

@@ -30,7 +30,11 @@ export default function VerpakkingsmoduleLayout({
 
   const isActive = (href: string) => {
     if (href === '/verpakkingsmodule') {
+      // Wachtrij tab is active for queue, batch, picklist, and engine preview routes
       return pathname === '/verpakkingsmodule'
+        || pathname.startsWith('/verpakkingsmodule/batch/')
+        || pathname.startsWith('/verpakkingsmodule/picklist/')
+        || pathname.startsWith('/verpakkingsmodule/engine-preview/')
     }
     return pathname.startsWith(href)
   }

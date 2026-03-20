@@ -118,29 +118,63 @@ export async function syncProductFromPicqer(product: PicqerProductFull): Promise
   const customFields = parseCustomFields(product)
   const isComposition = (product.type || '').includes('composition')
 
+  // Extract first image URL from Picqer (array of URL strings)
+  const imageUrl = product.images?.[0] || null
+
+  const syncData = {
+    picqer_product_id: product.idproduct,
+    productcode: product.productcode,
+    product_name: product.name,
+    product_type: customFields.producttype || 'Onbekend',
+    picqer_product_type: product.type || null,
+    is_composition: isComposition,
+    pot_size: customFields.potmaat,
+    height: customFields.planthoogte,
+    weight: product.weight ?? null,
+    is_fragile: customFields.breekbaar,
+    is_mixable: customFields.mixable,
+    image_url: imageUrl,
+    classification_status: 'unclassified' as const,
+    source: 'picqer_sync',
+    last_synced_at: new Date().toISOString(),
+    picqer_updated_at: product.updated || null,
+  }
+
+  // Check if a placeholder record exists (created by Everspring import with picqer_product_id=0)
+  const { data: existing } = await supabase
+    .schema('batchmaker')
+    .from('product_attributes')
+    .select('id, picqer_product_id, default_packaging_id')
+    .eq('productcode', product.productcode)
+    .maybeSingle()
+
+  if (existing && existing.picqer_product_id === 0) {
+    // Update the placeholder record, preserving fields set by Everspring import
+    const { default_packaging_id, ...rest } = syncData as Record<string, unknown>
+    const updatePayload: Record<string, unknown> = { ...rest }
+    // Don't overwrite default_packaging_id if already set by Everspring
+    if (!existing.default_packaging_id) {
+      updatePayload.default_packaging_id = null
+    }
+
+    const { error } = await supabase
+      .schema('batchmaker')
+      .from('product_attributes')
+      .update(updatePayload)
+      .eq('id', existing.id)
+
+    if (error) {
+      console.error(`Error updating placeholder for ${product.idproduct} (${product.productcode}):`, error)
+      throw error
+    }
+    return
+  }
+
+  // Normal upsert on picqer_product_id
   const { error } = await supabase
     .schema('batchmaker')
     .from('product_attributes')
-    .upsert(
-      {
-        picqer_product_id: product.idproduct,
-        productcode: product.productcode,
-        product_name: product.name,
-        product_type: customFields.producttype || 'Onbekend',
-        picqer_product_type: product.type || null,
-        is_composition: isComposition,
-        pot_size: customFields.potmaat,
-        height: customFields.planthoogte,
-        weight: product.weight ?? null,
-        is_fragile: customFields.breekbaar,
-        is_mixable: customFields.mixable,
-        classification_status: 'unclassified',
-        source: 'picqer_sync',
-        last_synced_at: new Date().toISOString(),
-        picqer_updated_at: product.updated || null,
-      },
-      { onConflict: 'picqer_product_id' }
-    )
+    .upsert(syncData, { onConflict: 'picqer_product_id' })
 
   if (error) {
     console.error(`Error syncing product ${product.idproduct} (${product.productcode}):`, error)

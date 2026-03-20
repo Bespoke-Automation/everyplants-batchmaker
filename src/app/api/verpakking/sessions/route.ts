@@ -48,6 +48,7 @@ export async function POST(request: NextRequest) {
       assignedTo,
       assignedToName,
       batchSessionId,
+      devMode,
     } = body
 
     if (!picklistId || !assignedTo || !assignedToName) {
@@ -76,41 +77,50 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Validate picklist status in Picqer before claiming
+    // Validate picklist status in Picqer before claiming (skip in dev mode)
     let picqerPicklist: Awaited<ReturnType<typeof fetchPicklist>> | null = null
-    try {
-      picqerPicklist = await fetchPicklist(picklistId)
-    } catch (fetchError) {
-      console.error('[verpakking] Failed to fetch picklist from Picqer:', fetchError)
-      return NextResponse.json(
-        { error: `Could not verify picklist status in Picqer: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}` },
-        { status: 502 }
-      )
-    }
+    if (!devMode) {
+      try {
+        picqerPicklist = await fetchPicklist(picklistId)
+      } catch (fetchError) {
+        console.error('[verpakking] Failed to fetch picklist from Picqer:', fetchError)
+        return NextResponse.json(
+          { error: `Could not verify picklist status in Picqer: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}` },
+          { status: 502 }
+        )
+      }
 
-    // Only allow claiming if picklist is in 'new' status (open and ready)
-    if (picqerPicklist.status === 'closed') {
-      return NextResponse.json(
-        { error: `Picklist ${picklistId} is already closed in Picqer and cannot be claimed.` },
-        { status: 409 }
-      )
-    }
-    if (picqerPicklist.status === 'cancelled') {
-      return NextResponse.json(
-        { error: `Picklist ${picklistId} has been cancelled in Picqer and cannot be claimed.` },
-        { status: 409 }
-      )
-    }
-    if (picqerPicklist.status !== 'new') {
-      return NextResponse.json(
-        { error: `Picklist ${picklistId} has status '${picqerPicklist.status}' in Picqer. Only picklists with status 'new' can be claimed.` },
-        { status: 409 }
-      )
+      // Only allow claiming if picklist is in 'new' status (open and ready)
+      if (picqerPicklist.status === 'closed') {
+        return NextResponse.json(
+          { error: `Picklist ${picklistId} is already closed in Picqer and cannot be claimed.` },
+          { status: 409 }
+        )
+      }
+      if (picqerPicklist.status === 'cancelled') {
+        return NextResponse.json(
+          { error: `Picklist ${picklistId} has been cancelled in Picqer and cannot be claimed.` },
+          { status: 409 }
+        )
+      }
+      if (picqerPicklist.status !== 'new') {
+        return NextResponse.json(
+          { error: `Picklist ${picklistId} has status '${picqerPicklist.status}' in Picqer. Only picklists with status 'new' can be claimed.` },
+          { status: 409 }
+        )
+      }
+    } else {
+      // In dev mode, fetch picklist for metadata but don't validate status
+      try {
+        picqerPicklist = await fetchPicklist(picklistId)
+      } catch {
+        // Non-fatal in dev mode
+      }
     }
 
     // Extract metadata from the Picqer picklist for enrichment
-    const picqerPicklistId = picqerPicklist.picklistid
-    const picqerOrderId = picqerPicklist.idorder
+    const picqerPicklistId = picqerPicklist?.picklistid
+    const picqerOrderId = picqerPicklist?.idorder
 
     // Claim the picklist in Supabase (checks for existing claims)
     const session = await claimPicklist(picklistId, assignedTo, assignedToName)
@@ -129,13 +139,15 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Assign the picklist to the worker in Picqer
+    // Assign the picklist to the worker in Picqer (skip in dev mode)
     let picqerAssignWarning: string | undefined
-    try {
-      await assignPicklist(picklistId, assignedTo)
-    } catch (assignError) {
-      console.error('[verpakking] Failed to assign picklist in Picqer:', assignError)
-      picqerAssignWarning = 'Session created but Picqer assignment failed. Please assign manually in Picqer.'
+    if (!devMode) {
+      try {
+        await assignPicklist(picklistId, assignedTo)
+      } catch (assignError) {
+        console.error('[verpakking] Failed to assign picklist in Picqer:', assignError)
+        picqerAssignWarning = 'Session created but Picqer assignment failed. Please assign manually in Picqer.'
+      }
     }
 
     return NextResponse.json({ ...session, warning: picqerAssignWarning })

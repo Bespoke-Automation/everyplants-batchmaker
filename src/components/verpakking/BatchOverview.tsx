@@ -35,6 +35,8 @@ interface BatchOverviewProps {
   onPicklistStarted: (sessionId: string) => void
   onBatchClaimed?: (batchSessionId: string) => void
   onBack: () => void
+  devMode?: boolean
+  onPicklistPreview?: (picklistId: number, displayId: string) => void
 }
 
 export default function BatchOverview({
@@ -44,6 +46,8 @@ export default function BatchOverview({
   onPicklistStarted,
   onBatchClaimed,
   onBack,
+  devMode,
+  onPicklistPreview,
 }: BatchOverviewProps) {
   const {
     batchSession,
@@ -548,6 +552,8 @@ export default function BatchOverview({
                   batchId={batchSession.batchId}
                   allProducts={batchSession.products}
                   comments={picklistComments[item.idpicklist] ?? []}
+                  devMode={devMode}
+                  onPicklistPreview={onPicklistPreview}
                 />
               ))}
             </div>
@@ -980,6 +986,8 @@ function PicklistRow({
   batchId,
   allProducts,
   comments,
+  devMode,
+  onPicklistPreview,
 }: {
   item: BatchPicklistItem
   isStartingPicklist: boolean
@@ -989,6 +997,8 @@ function PicklistRow({
   batchId: number
   allProducts: BatchProduct[]
   comments: BatchComment[]
+  devMode?: boolean
+  onPicklistPreview?: (picklistId: number, displayId: string) => void
 }) {
   const isItemCompleted = item.sessionStatus === 'completed'
   const isClosed = item.status === 'closed'
@@ -1068,6 +1078,14 @@ function PicklistRow({
             </span>
           ) : isClosed ? (
             <span className="text-sm text-muted-foreground px-2">Dicht</span>
+          ) : devMode ? (
+            <button
+              onClick={() => onPicklistPreview?.(item.idpicklist, item.picklistid)}
+              className="inline-flex items-center gap-1 px-4 py-2 bg-violet-600 text-white rounded-lg text-sm font-medium hover:bg-violet-700 transition-colors min-h-[40px]"
+            >
+              <Eye className="w-4 h-4" />
+              Preview
+            </button>
           ) : (
             <button
               onClick={() => onStart(item)}

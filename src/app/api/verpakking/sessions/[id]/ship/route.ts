@@ -225,6 +225,14 @@ export async function POST(
           console.error('[verpakking] Error recording session outcome:', feedbackError)
         }
 
+        // Analyze session for capacity learning (non-blocking)
+        try {
+          const { analyzeCompletedSession } = await import('@/lib/engine/sessionAnalyzer')
+          await analyzeCompletedSession(sessionId)
+        } catch (analyzerError) {
+          console.error('[verpakking] Error analyzing session for capacity feedback:', analyzerError)
+        }
+
         const user = await getRequestUser()
         await logActivity({
           user_id: user?.id,

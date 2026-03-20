@@ -1,47 +1,129 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { Code2 } from 'lucide-react'
 import { useWorker } from '@/hooks/useWorker'
 import WorkerSelector from '@/components/verpakking/WorkerSelector'
 import BatchQueue from '@/components/verpakking/BatchQueue'
 import BatchOverview from '@/components/verpakking/BatchOverview'
 import VerpakkingsClient from '@/components/verpakking/VerpakkingsClient'
+import EnginePreviewPanel from '@/components/verpakking/EnginePreviewPanel'
+import { DEV_MODE_USER_IDS } from '@/lib/constants'
 
 export default function VerpakkingsmodulePage() {
+  const router = useRouter()
   const { workers, selectedWorker, isLoading, error, selectWorker, clearWorker } = useWorker()
 
-  const [activeBatchSessionId, setActiveBatchSessionId] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      return sessionStorage.getItem('verpakking_active_batch_session')
-    }
-    return null
-  })
+  // Developer mode: browse batches/picklists without claiming, preview engine advice
+  const canUseDevMode = selectedWorker && DEV_MODE_USER_IDS.includes(selectedWorker.iduser)
+  const [devMode, setDevMode] = useState(false)
+  const [devPreviewBatchId, setDevPreviewBatchId] = useState<number | null>(null)
+  const [devPreviewPicklist, setDevPreviewPicklist] = useState<{ id: number; displayId: string } | null>(null)
 
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      return sessionStorage.getItem('verpakking_active_session')
-    }
-    return null
-  })
-
-  // Preview mode: batch opened but not yet claimed (not persisted — refresh returns to queue)
-  const [previewBatchId, setPreviewBatchId] = useState<number | null>(null)
-
+  // Restore active session from sessionStorage (for backwards compat / mid-session refresh)
   useEffect(() => {
-    if (activeBatchSessionId) {
-      sessionStorage.setItem('verpakking_active_batch_session', activeBatchSessionId)
-    } else {
-      sessionStorage.removeItem('verpakking_active_batch_session')
-    }
-  }, [activeBatchSessionId])
-
-  useEffect(() => {
+    const activeSessionId = sessionStorage.getItem('verpakking_active_session')
     if (activeSessionId) {
-      sessionStorage.setItem('verpakking_active_session', activeSessionId)
-    } else {
       sessionStorage.removeItem('verpakking_active_session')
+      router.replace(`/verpakkingsmodule/picklist/${activeSessionId}`)
+      return
     }
-  }, [activeSessionId])
+    const activeBatchSession = sessionStorage.getItem('verpakking_active_batch_session')
+    if (activeBatchSession) {
+      // We need the Picqer batch ID, not the session UUID — fetch it
+      fetch(`/api/verpakking/batch-sessions/${activeBatchSession}`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          sessionStorage.removeItem('verpakking_active_batch_session')
+          if (data?.batch_id) {
+            router.replace(`/verpakkingsmodule/batch/${data.batch_id}`)
+          }
+        })
+        .catch(() => {
+          sessionStorage.removeItem('verpakking_active_batch_session')
+        })
+    }
+  }, [router])
+
+  // Dev mode toggle button (only for authorized users)
+  const devModeToggle = canUseDevMode ? (
+    <button
+      onClick={() => {
+        setDevMode(prev => !prev)
+        setDevPreviewPicklist(null)
+        setDevPreviewBatchId(null)
+      }}
+      className={`fixed bottom-4 right-4 z-50 inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium shadow-lg transition-colors ${
+        devMode
+          ? 'bg-violet-600 text-white hover:bg-violet-700'
+          : 'bg-white text-muted-foreground border border-border hover:bg-muted'
+      }`}
+    >
+      <Code2 className="w-3.5 h-3.5" />
+      {devMode ? 'Dev Mode AAN' : 'Dev Mode'}
+    </button>
+  ) : null
+
+  // Dev mode: Engine Preview for a picklist
+  if (devMode && devPreviewPicklist) {
+    return (
+      <main className="flex-1 flex flex-col overflow-hidden">
+        <div className="w-full flex-1 flex flex-col overflow-y-auto">
+          <EnginePreviewPanel
+            picklistId={devPreviewPicklist.id}
+            picklistDisplayId={devPreviewPicklist.displayId}
+            onBack={() => setDevPreviewPicklist(null)}
+          />
+        </div>
+        {devModeToggle}
+      </main>
+    )
+  }
+
+  // Dev mode: skip WorkerSelector, go straight to BatchQueue
+  if (devMode && !devPreviewBatchId) {
+    const dummyWorker = selectedWorker || { iduser: 0, firstname: 'Dev', lastname: 'Mode', fullName: 'Developer' }
+    return (
+      <main className="flex-1 flex flex-col overflow-hidden">
+        <div className="w-full flex-1 flex flex-col overflow-y-auto px-6">
+          <BatchQueue
+            worker={dummyWorker}
+            onClearWorker={() => setDevMode(false)}
+            onBatchPreview={(batchId) => setDevPreviewBatchId(batchId)}
+            onBatchClaimed={() => {}} // No-op in dev mode
+          />
+        </div>
+        {devModeToggle}
+      </main>
+    )
+  }
+
+  // Dev mode: BatchOverview in preview-only, picklist click → engine preview
+  if (devMode && devPreviewBatchId) {
+    const dummyWorker = selectedWorker || { iduser: 0, firstname: 'Dev', lastname: 'Mode', fullName: 'Developer' }
+    return (
+      <main className="flex-1 flex flex-col overflow-hidden">
+        <div className="w-full flex-1 flex flex-col overflow-y-auto px-6">
+          <BatchOverview
+            batchSessionId={null}
+            previewBatchId={devPreviewBatchId}
+            worker={dummyWorker}
+            onPicklistStarted={() => {}} // No-op in dev mode
+            onBatchClaimed={() => {}} // No-op in dev mode
+            onBack={() => setDevPreviewBatchId(null)}
+            devMode
+            onPicklistPreview={(picklistId, displayId) =>
+              setDevPreviewPicklist({ id: picklistId, displayId })
+            }
+          />
+        </div>
+        {devModeToggle}
+      </main>
+    )
+  }
+
+  // ── Normal flow (non-dev mode) ──
 
   // Step 1: No worker selected → show WorkerSelector
   if (!selectedWorker) {
@@ -53,58 +135,27 @@ export default function VerpakkingsmodulePage() {
           error={error}
           onSelectWorker={selectWorker}
         />
+        {devModeToggle}
       </main>
     )
   }
 
-  // Step 2: No active batch and no preview → show Batch Queue
-  if (!activeBatchSessionId && !previewBatchId) {
-    return (
-      <main className="flex-1 flex flex-col overflow-hidden">
-        <div className="w-full flex-1 flex flex-col overflow-y-auto px-6">
-          <BatchQueue
-            worker={selectedWorker}
-            onClearWorker={clearWorker}
-            onBatchPreview={(batchId) => setPreviewBatchId(batchId)}
-            onBatchClaimed={(batchSessionId) => setActiveBatchSessionId(batchSessionId)}
-          />
-        </div>
-      </main>
-    )
-  }
-
-  // Step 3: Preview or claimed batch, no picklist session → show Batch Overview
-  if (!activeSessionId) {
-    return (
-      <main className="flex-1 flex flex-col overflow-hidden">
-        <div className="w-full flex-1 flex flex-col overflow-y-auto px-6">
-          <BatchOverview
-            batchSessionId={activeBatchSessionId}
-            previewBatchId={previewBatchId}
-            worker={selectedWorker}
-            onPicklistStarted={(sessionId) => setActiveSessionId(sessionId)}
-            onBatchClaimed={(batchSessionId) => {
-              setActiveBatchSessionId(batchSessionId)
-              setPreviewBatchId(null)
-            }}
-            onBack={() => {
-              setActiveBatchSessionId(null)
-              setPreviewBatchId(null)
-            }}
-          />
-        </div>
-      </main>
-    )
-  }
-
-  // Step 4: Picklist session active → show packing screen
+  // Step 2: Show Batch Queue — clicks navigate to batch URL
   return (
     <main className="flex-1 flex flex-col overflow-hidden">
-      <VerpakkingsClient
-        sessionId={activeSessionId}
-        onBack={() => setActiveSessionId(null)}
-        workerName={selectedWorker.fullName}
-      />
+      <div className="w-full flex-1 flex flex-col overflow-y-auto px-6">
+        <BatchQueue
+          worker={selectedWorker}
+          onClearWorker={clearWorker}
+          onBatchPreview={(batchId) => router.push(`/verpakkingsmodule/batch/${batchId}`)}
+          onBatchClaimed={(_batchSessionId, batchId) => {
+            if (batchId) {
+              router.push(`/verpakkingsmodule/batch/${batchId}`)
+            }
+          }}
+        />
+      </div>
+      {devModeToggle}
     </main>
   )
 }

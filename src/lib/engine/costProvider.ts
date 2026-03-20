@@ -146,13 +146,13 @@ async function fetchAllCosts(): Promise<Map<string, Map<string, CostEntry[]>> | 
     return null
   }
 
+  console.log('[costProvider] Querying published_box_costs...')
   const { data, error } = await facturatieSupabase
     .from('published_box_costs')
-    .select('box_sku, box_name, country_code, carrier_code, tariff_class, weight_bracket, is_pallet, vehicle_type, box_material_cost, box_pick_cost, box_pack_cost, transport_purchase_cost, total_cost, calculated_at')
-    .eq('price_group', 'gb') // TODO: wijzigen naar 'ep' zodra facturatie eigen EP prijzen heeft
+    .select('box_sku, box_name, country_code, carrier_code, weight_bracket, box_material_cost, box_pick_cost, box_pack_cost, transport_purchase_cost, total_cost, calculated_at')
 
   if (error) {
-    console.error('[costProvider] Supabase query error:', error.message)
+    console.error('[costProvider] Supabase query error:', error.message, error)
     return null
   }
 
@@ -174,10 +174,10 @@ async function fetchAllCosts(): Promise<Map<string, Map<string, CostEntry[]>> | 
       boxName: row.box_name,
       countryCode: country,
       carrier: row.carrier_code,
-      tariffClass: row.tariff_class,
+      tariffClass: '',
       weightBracket: row.weight_bracket ?? null,
-      isPallet: row.is_pallet ?? false,
-      vehicleType: row.vehicle_type ?? null,
+      isPallet: false,
+      vehicleType: null,
       boxMaterialCost,
       boxPickCost,
       boxPackCost,
