@@ -45,7 +45,8 @@ import { useTagMappings } from '@/hooks/useTagMappings'
 import { usePicqerUsers } from '@/hooks/usePicqerUsers'
 import { usePicklistComments, type PicklistComment } from '@/hooks/usePicklistComments'
 import MentionTextarea from '@/components/verpakking/MentionTextarea'
-import type { PicqerPicklistWithProducts, PicqerPicklistProduct, PicqerPackaging, PicqerOrder } from '@/lib/picqer/types'
+import type { PicqerPicklistWithProducts, PicqerPicklistProduct, PicqerPackaging, PicqerOrder, PicqerOrderfield } from '@/lib/picqer/types'
+import { ORDERFIELD_IDS } from '@/lib/picqer/types'
 import BarcodeListener from './BarcodeListener'
 import ProductCard, { type ProductCardItem, type BoxRef, type ProductCustomFields } from './ProductCard'
 import BoxCard, { type BoxCardItem, type BoxProductItem } from './BoxCard'
@@ -123,6 +124,15 @@ const STATUS_TRANSLATIONS: Record<string, string> = {
   label_fetched: 'Label opgehaald',
   shipped: 'Verzonden',
   error: 'Fout',
+  // Picqer picklist statuses
+  new: 'Nieuw',
+  paused: 'Gepauzeerd',
+  snoozed: 'Gesnoozed',
+  cancelled: 'Geannuleerd',
+  // Picqer order statuses
+  concept: 'Concept',
+  expected: 'Verwacht',
+  processing: 'In verwerking',
 }
 
 function translateStatus(status: string): string {
@@ -165,6 +175,17 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
     for (const lp of localPackagings) {
       if (lp.imageUrl && lp.idpackaging !== 0) {
         map.set(lp.idpackaging, lp.imageUrl)
+      }
+    }
+    return map
+  }, [localPackagings])
+
+  // Build a lookup: packaging barcode -> packaging info (for identifying packaging-as-product items)
+  const packagingBarcodeMap = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; idpackaging: number; barcode: string }>()
+    for (const lp of localPackagings) {
+      if (lp.barcode && lp.active) {
+        map.set(lp.barcode, { id: lp.id, name: lp.name, idpackaging: lp.idpackaging, barcode: lp.barcode })
       }
     }
     return map
@@ -366,6 +387,53 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
       })
   }, [picklist, order])
 
+  // Auto-pick packaging products and create boxes for them
+  const autoPickCalledRef = useRef(false)
+  useEffect(() => {
+    if (autoPickCalledRef.current) return
+    if (!picklist?.products || picklist.products.length === 0) return
+    if (!session || !sessionId) return
+    if (packagingBarcodeMap.size === 0) return
+
+    // Find packaging products in this picklist
+    const packagingProducts = picklist.products.filter(pp => packagingBarcodeMap.has(pp.productcode))
+    if (packagingProducts.length === 0) return
+
+    // Check if boxes already exist for these packagings (session was reloaded)
+    const existingPackagingBarcodes = new Set(
+      session.boxes.map(b => b.packagingBarcode).filter(Boolean)
+    )
+    const needsProcessing = packagingProducts.filter(
+      pp => !existingPackagingBarcodes.has(pp.productcode)
+    )
+
+    // Also check if products are already fully picked (session resumed after auto-pick)
+    const allAlreadyPicked = packagingProducts.every(pp => pp.amount_picked >= pp.amount)
+    if (needsProcessing.length === 0 && allAlreadyPicked) return
+
+    autoPickCalledRef.current = true
+
+    // 1. Auto-pick in Picqer (non-blocking)
+    const unpickedCodes = packagingProducts
+      .filter(pp => pp.amount_picked < pp.amount)
+      .map(pp => pp.productcode)
+
+    if (unpickedCodes.length > 0) {
+      fetch(`/api/verpakking/sessions/${sessionId}/auto-pick-packaging`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ packagingProductCodes: unpickedCodes }),
+      }).catch(err => console.error('[VerpakkingsClient] Auto-pick failed:', err))
+    }
+
+    // 2. Auto-create boxes for packaging products that don't have a box yet
+    for (const pp of needsProcessing) {
+      const pkg = packagingBarcodeMap.get(pp.productcode)
+      if (!pkg) continue
+      addBox(pkg.name, pkg.idpackaging, pkg.barcode)
+    }
+  }, [picklist, session, sessionId, packagingBarcodeMap, addBox])
+
   // Fetch packagings once
   useEffect(() => {
     let cancelled = false
@@ -426,7 +494,10 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
   const productItems: ProductCardItem[] = useMemo(() => {
     if (!picklist?.products) return []
 
-    return picklist.products.map((pp: PicqerPicklistProduct, index: number) => {
+    // Filter out packaging products (boxes that appear as line items)
+    const realProducts = picklist.products.filter(pp => !packagingBarcodeMap.has(pp.productcode))
+
+    return realProducts.map((pp: PicqerPicklistProduct, index: number) => {
       // Collect all box assignments for this product
       const assignments: { boxId: string; boxName: string; boxIndex: number; amount: number; sessionProductId: string }[] = []
       if (session) {
@@ -473,7 +544,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
         customFields: productCustomFields.get(pp.idproduct),
       }
     })
-  }, [picklist, session, productCustomFields])
+  }, [picklist, session, productCustomFields, packagingBarcodeMap])
 
   // Build BoxRef array for the ProductCard dropdown
   const boxRefs: BoxRef[] = useMemo(() => {
@@ -1904,8 +1975,54 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
                     )}
                   </>
                 )}
+                {order && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Order status</p>
+                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium leading-none ${
+                      order.status === 'completed' ? 'bg-emerald-100 text-emerald-800' :
+                      order.status === 'processing' ? 'bg-blue-100 text-blue-800' :
+                      order.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                      order.status === 'paused' ? 'bg-amber-100 text-amber-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {translateStatus(order.status)}
+                    </span>
+                  </div>
+                )}
+                {picklist && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Picklist status</p>
+                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium leading-none ${
+                      picklist.status === 'closed' ? 'bg-emerald-100 text-emerald-800' :
+                      picklist.status === 'new' ? 'bg-yellow-100 text-yellow-800' :
+                      picklist.status === 'paused' ? 'bg-amber-100 text-amber-800' :
+                      picklist.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {translateStatus(picklist.status)}
+                    </span>
+                  </div>
+                )}
+                {order?.orderfields && (() => {
+                  const leverdag = order.orderfields.find((f: PicqerOrderfield) => f.idorderfield === ORDERFIELD_IDS.LEVERDAG)
+                  return leverdag?.value ? (
+                    <div>
+                      <p className="text-xs text-muted-foreground">Leverdag</p>
+                      <p className="font-medium">{leverdag.value}</p>
+                    </div>
+                  ) : null
+                })()}
+                {order?.orderfields && (() => {
+                  const retailer = order.orderfields.find((f: PicqerOrderfield) => f.idorderfield === ORDERFIELD_IDS.RETAILER_NAME)
+                  return retailer?.value ? (
+                    <div>
+                      <p className="text-xs text-muted-foreground">Retailer</p>
+                      <p className="font-medium">{retailer.value}</p>
+                    </div>
+                  ) : null
+                })()}
                 <div>
-                  <p className="text-xs text-muted-foreground">Status</p>
+                  <p className="text-xs text-muted-foreground">Sessie status</p>
                   <p className="font-medium">{translateStatus(session.status)}</p>
                 </div>
                 {picklist && (
