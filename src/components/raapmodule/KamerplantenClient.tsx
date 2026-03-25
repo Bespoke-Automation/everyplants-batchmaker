@@ -1,10 +1,10 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { Loader2, ArrowLeft, RefreshCw, CheckCircle2, ChevronDown, ChevronRight, ScanBarcode, X, ChevronLeft } from 'lucide-react'
+import { Loader2, ArrowLeft, RefreshCw, CheckCircle2, ChevronDown, ChevronRight, ScanBarcode, X, ChevronLeft, Plus, Clock } from 'lucide-react'
 import Link from 'next/link'
 import BarcodeListener from '@/components/verpakking/BarcodeListener'
-import type { RaapSessionItem } from '@/lib/supabase/raapSessions'
+import type { RaapSessionItem, RaapSession } from '@/lib/supabase/raapSessions'
 import type { PickListAllocation } from '@/lib/raapmodule/pickListBuilder'
 
 /** Extended item with enrichment data (not persisted to DB) */
@@ -19,8 +19,18 @@ interface BatchGroup {
   items: EnrichedItem[]
 }
 
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'zojuist'
+  if (mins < 60) return `${mins} min geleden`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours} uur geleden`
+  const days = Math.floor(hours / 24)
+  return `${days} dag${days > 1 ? 'en' : ''} geleden`
+}
+
 function CameraScanner({ onScan, onClose }: { onScan: (code: string) => void; onClose: () => void }) {
-  // Use refs for callbacks so the scanner doesn't restart when they change
   const onScanRef = useRef(onScan)
   const onCloseRef = useRef(onClose)
   onScanRef.current = onScan
@@ -54,7 +64,6 @@ function CameraScanner({ onScan, onClose }: { onScan: (code: string) => void; on
         await scanner.start(
           { facingMode: 'environment' },
           { fps: 10, qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-            // Use 80% of viewfinder width, short height for barcode shape
             const w = Math.floor(viewfinderWidth * 0.8)
             const h = Math.floor(Math.min(viewfinderHeight * 0.3, 200))
             return { width: w, height: h }
@@ -77,7 +86,7 @@ function CameraScanner({ onScan, onClose }: { onScan: (code: string) => void; on
         scanner.stop().then(() => scanner.clear?.()).catch(() => {})
       }
     }
-  }, []) // stable — no deps, uses refs
+  }, [])
 
   return (
     <div className="fixed inset-0 z-50 bg-black flex flex-col">
@@ -111,22 +120,14 @@ function ProductDetailSheet({
 
   return (
     <div className="fixed inset-0 z-40 flex flex-col" onClick={onClose}>
-      {/* Backdrop */}
       <div className="flex-1 bg-black/40" />
-
-      {/* Sheet */}
       <div
         className="bg-background rounded-t-2xl shadow-2xl max-h-[85vh] flex flex-col"
         onClick={e => e.stopPropagation()}
       >
-        {/* Product header */}
         <div className="flex items-start gap-4 p-4 border-b border-border">
           {item.image ? (
-            <img
-              src={item.image}
-              alt={item.product_name}
-              className="w-16 h-16 rounded-lg object-cover flex-shrink-0 bg-muted"
-            />
+            <img src={item.image} alt={item.product_name} className="w-16 h-16 rounded-lg object-cover flex-shrink-0 bg-muted" />
           ) : (
             <div className="w-16 h-16 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
               <span className="text-muted-foreground text-xs">Geen foto</span>
@@ -141,17 +142,12 @@ function ProductDetailSheet({
           </button>
         </div>
 
-        {/* Scrollable content */}
         <div className="overflow-y-auto flex-1 p-4 space-y-5">
-          {/* Location */}
           <div>
             <p className="text-sm font-medium text-muted-foreground mb-1.5">Locatie</p>
-            <span className="inline-block px-2.5 py-1 bg-muted rounded-md text-sm font-medium">
-              {item.location}
-            </span>
+            <span className="inline-block px-2.5 py-1 bg-muted rounded-md text-sm font-medium">{item.location}</span>
           </div>
 
-          {/* Picklists */}
           {item.allocations && item.allocations.length > 0 && (
             <div>
               <p className="text-sm font-medium text-muted-foreground mb-2">Picklijsten</p>
@@ -172,39 +168,26 @@ function ProductDetailSheet({
             </div>
           )}
 
-          {/* Total */}
           <div>
             <p className="text-sm font-medium text-muted-foreground mb-1.5">Totaal te rapen</p>
             <p className="text-2xl font-bold">{item.qty_needed}</p>
           </div>
 
-          {/* Check button */}
           <button
             onClick={onToggleCheck}
             className={`w-full py-3 rounded-lg text-sm font-medium transition-colors ${
-              item.checked
-                ? 'bg-muted text-muted-foreground hover:bg-muted/80'
-                : 'bg-emerald-600 text-white hover:bg-emerald-700'
+              item.checked ? 'bg-muted text-muted-foreground hover:bg-muted/80' : 'bg-emerald-600 text-white hover:bg-emerald-700'
             }`}
           >
             {item.checked ? 'Markering ongedaan maken' : 'Markeer als geraapt'}
           </button>
         </div>
 
-        {/* Navigation footer */}
         <div className="flex items-center justify-between border-t border-border px-4 py-3">
-          <button
-            onClick={onPrev ?? undefined}
-            disabled={!onPrev}
-            className="p-2 hover:bg-muted rounded-md transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
-          >
+          <button onClick={onPrev ?? undefined} disabled={!onPrev} className="p-2 hover:bg-muted rounded-md transition-colors disabled:opacity-20 disabled:cursor-not-allowed">
             <ChevronLeft className="w-5 h-5" />
           </button>
-          <button
-            onClick={onNext ?? undefined}
-            disabled={!onNext}
-            className="p-2 hover:bg-muted rounded-md transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
-          >
+          <button onClick={onNext ?? undefined} disabled={!onNext} className="p-2 hover:bg-muted rounded-md transition-colors disabled:opacity-20 disabled:cursor-not-allowed">
             <ChevronRight className="w-5 h-5" />
           </button>
         </div>
@@ -214,9 +197,10 @@ function ProductDetailSheet({
 }
 
 export default function KamerplantenClient() {
+  const [session, setSession] = useState<RaapSession | null>(null)
   const [items, setItems] = useState<EnrichedItem[]>([])
-  const [sessionId, setSessionId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [expandedBatches, setExpandedBatches] = useState<Set<number>>(new Set())
@@ -227,68 +211,22 @@ export default function KamerplantenClient() {
 
   const getItemKey = (item: EnrichedItem) => `${item.product_id}::${item.location}::${item.batch_id}`
 
-  const load = useCallback(async (forceNew = false) => {
+  // Check for active session on mount
+  const checkSession = useCallback(async () => {
     setIsLoading(true)
     setError(null)
     try {
-      let session = null
-
-      if (!forceNew) {
-        const activeRes = await fetch(`/api/raapmodule/sessions?category=kamerplanten`)
-        const { session: activeSession } = await activeRes.json()
-        session = activeSession
-      }
-
-      if (session) {
-        setSessionId(session.id)
-        const [itemsRes, pickRes] = await Promise.all([
-          fetch(`/api/raapmodule/sessions/${session.id}/items`),
-          fetch(`/api/raapmodule/products/kamerplanten?group_by=batch`),
-        ])
-        const { items: existingItems } = await itemsRes.json()
-        const { items: freshItems } = await pickRes.json()
-
-        const checkedKeys = new Set(
-          (existingItems || []).filter((i: RaapSessionItem) => i.checked).map((i: RaapSessionItem) => `${i.product_id}::${i.location}::${i.batch_id}`)
-        )
-        const mergedItems = (freshItems || []).map((item: EnrichedItem) => ({
-          ...item,
-          checked: checkedKeys.has(`${item.product_id}::${item.location}::${item.batch_id}`),
-          qty_picked: checkedKeys.has(`${item.product_id}::${item.location}::${item.batch_id}`) ? item.qty_needed : 0,
-        }))
-
-        if (mergedItems.length > 0) {
-          await fetch(`/api/raapmodule/sessions/${session.id}/items`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ items: mergedItems }),
-          })
-        }
-        setItems(mergedItems)
+      const res = await fetch('/api/raapmodule/sessions?category=kamerplanten')
+      const { session: activeSession } = await res.json()
+      if (activeSession) {
+        setSession(activeSession)
+        // Load saved items
+        const itemsRes = await fetch(`/api/raapmodule/sessions/${activeSession.id}/items`)
+        const { items: savedItems } = await itemsRes.json()
+        setItems(savedItems || [])
       } else {
-        const createRes = await fetch('/api/raapmodule/sessions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ category: 'kamerplanten' }),
-        })
-        const createData = await createRes.json()
-        if (!createRes.ok || !createData.session) {
-          throw new Error(createData.error || 'Sessie aanmaken mislukt')
-        }
-        const newSession = createData.session
-        setSessionId(newSession.id)
-
-        const pickRes = await fetch(`/api/raapmodule/products/kamerplanten?group_by=batch`)
-        const { items: pickItems } = await pickRes.json()
-
-        if (pickItems?.length > 0) {
-          await fetch(`/api/raapmodule/sessions/${newSession.id}/items`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ items: pickItems }),
-          })
-        }
-        setItems(pickItems || [])
+        setSession(null)
+        setItems([])
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Er is een fout opgetreden')
@@ -297,30 +235,100 @@ export default function KamerplantenClient() {
     }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { checkSession() }, [checkSession])
+
+  // Start a new session
+  const startNewSession = useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
+    try {
+      const createRes = await fetch('/api/raapmodule/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category: 'kamerplanten' }),
+      })
+      const createData = await createRes.json()
+      if (!createRes.ok || !createData.session) {
+        throw new Error(createData.error || 'Sessie aanmaken mislukt')
+      }
+      setSession(createData.session)
+
+      const pickRes = await fetch('/api/raapmodule/products/kamerplanten?group_by=batch')
+      const { items: pickItems } = await pickRes.json()
+
+      if (pickItems?.length > 0) {
+        await fetch(`/api/raapmodule/sessions/${createData.session.id}/items`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: pickItems }),
+        })
+      }
+      setItems(pickItems || [])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Er is een fout opgetreden')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
+  // Refresh items within current session (re-fetch from Picqer, preserve checked state)
+  const refreshItems = useCallback(async () => {
+    if (!session) return
+    setIsRefreshing(true)
+    try {
+      const pickRes = await fetch('/api/raapmodule/products/kamerplanten?group_by=batch')
+      const { items: freshItems } = await pickRes.json()
+
+      const checkedKeys = new Set(
+        items.filter(i => i.checked).map(i => getItemKey(i))
+      )
+      const mergedItems = (freshItems || []).map((item: EnrichedItem) => ({
+        ...item,
+        checked: checkedKeys.has(`${item.product_id}::${item.location}::${item.batch_id}`),
+        qty_picked: checkedKeys.has(`${item.product_id}::${item.location}::${item.batch_id}`) ? item.qty_needed : 0,
+      }))
+
+      if (mergedItems.length > 0) {
+        await fetch(`/api/raapmodule/sessions/${session.id}/items`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: mergedItems }),
+        })
+      }
+      setItems(mergedItems)
+    } finally {
+      setIsRefreshing(false)
+    }
+  }, [session, items])
+
+  // Complete session
+  const handleComplete = async () => {
+    if (!session) return
+    await fetch(`/api/raapmodule/sessions/${session.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'completed' }),
+    })
+    setSession(null)
+    setItems([])
+    setExpandedBatches(new Set())
+  }
 
   const batchGroups = useMemo((): BatchGroup[] => {
     const groups = new Map<number, BatchGroup>()
     for (const item of items) {
       const batchId = item.batch_id ?? 0
       if (!groups.has(batchId)) {
-        groups.set(batchId, {
-          batch_id: batchId,
-          batch_name: item.batch_name || `Batch ${batchId}`,
-          items: [],
-        })
+        groups.set(batchId, { batch_id: batchId, batch_name: item.batch_name || `Batch ${batchId}`, items: [] })
       }
       groups.get(batchId)!.items.push(item)
     }
     return Array.from(groups.values())
   }, [items])
 
-  // Flat ordered list for prev/next navigation
   const flatItems = useMemo(() => {
     const result: EnrichedItem[] = []
-    for (const group of batchGroups) {
-      result.push(...group.items)
-    }
+    for (const group of batchGroups) result.push(...group.items)
     return result
   }, [batchGroups])
 
@@ -340,16 +348,16 @@ export default function KamerplantenClient() {
   }, [])
 
   const saveItems = useCallback(async (updatedItems: EnrichedItem[]) => {
-    if (!sessionId) return
+    if (!session) return
     setItems(updatedItems)
     setIsSaving(true)
-    await fetch(`/api/raapmodule/sessions/${sessionId}/items`, {
+    await fetch(`/api/raapmodule/sessions/${session.id}/items`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items: updatedItems }),
     })
     setIsSaving(false)
-  }, [sessionId])
+  }, [session])
 
   const toggleCheck = useCallback(async (targetKey: string) => {
     const updatedItems = items.map(item => {
@@ -368,13 +376,11 @@ export default function KamerplantenClient() {
     await saveItems(updatedItems)
   }, [items, saveItems])
 
-  const matchAndCheck = useCallback((productcode: string, scannedCode: string) => {
+  const matchAndCheck = useCallback((productcode: string) => {
     const match = items.find(i => !i.checked && i.productcode === productcode)
     if (match) {
       checkItem(getItemKey(match))
-      if (match.batch_id !== null) {
-        setExpandedBatches(prev => new Set([...prev, match.batch_id!]))
-      }
+      if (match.batch_id !== null) setExpandedBatches(prev => new Set([...prev, match.batch_id!]))
       showFeedback(`${match.product_name}`, 'success')
       return true
     }
@@ -387,30 +393,14 @@ export default function KamerplantenClient() {
   }, [items, checkItem, showFeedback])
 
   const handleScan = useCallback(async (barcode: string) => {
-    // First try matching directly by productcode
-    if (matchAndCheck(barcode, barcode)) return
-
-    // Fallback: look up EAN barcode via Picqer
+    if (matchAndCheck(barcode)) return
     try {
       const res = await fetch(`/api/raapmodule/barcode-lookup?barcode=${encodeURIComponent(barcode)}`)
       const { productcode } = await res.json()
-      if (productcode && matchAndCheck(productcode, barcode)) return
-    } catch {
-      // ignore lookup errors
-    }
-
+      if (productcode && matchAndCheck(productcode)) return
+    } catch { /* ignore */ }
     showFeedback(`Niet gevonden: ${barcode}`, 'error')
   }, [matchAndCheck, showFeedback])
-
-  const handleComplete = async () => {
-    if (!sessionId) return
-    await fetch(`/api/raapmodule/sessions/${sessionId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'completed' }),
-    })
-    load(true)
-  }
 
   // Detail sheet navigation
   const selectedItem = useMemo(() => {
@@ -438,6 +428,7 @@ export default function KamerplantenClient() {
   const checkedCount = items.filter(i => i.checked).length
   const allChecked = items.length > 0 && checkedCount === items.length
 
+  // --- LOADING ---
   if (isLoading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -446,16 +437,14 @@ export default function KamerplantenClient() {
     )
   }
 
+  // --- ERROR ---
   if (error) {
     return (
       <div className="flex-1 flex items-center justify-center p-6">
         <div className="text-center">
           <p className="text-destructive font-medium mb-2">Fout bij laden</p>
           <p className="text-sm text-muted-foreground mb-4">{error}</p>
-          <button
-            onClick={() => load(false)}
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
-          >
+          <button onClick={checkSession} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors">
             Opnieuw proberen
           </button>
         </div>
@@ -463,15 +452,45 @@ export default function KamerplantenClient() {
     )
   }
 
+  // --- NO ACTIVE SESSION ---
+  if (!session) {
+    return (
+      <div className="flex-1 p-6">
+        <div className="max-w-2xl mx-auto">
+          <div className="flex items-center gap-3 mb-8">
+            <Link href="/raapmodule" className="p-1.5 hover:bg-muted rounded-md transition-colors">
+              <ArrowLeft className="w-4 h-4" />
+            </Link>
+            <h2 className="text-xl font-bold">Kamerplanten</h2>
+          </div>
+
+          <div className="border border-border rounded-lg p-8 text-center">
+            <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+              <Plus className="w-6 h-6 text-muted-foreground" />
+            </div>
+            <h3 className="font-semibold text-lg mb-1">Geen actieve sessie</h3>
+            <p className="text-sm text-muted-foreground mb-6">
+              Start een nieuwe sessie om kamerplanten te rapen. De lijst wordt opgehaald uit Picqer.
+            </p>
+            <button
+              onClick={startNewSession}
+              className="px-5 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
+            >
+              Nieuwe sessie starten
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // --- ACTIVE SESSION ---
   return (
     <div className="flex-1 p-6">
       <BarcodeListener onScan={handleScan} enabled={!isLoading && !showCamera && !selectedItem} />
 
-      {showCamera && (
-        <CameraScanner onScan={handleScan} onClose={() => setShowCamera(false)} />
-      )}
+      {showCamera && <CameraScanner onScan={handleScan} onClose={() => setShowCamera(false)} />}
 
-      {/* Scan feedback toast */}
       {scanFeedback && (
         <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium text-white transition-all ${
           scanFeedback.type === 'success' ? 'bg-emerald-600' : 'bg-red-500'
@@ -480,7 +499,6 @@ export default function KamerplantenClient() {
         </div>
       )}
 
-      {/* Product detail sheet */}
       {selectedItem && (
         <ProductDetailSheet
           item={selectedItem}
@@ -492,16 +510,13 @@ export default function KamerplantenClient() {
       )}
 
       <div className="max-w-4xl mx-auto">
-        <div className="flex items-center gap-3 mb-6">
+        {/* Header */}
+        <div className="flex items-center gap-3 mb-2">
           <Link href="/raapmodule" className="p-1.5 hover:bg-muted rounded-md transition-colors">
             <ArrowLeft className="w-4 h-4" />
           </Link>
           <div className="flex-1">
             <h2 className="text-xl font-bold">Kamerplanten</h2>
-            <p className="text-sm text-muted-foreground">
-              {checkedCount} / {items.length} geraapt · {batchGroups.length} batch{batchGroups.length !== 1 ? 'es' : ''}
-              {isSaving && ' · opslaan...'}
-            </p>
           </div>
           <button
             onClick={() => setShowCamera(true)}
@@ -510,24 +525,42 @@ export default function KamerplantenClient() {
           >
             <ScanBarcode className="w-5 h-5" />
           </button>
-          <button
-            onClick={() => load(true)}
-            className="p-1.5 hover:bg-muted rounded-md transition-colors"
-            title="Nieuwe sessie starten"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
-          {allChecked && (
-            <button
-              onClick={handleComplete}
-              className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 transition-colors"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              Sessie afronden
-            </button>
-          )}
         </div>
 
+        {/* Session info bar */}
+        <div className="flex items-center gap-3 mb-6 px-1">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Clock className="w-3 h-3" />
+            <span>Gestart {timeAgo(session.created_at)}</span>
+          </div>
+          <span className="text-xs text-muted-foreground">·</span>
+          <span className="text-xs text-muted-foreground">
+            {checkedCount} / {items.length} geraapt
+          </span>
+          {isSaving && <span className="text-xs text-muted-foreground">· opslaan...</span>}
+          <div className="flex-1" />
+          <button
+            onClick={refreshItems}
+            disabled={isRefreshing}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+            title="Lijst vernieuwen vanuit Picqer"
+          >
+            <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+            <span>Vernieuwen</span>
+          </button>
+        </div>
+
+        {/* Progress bar */}
+        {items.length > 0 && (
+          <div className="h-1.5 bg-muted rounded-full mb-6 overflow-hidden">
+            <div
+              className="h-full bg-emerald-500 rounded-full transition-all duration-300"
+              style={{ width: `${(checkedCount / items.length) * 100}%` }}
+            />
+          </div>
+        )}
+
+        {/* Batch list */}
         {batchGroups.length === 0 ? (
           <div className="border border-border rounded-lg px-4 py-8 text-center text-sm text-muted-foreground">
             Geen kamerplanten te rapen
@@ -569,18 +602,11 @@ export default function KamerplantenClient() {
                             key={key}
                             onClick={() => setSelectedItemKey(key)}
                             className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors ${
-                              item.checked
-                                ? 'bg-emerald-50 text-muted-foreground'
-                                : 'hover:bg-muted/30'
+                              item.checked ? 'bg-emerald-50 text-muted-foreground' : 'hover:bg-muted/30'
                             }`}
                           >
                             <div onClick={e => { e.stopPropagation(); toggleCheck(key) }}>
-                              <input
-                                type="checkbox"
-                                checked={item.checked}
-                                readOnly
-                                className="w-4 h-4 rounded pointer-events-none"
-                              />
+                              <input type="checkbox" checked={item.checked} readOnly className="w-4 h-4 rounded pointer-events-none" />
                             </div>
 
                             {item.image ? (
@@ -590,17 +616,13 @@ export default function KamerplantenClient() {
                             )}
 
                             <div className="flex-1 min-w-0">
-                              <div className={`font-medium text-sm ${item.checked ? 'line-through' : ''}`}>
-                                {item.product_name}
-                              </div>
+                              <div className={`font-medium text-sm ${item.checked ? 'line-through' : ''}`}>{item.product_name}</div>
                               <div className="text-xs text-muted-foreground">{item.productcode}</div>
                             </div>
 
                             <div className="flex items-center gap-2 flex-shrink-0">
                               {item.location && (
-                                <span className="px-1.5 py-0.5 bg-muted rounded text-[10px] font-medium">
-                                  {item.location}
-                                </span>
+                                <span className="px-1.5 py-0.5 bg-muted rounded text-[10px] font-medium">{item.location}</span>
                               )}
                               <span className="font-semibold text-sm w-6 text-right">{item.qty_needed}</span>
                             </div>
@@ -614,6 +636,25 @@ export default function KamerplantenClient() {
             })}
           </div>
         )}
+
+        {/* Footer actions */}
+        <div className="flex items-center gap-3 mt-6">
+          {allChecked && (
+            <button
+              onClick={handleComplete}
+              className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 transition-colors"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              Sessie afronden
+            </button>
+          )}
+          <button
+            onClick={handleComplete}
+            className="text-xs text-muted-foreground hover:text-destructive transition-colors ml-auto"
+          >
+            Sessie stoppen
+          </button>
+        </div>
       </div>
     </div>
   )
