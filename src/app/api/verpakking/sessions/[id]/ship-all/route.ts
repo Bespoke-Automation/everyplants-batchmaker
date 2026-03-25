@@ -3,23 +3,25 @@ import {
   getBoxesBySession,
   getPackingSession,
   updateBox,
-  updatePackingSession,
   claimBoxForShipping,
 } from '@/lib/supabase/packingSessions'
 import {
   createShipment,
   createMulticolloShipment,
   getShipmentLabel,
-  pickAllProducts,
-  closePicklist,
-  fetchPicklist,
 } from '@/lib/picqer/client'
 import { supabase } from '@/lib/supabase/client'
 import type { PicqerShipmentParcel } from '@/lib/picqer/types'
-import { recordSessionOutcome } from '@/lib/engine/feedbackTracking'
 import { tryAutoPrint } from '@/lib/printnode/autoPrint'
+import { tryCompleteSession } from '@/lib/verpakking/tryCompleteSession'
 
 export const dynamic = 'force-dynamic'
+
+/** Negative IDs are local-only packagings that don't exist in Picqer */
+function sanitizePackagingId(id: number | null | undefined): number | undefined {
+  if (id == null || id < 0) return undefined
+  return id
+}
 
 /**
  * Upload a PDF label to Supabase Storage
@@ -142,7 +144,7 @@ export async function POST(
       if (claimedBoxes.length >= 2) {
         // Build parcels array
         const parcels = claimedBoxes.map(box => ({
-          idpackaging: box.picqer_packaging_id!,
+          idpackaging: sanitizePackagingId(box.picqer_packaging_id) ?? 0,
           weight: weights?.[box.id] ?? 0,
         }))
 
@@ -220,7 +222,7 @@ export async function POST(
         const box = claimedBoxes[0]
         const result = await shipSingleBox(
           sessionId, session.picklist_id, box.id,
-          shippingProviderId, box.picqer_packaging_id ?? undefined,
+          shippingProviderId, sanitizePackagingId(box.picqer_packaging_id),
           weights?.[box.id], packingStationId
         )
         results.push(result)
@@ -249,87 +251,28 @@ export async function POST(
 
         const result = await shipSingleBox(
           sessionId, session.picklist_id, box.id,
-          shippingProviderId, box.picqer_packaging_id ?? undefined,
+          shippingProviderId, sanitizePackagingId(box.picqer_packaging_id),
           weights?.[box.id], packingStationId
         )
         results.push(result)
       }
     }
 
-    // Step 3: Check if all boxes shipped → close picklist + complete session
+    // Step 3: Try to complete session (only if all products are packed)
     try {
-      const updatedBoxes = await getBoxesBySession(sessionId)
-      const allBoxesShipped = updatedBoxes.length > 0 && updatedBoxes.every(
-        b => b.status === 'label_fetched' || b.status === 'shipped'
-      )
-
-      if (allBoxesShipped) {
-        // Check product completeness
-        try {
-          const picklist = await fetchPicklist(session.picklist_id)
-          const totalPicklistProducts = picklist.products.reduce((sum, p) => sum + p.amount, 0)
-          const sessionWithProducts = await getPackingSession(sessionId)
-          const totalPackedProducts = sessionWithProducts.packing_session_boxes.reduce(
-            (sum, box) => sum + box.packing_session_products.reduce((s, p) => s + p.amount, 0),
-            0
-          )
-          if (totalPackedProducts !== totalPicklistProducts) {
-            closeWarning = `Let op: niet alle producten uit de picklist zijn ingepakt (${totalPackedProducts} van ${totalPicklistProducts}). `
-          }
-        } catch (e) {
-          console.error('[ship-all] Error checking product completeness:', e)
-        }
-
-        // Pick all products
-        try {
-          await pickAllProducts(session.picklist_id)
-        } catch (e) {
-          console.error('[ship-all] Failed to pick all products:', e)
-          closeWarning = (closeWarning || '') + 'Failed to pick all products in Picqer. '
-        }
-
-        // Close picklist
-        try {
-          const closeResult = await closePicklist(session.picklist_id)
-          if (!closeResult.success) {
-            closeWarning = (closeWarning || '') + `Picklist close failed: ${closeResult.error}. `
-          }
-        } catch (e) {
-          console.error('[ship-all] Error closing picklist:', e)
-          closeWarning = (closeWarning || '') + `Picklist close error. `
-        }
-
-        // Complete session
-        await updatePackingSession(sessionId, {
-          status: 'completed',
-          completed_at: new Date().toISOString(),
-        })
-        sessionCompleted = true
-
-        // Record feedback loop data (non-blocking)
-        let outcomeData: { outcome: string; deviationType: string } | null = null
-        try {
-          outcomeData = await recordSessionOutcome(sessionId)
-        } catch (feedbackError) {
-          console.error('[ship-all] Error recording session outcome:', feedbackError)
-        }
-
-        // Analyze session for capacity learning (non-blocking)
-        try {
-          const { analyzeCompletedSession } = await import('@/lib/engine/sessionAnalyzer')
-          await analyzeCompletedSession(sessionId)
-        } catch (analyzerError) {
-          console.error('[ship-all] Error analyzing session for capacity feedback:', analyzerError)
-        }
-
-        return NextResponse.json({
-          boxes: results,
-          multicollo: isMulticollo,
-          sessionCompleted,
-          ...(closeWarning && { warning: closeWarning }),
-          ...(outcomeData && { outcome: outcomeData.outcome, deviationType: outcomeData.deviationType }),
-        })
+      const completionResult = await tryCompleteSession(sessionId, session.picklist_id)
+      sessionCompleted = completionResult.sessionCompleted
+      if (completionResult.warning) {
+        closeWarning = (closeWarning || '') + completionResult.warning
       }
+
+      return NextResponse.json({
+        boxes: results,
+        multicollo: isMulticollo,
+        sessionCompleted,
+        ...(closeWarning && { warning: closeWarning }),
+        ...(completionResult.outcome && { outcome: completionResult.outcome, deviationType: completionResult.deviationType }),
+      })
     } catch (e) {
       console.error('[ship-all] Error checking session completion:', e)
     }

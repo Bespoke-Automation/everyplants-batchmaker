@@ -1002,6 +1002,7 @@ function PicklistRow({
 }) {
   const isItemCompleted = item.sessionStatus === 'completed'
   const isClosed = item.status === 'closed'
+  const hasActiveSession = !!(item.sessionId && item.sessionStatus && item.sessionStatus !== 'completed')
 
   // Combine all comment bodies into a single string (like Picqer does)
   const combinedComments = comments.map((c) => c.body).join(' ')
@@ -1076,7 +1077,7 @@ function PicklistRow({
               <CheckCircle2 className="w-4 h-4" />
               Klaar
             </span>
-          ) : isClosed ? (
+          ) : (isClosed && !hasActiveSession) ? (
             <span className="text-sm text-muted-foreground px-2">Dicht</span>
           ) : devMode ? (
             <button
@@ -1389,9 +1390,17 @@ function ProductRow({ product, batchId, picklistAliases }: { product: BatchProdu
               {product.stockLocation}
             </span>
           )}
-          <span className="text-lg font-bold tabular-nums">
-            {product.amount}&times;
-          </span>
+          <div className="text-right">
+            <span className="text-lg font-bold tabular-nums">
+              {product.amountPicked > 0 && product.amountPicked < product.amount
+                ? <>{product.amountPicked}<span className="text-muted-foreground font-normal">/</span>{product.amount}&times;</>
+                : <>{product.amount}&times;</>
+              }
+            </span>
+            {product.amountPicked > 0 && product.amountPicked >= product.amount && (
+              <p className="text-xs text-emerald-600">Gepickt</p>
+            )}
+          </div>
         </div>
 
         {/* Picklists button */}

@@ -6,14 +6,20 @@ import {
   updatePackingSession,
   claimBoxForShipping,
 } from '@/lib/supabase/packingSessions'
-import { createShipment, getShipmentLabel, pickAllProducts, closePicklist, fetchPicklist, cancelShipment } from '@/lib/picqer/client'
+import { createShipment, getShipmentLabel, cancelShipment } from '@/lib/picqer/client'
+import { tryCompleteSession } from '@/lib/verpakking/tryCompleteSession'
 import { supabase } from '@/lib/supabase/client'
-import { recordSessionOutcome } from '@/lib/engine/feedbackTracking'
 import { logActivity } from '@/lib/supabase/activityLog'
 import { getRequestUser } from '@/lib/supabase/getRequestUser'
 import { tryAutoPrint } from '@/lib/printnode/autoPrint'
 
 export const dynamic = 'force-dynamic'
+
+/** Negative IDs are local-only packagings that don't exist in Picqer */
+function sanitizePackagingId(id: number | null | undefined): number | undefined {
+  if (id == null || id < 0) return undefined
+  return id
+}
 
 /**
  * Upload a PDF label to Supabase Storage
@@ -107,7 +113,7 @@ export async function POST(
     const shipmentResult = await createShipment(
       session.picklist_id,
       shippingProviderId,
-      packagingId || undefined,
+      sanitizePackagingId(packagingId),
       weight || undefined
     )
 
@@ -175,78 +181,17 @@ export async function POST(
       status: 'label_fetched',
     })
 
-    // Step 9: Check if ALL boxes in the session are now shipped/label_fetched
-    // If so, close the picklist in Picqer and complete the session
+    // Step 9: Try to complete session (only if all products are packed)
     let sessionCompleted = false
     let closeWarning: string | undefined
+    let outcomeData: { outcome: string; deviationType: string } | undefined
     try {
-      const allBoxes = await getBoxesBySession(sessionId)
-      const allBoxesShipped = allBoxes.length > 0 && allBoxes.every(
-        b => b.status === 'label_fetched' || b.status === 'shipped'
-      )
+      const result = await tryCompleteSession(sessionId, session.picklist_id)
+      sessionCompleted = result.sessionCompleted
+      closeWarning = result.warning
+      if (result.outcome) outcomeData = { outcome: result.outcome, deviationType: result.deviationType! }
 
-      if (allBoxesShipped) {
-        // B5: Check if all picklist products are packed
-        try {
-          const picklist = await fetchPicklist(session.picklist_id)
-          const totalPicklistProducts = picklist.products.reduce((sum, p) => sum + p.amount, 0)
-          const sessionWithProducts = await getPackingSession(sessionId)
-          const totalPackedProducts = sessionWithProducts.packing_session_boxes.reduce(
-            (sum, box) => sum + box.packing_session_products.reduce((s, p) => s + p.amount, 0),
-            0
-          )
-
-          if (totalPackedProducts !== totalPicklistProducts) {
-            closeWarning = (closeWarning || '') + `Let op: niet alle producten uit de picklist zijn ingepakt (${totalPackedProducts} van ${totalPicklistProducts}). `
-          }
-        } catch (completenessError) {
-          console.error('[verpakking] Error checking product completeness:', completenessError)
-          // Non-blocking: continue with close
-        }
-
-        // Pick all products first (required before closing)
-        try {
-          await pickAllProducts(session.picklist_id)
-        } catch (pickAllError) {
-          console.error('[verpakking] Failed to pick all products in Picqer:', pickAllError)
-          closeWarning = 'Failed to pick all products in Picqer before closing. '
-        }
-
-        // Close the picklist in Picqer (best-effort)
-        try {
-          const closeResult = await closePicklist(session.picklist_id)
-          if (!closeResult.success) {
-            console.error('[verpakking] Failed to close picklist:', closeResult.error)
-            closeWarning = (closeWarning || '') + `Picklist close failed: ${closeResult.error}. Please close manually in Picqer.`
-          }
-        } catch (closeError) {
-          console.error('[verpakking] Error closing picklist in Picqer:', closeError)
-          closeWarning = (closeWarning || '') + `Picklist close error: ${closeError instanceof Error ? closeError.message : 'Unknown error'}. Please close manually in Picqer.`
-        }
-
-        // Update session status to completed in Supabase
-        await updatePackingSession(sessionId, {
-          status: 'completed',
-          completed_at: new Date().toISOString(),
-        })
-        sessionCompleted = true
-
-        // Record feedback loop data
-        let outcomeData: { outcome: string; deviationType: string } | null = null
-        try {
-          outcomeData = await recordSessionOutcome(sessionId)
-        } catch (feedbackError) {
-          console.error('[verpakking] Error recording session outcome:', feedbackError)
-        }
-
-        // Analyze session for capacity learning (non-blocking)
-        try {
-          const { analyzeCompletedSession } = await import('@/lib/engine/sessionAnalyzer')
-          await analyzeCompletedSession(sessionId)
-        } catch (analyzerError) {
-          console.error('[verpakking] Error analyzing session for capacity feedback:', analyzerError)
-        }
-
+      if (sessionCompleted) {
         const user = await getRequestUser()
         await logActivity({
           user_id: user?.id,
@@ -257,21 +202,22 @@ export async function POST(
           description: `Inpaksessie afgerond (picklist ${session.picklist_id})`,
           metadata: { session_id: sessionId, picklist_id: session.picklist_id },
         })
-
-        return NextResponse.json({
-          success: true,
-          shipmentId,
-          trackingCode: trackingCode || null,
-          trackingUrl: trackingUrl || null,
-          labelUrl: labelUrl || null,
-          sessionCompleted,
-          ...(closeWarning && { warning: closeWarning }),
-          ...(outcomeData && { outcome: outcomeData.outcome, deviationType: outcomeData.deviationType }),
-        })
       }
     } catch (completionError) {
       console.error('[verpakking] Error checking session completion:', completionError)
-      // Non-blocking: don't fail the ship response
+    }
+
+    if (sessionCompleted) {
+      return NextResponse.json({
+        success: true,
+        shipmentId,
+        trackingCode: trackingCode || null,
+        trackingUrl: trackingUrl || null,
+        labelUrl: labelUrl || null,
+        sessionCompleted,
+        ...(closeWarning && { warning: closeWarning }),
+        ...(outcomeData && { outcome: outcomeData.outcome, deviationType: outcomeData.deviationType }),
+      })
     }
 
     return NextResponse.json({

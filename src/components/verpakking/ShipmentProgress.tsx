@@ -122,10 +122,42 @@ export default function ShipmentProgress({
       return
     }
 
-    // If already shipping (progress exists), go straight to shipping phase
+    // If progress exists, check if there are still unshipped boxes
     if (shipProgress.size > 0) {
-      setPhase('shipping')
-      return
+      // Seed openedLabelsRef with boxes that already have labels,
+      // so only NEW labels get auto-opened (not previously shipped boxes)
+      for (const box of boxes) {
+        const progress = shipProgress.get(box.id)
+        if (progress?.labelUrl) {
+          openedLabelsRef.current.add(box.id)
+        }
+      }
+
+      // Check if all boxes have been processed (shipped or error)
+      const allProcessed = boxes.every((box) => {
+        const progress = shipProgress.get(box.id)
+        return progress?.status === 'shipped' || progress?.status === 'labeled' || progress?.status === 'error'
+      })
+
+      if (allProcessed) {
+        // All done or errored — show progress view
+        setPhase('shipping')
+        return
+      }
+
+      // There are still unprocessed boxes — show configure with existing settings
+      // Keep methods and selectedProviderId from previous session (don't reset)
+      setWeightInput(defaultWeight ? String(defaultWeight) : '')
+      const unshippedBox = boxes.find((box) => !shipProgress.get(box.id))
+      setSelectedPackagingId(unshippedBox?.picqerPackagingId ?? boxes[0]?.picqerPackagingId ?? null)
+      autoStartedRef.current = false
+
+      // If we already have methods cached, go straight to configure
+      if (methods.length > 0) {
+        setPhase('configure')
+        return
+      }
+      // Otherwise fall through to fetch methods below
     }
 
     // No boxes to ship
@@ -754,18 +786,24 @@ export default function ShipmentProgress({
 
             {/* Actions */}
             <div className="flex items-center justify-between pt-4 border-t border-border">
-              {/* Left side: label actions */}
+              {/* Left side: label actions + reconfigure */}
               <div className="flex items-center gap-2">
                 {labelUrls.length > 0 && (
-                  <>
-                    <button
-                      onClick={handleDownloadAllLabels}
-                      className="flex items-center gap-2 px-3 py-2 min-h-[48px] text-sm text-primary hover:bg-primary/10 rounded-lg transition-colors"
-                    >
-                      <Printer className="w-4 h-4" />
-                      Labels printen
-                    </button>
-                  </>
+                  <button
+                    onClick={handleDownloadAllLabels}
+                    className="flex items-center gap-2 px-3 py-2 min-h-[48px] text-sm text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                  >
+                    <Printer className="w-4 h-4" />
+                    Labels printen
+                  </button>
+                )}
+                {hasErrors && !isShipping && (
+                  <button
+                    onClick={() => setPhase('configure')}
+                    className="flex items-center gap-1.5 px-3 py-2 min-h-[48px] text-sm text-muted-foreground hover:bg-muted rounded-lg transition-colors"
+                  >
+                    Instellingen wijzigen
+                  </button>
                 )}
               </div>
 

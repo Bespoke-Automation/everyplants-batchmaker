@@ -478,7 +478,7 @@ export async function claimBoxForShipping(boxId: string): Promise<boolean> {
     .from('packing_session_boxes')
     .update({ status: 'shipment_created' })
     .eq('id', boxId)
-    .in('status', ['pending', 'open', 'closed'])
+    .in('status', ['pending', 'open', 'closed', 'error'])
     .select('id')
     .maybeSingle()
 

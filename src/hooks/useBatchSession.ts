@@ -46,6 +46,8 @@ interface PicqerBatchProduct {
   productcode: string
   image: string | null
   stock_location: string | null
+  amount?: number
+  amount_picked?: number
   picklists: PicqerBatchProductPicklist[]
 }
 
@@ -77,8 +79,12 @@ export function useBatchSession(batchSessionId: string | null, previewBatchId?: 
   const mapProducts = (rawProducts: PicqerBatchProduct[]): BatchProduct[] =>
     rawProducts.map((p) => {
       const plArray = p.picklists ?? []
-      const totalAmount = plArray.reduce((sum, pl) => sum + (pl.amount ?? 0), 0)
-      const totalPicked = plArray.reduce((sum, pl) => sum + (pl.amount_picked ?? 0), 0)
+      // Primary: sum from nested picklists array
+      let totalAmount = plArray.reduce((sum, pl) => sum + (pl.amount ?? 0), 0)
+      let totalPicked = plArray.reduce((sum, pl) => sum + (pl.amount_picked ?? 0), 0)
+      // Fallback: use top-level amount/amount_picked if picklists array is empty
+      if (totalAmount === 0 && p.amount) totalAmount = p.amount
+      if (totalPicked === 0 && p.amount_picked) totalPicked = p.amount_picked
       return {
         idproduct: p.idproduct,
         productcode: p.productcode ?? '',
