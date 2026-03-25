@@ -20,38 +20,63 @@ interface BatchGroup {
 }
 
 function CameraScanner({ onScan, onClose }: { onScan: (code: string) => void; onClose: () => void }) {
-  const scannerRef = useRef<HTMLDivElement>(null)
-  const html5QrCodeRef = useRef<unknown>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const [manualInput, setManualInput] = useState('')
+  const [hasNativeDetector] = useState(() =>
+    typeof window !== 'undefined' && 'BarcodeDetector' in window
+  )
 
   useEffect(() => {
+    if (!hasNativeDetector) return
+
     let mounted = true
+    let animFrameId: number
 
     async function start() {
-      const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import('html5-qrcode')
-      if (!mounted || !scannerRef.current) return
-
-      const scanner = new Html5Qrcode('raap-camera-scanner', {
-        formatsToSupport: [
-          Html5QrcodeSupportedFormats.EAN_13,
-          Html5QrcodeSupportedFormats.EAN_8,
-          Html5QrcodeSupportedFormats.CODE_128,
-          Html5QrcodeSupportedFormats.CODE_39,
-          Html5QrcodeSupportedFormats.UPC_A,
-          Html5QrcodeSupportedFormats.UPC_E,
-          Html5QrcodeSupportedFormats.QR_CODE,
-        ],
-        useBarCodeDetectorIfSupported: true,
-        verbose: false,
-      })
-      html5QrCodeRef.current = scanner
-
       try {
-        await scanner.start(
-          { facingMode: 'environment' },
-          { fps: 20 },
-          (decodedText) => { onScan(decodedText) },
-          () => {}
-        )
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+        })
+        if (!mounted) { stream.getTracks().forEach(t => t.stop()); return }
+        streamRef.current = stream
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+          await videoRef.current.play()
+        }
+
+        // @ts-expect-error BarcodeDetector is not yet in TS lib
+        const detector = new window.BarcodeDetector({
+          formats: ['ean_13', 'ean_8', 'code_128', 'code_39', 'upc_a', 'upc_e', 'qr_code']
+        })
+
+        let lastScan = ''
+        let lastScanTime = 0
+
+        async function scan() {
+          if (!mounted || !videoRef.current || videoRef.current.readyState < 2) {
+            animFrameId = requestAnimationFrame(scan)
+            return
+          }
+          try {
+            const barcodes = await detector.detect(videoRef.current)
+            if (barcodes.length > 0) {
+              const value = barcodes[0].rawValue
+              const now = Date.now()
+              // Debounce: don't fire same barcode within 2s
+              if (value !== lastScan || now - lastScanTime > 2000) {
+                lastScan = value
+                lastScanTime = now
+                onScan(value)
+              }
+            }
+          } catch {
+            // detection failed for this frame, continue
+          }
+          animFrameId = requestAnimationFrame(scan)
+        }
+
+        animFrameId = requestAnimationFrame(scan)
       } catch {
         onClose()
       }
@@ -61,12 +86,10 @@ function CameraScanner({ onScan, onClose }: { onScan: (code: string) => void; on
 
     return () => {
       mounted = false
-      const scanner = html5QrCodeRef.current as { stop?: () => Promise<void>; clear?: () => void } | null
-      if (scanner?.stop) {
-        scanner.stop().then(() => scanner.clear?.()).catch(() => {})
-      }
+      cancelAnimationFrame(animFrameId)
+      streamRef.current?.getTracks().forEach(t => t.stop())
     }
-  }, [onScan, onClose])
+  }, [hasNativeDetector, onScan, onClose])
 
   return (
     <div className="fixed inset-0 z-50 bg-black/90 flex flex-col">
@@ -76,9 +99,34 @@ function CameraScanner({ onScan, onClose }: { onScan: (code: string) => void; on
           <X className="w-5 h-5" />
         </button>
       </div>
-      <div className="flex-1 flex items-center justify-center px-4">
-        <div id="raap-camera-scanner" ref={scannerRef} className="w-full max-w-sm rounded-lg overflow-hidden" />
-      </div>
+
+      {hasNativeDetector ? (
+        <div className="flex-1 flex items-center justify-center px-4">
+          <video
+            ref={videoRef}
+            className="w-full max-w-lg rounded-lg"
+            playsInline
+            muted
+          />
+        </div>
+      ) : (
+        <div className="flex-1 flex items-center justify-center px-6">
+          <div className="w-full max-w-sm space-y-3">
+            <p className="text-white text-sm text-center">Camera scanner niet beschikbaar. Voer barcode handmatig in:</p>
+            <form onSubmit={e => { e.preventDefault(); if (manualInput.trim()) { onScan(manualInput.trim()); setManualInput('') } }}>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoFocus
+                value={manualInput}
+                onChange={e => setManualInput(e.target.value)}
+                placeholder="Barcode nummer..."
+                className="w-full px-4 py-3 rounded-lg text-lg bg-white text-black"
+              />
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
