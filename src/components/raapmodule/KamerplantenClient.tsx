@@ -1,15 +1,22 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { Loader2, ArrowLeft, RefreshCw, CheckCircle2, ChevronDown, ChevronRight, ScanBarcode, X } from 'lucide-react'
+import { Loader2, ArrowLeft, RefreshCw, CheckCircle2, ChevronDown, ChevronRight, ScanBarcode, X, ChevronLeft } from 'lucide-react'
 import Link from 'next/link'
 import BarcodeListener from '@/components/verpakking/BarcodeListener'
 import type { RaapSessionItem } from '@/lib/supabase/raapSessions'
+import type { PickListAllocation } from '@/lib/raapmodule/pickListBuilder'
+
+/** Extended item with enrichment data (not persisted to DB) */
+interface EnrichedItem extends RaapSessionItem {
+  image?: string | null
+  allocations?: PickListAllocation[]
+}
 
 interface BatchGroup {
   batch_id: number
   batch_name: string
-  items: RaapSessionItem[]
+  items: EnrichedItem[]
 }
 
 function CameraScanner({ onScan, onClose }: { onScan: (code: string) => void; onClose: () => void }) {
@@ -30,13 +37,10 @@ function CameraScanner({ onScan, onClose }: { onScan: (code: string) => void; on
         await scanner.start(
           { facingMode: 'environment' },
           { fps: 10, qrbox: { width: 280, height: 120 } },
-          (decodedText) => {
-            onScan(decodedText)
-          },
-          () => {} // ignore errors (no code found in frame)
+          (decodedText) => { onScan(decodedText) },
+          () => {}
         )
       } catch {
-        // Camera permission denied or not available
         onClose()
       }
     }
@@ -67,8 +71,127 @@ function CameraScanner({ onScan, onClose }: { onScan: (code: string) => void; on
   )
 }
 
+function ProductDetailSheet({
+  item,
+  onClose,
+  onPrev,
+  onNext,
+  onToggleCheck,
+}: {
+  item: EnrichedItem
+  onClose: () => void
+  onPrev: (() => void) | null
+  onNext: (() => void) | null
+  onToggleCheck: () => void
+}) {
+  const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+
+  return (
+    <div className="fixed inset-0 z-40 flex flex-col" onClick={onClose}>
+      {/* Backdrop */}
+      <div className="flex-1 bg-black/40" />
+
+      {/* Sheet */}
+      <div
+        className="bg-background rounded-t-2xl shadow-2xl max-h-[85vh] flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Product header */}
+        <div className="flex items-start gap-4 p-4 border-b border-border">
+          {item.image ? (
+            <img
+              src={item.image}
+              alt={item.product_name}
+              className="w-16 h-16 rounded-lg object-cover flex-shrink-0 bg-muted"
+            />
+          ) : (
+            <div className="w-16 h-16 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
+              <span className="text-muted-foreground text-xs">Geen foto</span>
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-lg leading-tight">{item.productcode}</p>
+            <p className="text-sm text-muted-foreground mt-0.5">{item.product_name}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-muted rounded-md transition-colors flex-shrink-0">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Scrollable content */}
+        <div className="overflow-y-auto flex-1 p-4 space-y-5">
+          {/* Location */}
+          <div>
+            <p className="text-sm font-medium text-muted-foreground mb-1.5">Locatie</p>
+            <span className="inline-block px-2.5 py-1 bg-muted rounded-md text-sm font-medium">
+              {item.location}
+            </span>
+          </div>
+
+          {/* Picklists */}
+          {item.allocations && item.allocations.length > 0 && (
+            <div>
+              <p className="text-sm font-medium text-muted-foreground mb-2">Picklijsten</p>
+              <div className="space-y-0 divide-y divide-border border border-border rounded-lg">
+                {item.allocations.map((alloc, i) => (
+                  <div key={alloc.picklist_id} className="flex items-center gap-3 px-3 py-2.5">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm">{alloc.picklistid}</p>
+                      <p className="text-xs text-muted-foreground truncate">{alloc.delivery_name}</p>
+                    </div>
+                    <span className="text-sm text-muted-foreground">{alloc.qty}&times;</span>
+                    <span className="w-8 h-8 flex items-center justify-center border border-border rounded-md text-sm font-medium">
+                      {LETTERS[i] || i + 1}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Total */}
+          <div>
+            <p className="text-sm font-medium text-muted-foreground mb-1.5">Totaal te rapen</p>
+            <p className="text-2xl font-bold">{item.qty_needed}</p>
+          </div>
+
+          {/* Check button */}
+          <button
+            onClick={onToggleCheck}
+            className={`w-full py-3 rounded-lg text-sm font-medium transition-colors ${
+              item.checked
+                ? 'bg-muted text-muted-foreground hover:bg-muted/80'
+                : 'bg-emerald-600 text-white hover:bg-emerald-700'
+            }`}
+          >
+            {item.checked ? 'Markering ongedaan maken' : 'Markeer als geraapt'}
+          </button>
+        </div>
+
+        {/* Navigation footer */}
+        <div className="flex items-center justify-between border-t border-border px-4 py-3">
+          <button
+            onClick={onPrev ?? undefined}
+            disabled={!onPrev}
+            className="p-2 hover:bg-muted rounded-md transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+          <button
+            onClick={onNext ?? undefined}
+            disabled={!onNext}
+            className="p-2 hover:bg-muted rounded-md transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function KamerplantenClient() {
-  const [items, setItems] = useState<RaapSessionItem[]>([])
+  const [items, setItems] = useState<EnrichedItem[]>([])
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -76,7 +199,10 @@ export default function KamerplantenClient() {
   const [expandedBatches, setExpandedBatches] = useState<Set<number>>(new Set())
   const [showCamera, setShowCamera] = useState(false)
   const [scanFeedback, setScanFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const [selectedItemKey, setSelectedItemKey] = useState<string | null>(null)
   const feedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const getItemKey = (item: EnrichedItem) => `${item.product_id}::${item.location}::${item.batch_id}`
 
   const load = useCallback(async (forceNew = false) => {
     setIsLoading(true)
@@ -102,7 +228,7 @@ export default function KamerplantenClient() {
         const checkedKeys = new Set(
           (existingItems || []).filter((i: RaapSessionItem) => i.checked).map((i: RaapSessionItem) => `${i.product_id}::${i.location}::${i.batch_id}`)
         )
-        const mergedItems = (freshItems || []).map((item: RaapSessionItem) => ({
+        const mergedItems = (freshItems || []).map((item: EnrichedItem) => ({
           ...item,
           checked: checkedKeys.has(`${item.product_id}::${item.location}::${item.batch_id}`),
           qty_picked: checkedKeys.has(`${item.product_id}::${item.location}::${item.batch_id}`) ? item.qty_needed : 0,
@@ -166,6 +292,15 @@ export default function KamerplantenClient() {
     return Array.from(groups.values())
   }, [items])
 
+  // Flat ordered list for prev/next navigation
+  const flatItems = useMemo(() => {
+    const result: EnrichedItem[] = []
+    for (const group of batchGroups) {
+      result.push(...group.items)
+    }
+    return result
+  }, [batchGroups])
+
   const toggleBatch = (batchId: number) => {
     setExpandedBatches(prev => {
       const next = new Set(prev)
@@ -181,32 +316,9 @@ export default function KamerplantenClient() {
     feedbackTimeoutRef.current = setTimeout(() => setScanFeedback(null), 2000)
   }, [])
 
-  const checkItem = useCallback(async (productId: number, location: string, batchId: number | null) => {
+  const saveItems = useCallback(async (updatedItems: EnrichedItem[]) => {
     if (!sessionId) return
-    const key = `${productId}::${location}::${batchId}`
-    const updatedItems = items.map(item => {
-      if (`${item.product_id}::${item.location}::${item.batch_id}` !== key) return item
-      return { ...item, checked: true, qty_picked: item.qty_needed }
-    })
     setItems(updatedItems)
-
-    await fetch(`/api/raapmodule/sessions/${sessionId}/items`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items: updatedItems }),
-    })
-  }, [sessionId, items])
-
-  const toggleCheck = async (productId: number, location: string, batchId: number | null) => {
-    if (!sessionId || isSaving) return
-    const key = `${productId}::${location}::${batchId}`
-    const updatedItems = items.map(item => {
-      if (`${item.product_id}::${item.location}::${item.batch_id}` !== key) return item
-      const nowChecked = !item.checked
-      return { ...item, checked: nowChecked, qty_picked: nowChecked ? item.qty_needed : 0 }
-    })
-    setItems(updatedItems)
-
     setIsSaving(true)
     await fetch(`/api/raapmodule/sessions/${sessionId}/items`, {
       method: 'POST',
@@ -214,28 +326,58 @@ export default function KamerplantenClient() {
       body: JSON.stringify({ items: updatedItems }),
     })
     setIsSaving(false)
-  }
+  }, [sessionId])
 
-  const handleScan = useCallback((barcode: string) => {
-    // Find first unchecked item matching this productcode
-    const match = items.find(i => !i.checked && i.productcode === barcode)
+  const toggleCheck = useCallback(async (targetKey: string) => {
+    const updatedItems = items.map(item => {
+      if (getItemKey(item) !== targetKey) return item
+      const nowChecked = !item.checked
+      return { ...item, checked: nowChecked, qty_picked: nowChecked ? item.qty_needed : 0 }
+    })
+    await saveItems(updatedItems)
+  }, [items, saveItems])
+
+  const checkItem = useCallback(async (targetKey: string) => {
+    const updatedItems = items.map(item => {
+      if (getItemKey(item) !== targetKey) return item
+      return { ...item, checked: true, qty_picked: item.qty_needed }
+    })
+    await saveItems(updatedItems)
+  }, [items, saveItems])
+
+  const matchAndCheck = useCallback((productcode: string, scannedCode: string) => {
+    const match = items.find(i => !i.checked && i.productcode === productcode)
     if (match) {
-      checkItem(match.product_id, match.location, match.batch_id)
-      // Auto-expand the batch containing the matched item
+      checkItem(getItemKey(match))
       if (match.batch_id !== null) {
         setExpandedBatches(prev => new Set([...prev, match.batch_id!]))
       }
       showFeedback(`${match.product_name}`, 'success')
-    } else {
-      // Check if already all checked for this barcode
-      const allChecked = items.filter(i => i.productcode === barcode)
-      if (allChecked.length > 0 && allChecked.every(i => i.checked)) {
-        showFeedback('Al geraapt', 'error')
-      } else {
-        showFeedback(`Niet gevonden: ${barcode}`, 'error')
-      }
+      return true
     }
+    const allForCode = items.filter(i => i.productcode === productcode)
+    if (allForCode.length > 0 && allForCode.every(i => i.checked)) {
+      showFeedback('Al geraapt', 'error')
+      return true
+    }
+    return false
   }, [items, checkItem, showFeedback])
+
+  const handleScan = useCallback(async (barcode: string) => {
+    // First try matching directly by productcode
+    if (matchAndCheck(barcode, barcode)) return
+
+    // Fallback: look up EAN barcode via Picqer
+    try {
+      const res = await fetch(`/api/raapmodule/barcode-lookup?barcode=${encodeURIComponent(barcode)}`)
+      const { productcode } = await res.json()
+      if (productcode && matchAndCheck(productcode, barcode)) return
+    } catch {
+      // ignore lookup errors
+    }
+
+    showFeedback(`Niet gevonden: ${barcode}`, 'error')
+  }, [matchAndCheck, showFeedback])
 
   const handleComplete = async () => {
     if (!sessionId) return
@@ -246,6 +388,29 @@ export default function KamerplantenClient() {
     })
     load(true)
   }
+
+  // Detail sheet navigation
+  const selectedItem = useMemo(() => {
+    if (!selectedItemKey) return null
+    return items.find(i => getItemKey(i) === selectedItemKey) ?? null
+  }, [selectedItemKey, items])
+
+  const selectedIndex = useMemo(() => {
+    if (!selectedItemKey) return -1
+    return flatItems.findIndex(i => getItemKey(i) === selectedItemKey)
+  }, [selectedItemKey, flatItems])
+
+  const handlePrev = selectedIndex > 0 ? () => {
+    const prev = flatItems[selectedIndex - 1]
+    setSelectedItemKey(getItemKey(prev))
+    if (prev.batch_id !== null) setExpandedBatches(p => new Set([...p, prev.batch_id!]))
+  } : null
+
+  const handleNext = selectedIndex < flatItems.length - 1 ? () => {
+    const next = flatItems[selectedIndex + 1]
+    setSelectedItemKey(getItemKey(next))
+    if (next.batch_id !== null) setExpandedBatches(p => new Set([...p, next.batch_id!]))
+  } : null
 
   const checkedCount = items.filter(i => i.checked).length
   const allChecked = items.length > 0 && checkedCount === items.length
@@ -277,7 +442,7 @@ export default function KamerplantenClient() {
 
   return (
     <div className="flex-1 p-6">
-      <BarcodeListener onScan={handleScan} enabled={!isLoading && !showCamera} />
+      <BarcodeListener onScan={handleScan} enabled={!isLoading && !showCamera && !selectedItem} />
 
       {showCamera && (
         <CameraScanner onScan={handleScan} onClose={() => setShowCamera(false)} />
@@ -285,11 +450,22 @@ export default function KamerplantenClient() {
 
       {/* Scan feedback toast */}
       {scanFeedback && (
-        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-40 px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium text-white transition-all ${
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium text-white transition-all ${
           scanFeedback.type === 'success' ? 'bg-emerald-600' : 'bg-red-500'
         }`}>
           {scanFeedback.message}
         </div>
+      )}
+
+      {/* Product detail sheet */}
+      {selectedItem && (
+        <ProductDetailSheet
+          item={selectedItem}
+          onClose={() => setSelectedItemKey(null)}
+          onPrev={handlePrev}
+          onNext={handleNext}
+          onToggleCheck={() => toggleCheck(getItemKey(selectedItem))}
+        />
       )}
 
       <div className="max-w-4xl mx-auto">
@@ -362,41 +538,53 @@ export default function KamerplantenClient() {
                   </button>
 
                   {isExpanded && (
-                    <table className="w-full text-sm">
-                      <tbody>
-                        {group.items.map(item => {
-                          const key = `${item.product_id}::${item.location}::${item.batch_id}`
-                          return (
-                            <tr
-                              key={key}
-                              onClick={() => toggleCheck(item.product_id, item.location, item.batch_id)}
-                              className={`border-t border-border cursor-pointer transition-colors ${
-                                item.checked
-                                  ? 'bg-emerald-50 text-muted-foreground'
-                                  : 'hover:bg-muted/30'
-                              }`}
-                            >
-                              <td className="w-10 px-4 py-3" onClick={e => e.stopPropagation()}>
-                                <input
-                                  type="checkbox"
-                                  checked={item.checked}
-                                  onChange={() => toggleCheck(item.product_id, item.location, item.batch_id)}
-                                  className="w-4 h-4 rounded"
-                                />
-                              </td>
-                              <td className="px-4 py-2.5">
-                                <div className={`font-medium ${item.checked ? 'line-through' : ''}`}>
-                                  {item.product_name}
-                                </div>
-                                <div className="text-xs text-muted-foreground">{item.productcode}</div>
-                              </td>
-                              <td className="px-4 py-2.5 font-mono text-xs">{item.location}</td>
-                              <td className="px-4 py-2.5 text-right font-semibold">{item.qty_needed}</td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
+                    <div className="divide-y divide-border">
+                      {group.items.map(item => {
+                        const key = getItemKey(item)
+                        return (
+                          <div
+                            key={key}
+                            onClick={() => setSelectedItemKey(key)}
+                            className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors ${
+                              item.checked
+                                ? 'bg-emerald-50 text-muted-foreground'
+                                : 'hover:bg-muted/30'
+                            }`}
+                          >
+                            <div onClick={e => { e.stopPropagation(); toggleCheck(key) }}>
+                              <input
+                                type="checkbox"
+                                checked={item.checked}
+                                readOnly
+                                className="w-4 h-4 rounded pointer-events-none"
+                              />
+                            </div>
+
+                            {item.image ? (
+                              <img src={item.image} alt="" className="w-10 h-10 rounded object-cover flex-shrink-0 bg-muted" />
+                            ) : (
+                              <div className="w-10 h-10 rounded bg-muted flex-shrink-0" />
+                            )}
+
+                            <div className="flex-1 min-w-0">
+                              <div className={`font-medium text-sm ${item.checked ? 'line-through' : ''}`}>
+                                {item.product_name}
+                              </div>
+                              <div className="text-xs text-muted-foreground">{item.productcode}</div>
+                            </div>
+
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              {item.location && (
+                                <span className="px-1.5 py-0.5 bg-muted rounded text-[10px] font-medium">
+                                  {item.location}
+                                </span>
+                              )}
+                              <span className="font-semibold text-sm w-6 text-right">{item.qty_needed}</span>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
                   )}
                 </div>
               )

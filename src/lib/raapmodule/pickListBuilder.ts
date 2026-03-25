@@ -126,6 +126,13 @@ export async function buildPickList(
     .sort((a, b) => a.location.localeCompare(b.location) || a.product_name.localeCompare(b.product_name))
 }
 
+export interface PickListAllocation {
+  picklist_id: number
+  picklistid: string  // human-readable ID like "P2026-17948"
+  delivery_name: string
+  qty: number
+}
+
 export interface PickListItemByBatch {
   product_id: number
   productcode: string
@@ -134,6 +141,8 @@ export interface PickListItemByBatch {
   qty_needed: number
   batch_id: number
   batch_name: string
+  image: string | null
+  allocations: PickListAllocation[]
 }
 
 /** Build pick list with items kept separate per batch (not aggregated) */
@@ -151,6 +160,12 @@ export async function buildPickListByBatch(
     const batchDetail = await getPicklistBatch(batch.idpicklist_batch)
     const batchName = String(batchDetail.picklist_batchid || batch.idpicklist_batch)
 
+    // Build picklist lookup for delivery names
+    const picklistLookup = new Map<number, { picklistid: string; delivery_name: string }>()
+    for (const pl of batchDetail.picklists ?? []) {
+      picklistLookup.set(pl.idpicklist, { picklistid: pl.picklistid, delivery_name: pl.delivery_name })
+    }
+
     // Aggregate per product+location within this batch
     const batchAgg = new Map<string, PickListItemByBatch>()
 
@@ -162,9 +177,19 @@ export async function buildPickListByBatch(
       if (productCategory !== category) continue
 
       let qtyNeeded = 0
+      const allocations: PickListAllocation[] = []
+
       for (const alloc of batchProduct.picklists) {
         const qty = alloc.amount - alloc.amount_picked
-        if (qty > 0) qtyNeeded += qty
+        if (qty <= 0) continue
+        qtyNeeded += qty
+        const plInfo = picklistLookup.get(alloc.idpicklist)
+        allocations.push({
+          picklist_id: alloc.idpicklist,
+          picklistid: plInfo?.picklistid || String(alloc.idpicklist),
+          delivery_name: plInfo?.delivery_name || '',
+          qty,
+        })
       }
       if (qtyNeeded <= 0) continue
 
@@ -172,6 +197,7 @@ export async function buildPickListByBatch(
       const existing = batchAgg.get(key)
       if (existing) {
         existing.qty_needed += qtyNeeded
+        existing.allocations.push(...allocations)
       } else {
         batchAgg.set(key, {
           product_id: batchProduct.idproduct,
@@ -181,6 +207,8 @@ export async function buildPickListByBatch(
           qty_needed: qtyNeeded,
           batch_id: batch.idpicklist_batch,
           batch_name: batchName,
+          image: batchProduct.image || null,
+          allocations,
         })
       }
     }
