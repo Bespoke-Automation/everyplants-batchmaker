@@ -1,4 +1,4 @@
-import { getPicklistBatches, getPicklistBatch, fetchPicklist } from '@/lib/picqer/client'
+import { getPicklistBatches, getPicklistBatch, fetchPicklist, fetchOrder } from '@/lib/picqer/client'
 import { getCategoryLocationNameMap, type RaapCategory } from '@/lib/supabase/raapCategoryLocations'
 import { getVervoerders } from '@/lib/supabase/vervoerders'
 import { supabase } from '@/lib/supabase/client'
@@ -131,6 +131,7 @@ export interface PickListAllocation {
   picklistid: string  // human-readable ID like "P2026-17948"
   delivery_name: string
   qty: number
+  plantnummer?: string | null
 }
 
 export interface PickListItemByBatch {
@@ -214,6 +215,44 @@ export async function buildPickListByBatch(
     }
 
     items.push(...batchAgg.values())
+  }
+
+  // Enrich PPS items with plantnummer from order
+  const PLANTNUMMER_FIELD_ID = 3262
+  const ppsItems = items.filter(i => i.location.toLowerCase() === 'pps')
+  if (ppsItems.length > 0) {
+    // Collect unique picklist IDs that need order lookup
+    const picklistIds = new Set<number>()
+    for (const item of ppsItems) {
+      for (const alloc of item.allocations) picklistIds.add(alloc.picklist_id)
+    }
+
+    // Fetch picklist → order → plantnummer (with caching)
+    const plantnummerByPicklist = new Map<number, string | null>()
+    const orderCache = new Map<number, string | null>()
+
+    for (const plId of picklistIds) {
+      try {
+        const pl = await fetchPicklist(plId)
+        if (!pl.idorder) { plantnummerByPicklist.set(plId, null); continue }
+
+        if (!orderCache.has(pl.idorder)) {
+          const order = await fetchOrder(pl.idorder)
+          const field = order.orderfields?.find(f => f.idorderfield === PLANTNUMMER_FIELD_ID)
+          orderCache.set(pl.idorder, field?.value || null)
+        }
+        plantnummerByPicklist.set(plId, orderCache.get(pl.idorder) ?? null)
+      } catch {
+        plantnummerByPicklist.set(plId, null)
+      }
+    }
+
+    // Apply plantnummer to allocations
+    for (const item of ppsItems) {
+      for (const alloc of item.allocations) {
+        alloc.plantnummer = plantnummerByPicklist.get(alloc.picklist_id) ?? null
+      }
+    }
   }
 
   return items.sort((a, b) =>

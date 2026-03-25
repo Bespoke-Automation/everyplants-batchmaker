@@ -157,6 +157,9 @@ function ProductDetailSheet({
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm">{alloc.picklistid}</p>
                       <p className="text-xs text-muted-foreground truncate">{alloc.delivery_name}</p>
+                      {alloc.plantnummer && (
+                        <p className="text-xs text-blue-600 font-medium mt-0.5">#{alloc.plantnummer}</p>
+                      )}
                     </div>
                     <span className="text-sm text-muted-foreground">{alloc.qty}&times;</span>
                     <span className="w-8 h-8 flex items-center justify-center border border-border rounded-md text-sm font-medium">
@@ -220,10 +223,32 @@ export default function KamerplantenClient() {
       const { session: activeSession } = await res.json()
       if (activeSession) {
         setSession(activeSession)
-        // Load saved items
-        const itemsRes = await fetch(`/api/raapmodule/sessions/${activeSession.id}/items`)
+        // Load saved items + fresh data from Picqer in parallel
+        const [itemsRes, pickRes] = await Promise.all([
+          fetch(`/api/raapmodule/sessions/${activeSession.id}/items`),
+          fetch('/api/raapmodule/products/kamerplanten?group_by=batch'),
+        ])
         const { items: savedItems } = await itemsRes.json()
-        setItems(savedItems || [])
+        const { items: freshItems } = await pickRes.json()
+
+        // Merge: use fresh data (with images/allocations) but preserve checked state from saved
+        const checkedKeys = new Set(
+          (savedItems || []).filter((i: RaapSessionItem) => i.checked).map((i: RaapSessionItem) => `${i.product_id}::${i.location}::${i.batch_id}`)
+        )
+        const mergedItems = (freshItems || []).map((item: EnrichedItem) => ({
+          ...item,
+          checked: checkedKeys.has(`${item.product_id}::${item.location}::${item.batch_id}`),
+          qty_picked: checkedKeys.has(`${item.product_id}::${item.location}::${item.batch_id}`) ? item.qty_needed : 0,
+        }))
+
+        if (mergedItems.length > 0) {
+          await fetch(`/api/raapmodule/sessions/${activeSession.id}/items`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: mergedItems }),
+          })
+        }
+        setItems(mergedItems)
       } else {
         setSession(null)
         setItems([])
@@ -617,7 +642,14 @@ export default function KamerplantenClient() {
 
                             <div className="flex-1 min-w-0">
                               <div className={`font-medium text-sm ${item.checked ? 'line-through' : ''}`}>{item.product_name}</div>
-                              <div className="text-xs text-muted-foreground">{item.productcode}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {item.productcode}
+                                {item.allocations?.some(a => a.plantnummer) && (
+                                  <span className="text-blue-600 font-medium ml-1.5">
+                                    #{item.allocations.filter(a => a.plantnummer).map(a => a.plantnummer).join(', #')}
+                                  </span>
+                                )}
+                              </div>
                             </div>
 
                             <div className="flex items-center gap-2 flex-shrink-0">
