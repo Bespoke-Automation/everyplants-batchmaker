@@ -2589,6 +2589,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         hasNextPicklist={!!nextPicklistInBatch}
         picqerPackagings={packagings.map(p => ({ idpackaging: p.idpackaging, name: p.name }))}
         defaultWeight={picklist?.weight ?? undefined}
+        hasPackingStation={!!packingStationId}
       />
     </DndContext>
   )

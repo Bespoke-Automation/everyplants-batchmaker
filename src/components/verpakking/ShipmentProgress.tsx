@@ -21,20 +21,28 @@ interface SessionBox {
   }>
 }
 
-type DialogPhase = 'loading' | 'select_method' | 'shipping' | 'error'
+type DialogPhase = 'loading' | 'configure' | 'select_method' | 'shipping' | 'error'
+
+interface PicqerPackagingOption {
+  idpackaging: number
+  name: string
+}
 
 interface ShipmentProgressProps {
   boxes: SessionBox[]
   shipProgress: Map<string, BoxShipmentStatus>
   isOpen: boolean
   onClose: () => void
-  onShipAll: (shippingProviderId: number, boxWeights?: Map<string, number>) => void
+  onShipAll: (shippingProviderId: number, boxWeights?: Map<string, number>, packagingId?: number | null) => void
   onRetryBox: (boxId: string, shippingProviderId: number) => void
   picklistId: number | null
   defaultShippingProviderId: number | null
   boxWeights?: Map<string, number>
   onNextPicklist?: () => void
   hasNextPicklist?: boolean
+  picqerPackagings?: PicqerPackagingOption[]
+  defaultWeight?: number
+  hasPackingStation?: boolean
 }
 
 function getStatusIcon(status: BoxShipmentStatus['status'] | undefined) {
@@ -81,6 +89,9 @@ export default function ShipmentProgress({
   boxWeights,
   onNextPicklist,
   hasNextPicklist,
+  picqerPackagings,
+  defaultWeight,
+  hasPackingStation,
 }: ShipmentProgressProps) {
   const [phase, setPhase] = useState<DialogPhase>('loading')
   const [methods, setMethods] = useState<ShippingMethod[]>([])
@@ -90,6 +101,10 @@ export default function ShipmentProgress({
   const [methodSearch, setMethodSearch] = useState('')
   const autoStartedRef = useRef(false)
   const openedLabelsRef = useRef<Set<string>>(new Set())
+
+  // Configure phase state
+  const [selectedPackagingId, setSelectedPackagingId] = useState<number | null>(null)
+  const [weightInput, setWeightInput] = useState<string>('')
 
   // Resolved provider: what we'll use for shipping
   const resolvedProviderId = selectedProviderId ?? defaultShippingProviderId
@@ -102,6 +117,8 @@ export default function ShipmentProgress({
       openedLabelsRef.current = new Set()
       setShowMethodDropdown(false)
       setMethodSearch('')
+      setSelectedPackagingId(null)
+      setWeightInput('')
       return
     }
 
@@ -118,19 +135,25 @@ export default function ShipmentProgress({
       return
     }
 
-    // Start adaptive flow: fetch shipping methods
+    // Initialize weight from default
+    setWeightInput(defaultWeight ? String(defaultWeight) : '')
+
+    // Pre-select packaging from the first box
+    const firstBoxPackaging = boxes[0]?.picqerPackagingId ?? null
+    setSelectedPackagingId(firstBoxPackaging)
+
+    // Start flow: fetch shipping methods, then show configure screen
     setPhase('loading')
     setLoadError(null)
     setMethods([])
     setSelectedProviderId(null)
+    setSelectedPackagingId(null)
     autoStartedRef.current = false
 
     if (!picklistId) {
-      // No picklist ID — try with default provider
       if (defaultShippingProviderId) {
-        setPhase('shipping')
-        autoStartedRef.current = true
-        onShipAll(defaultShippingProviderId, boxWeights)
+        setSelectedProviderId(defaultShippingProviderId)
+        setPhase('configure')
       } else {
         setPhase('error')
         setLoadError('Geen picklist ID beschikbaar om verzendmethoden op te halen')
@@ -163,35 +186,19 @@ export default function ShipmentProgress({
           : null
 
         if (matchingMethod) {
-          // Default provider exists in methods → auto-start
           setSelectedProviderId(matchingMethod.idshippingprovider_profile)
-          setPhase('shipping')
-          autoStartedRef.current = true
-          onShipAll(matchingMethod.idshippingprovider_profile, boxWeights)
-        } else if (fetchedMethods.length === 1) {
-          // Only one method available → auto-start with that
-          const method = fetchedMethods[0]
-          setSelectedProviderId(method.idshippingprovider_profile)
-          setPhase('shipping')
-          autoStartedRef.current = true
-          onShipAll(method.idshippingprovider_profile, boxWeights)
         } else {
-          // Multiple methods, no clear default → show selection
-          // Pre-select the default if available, or the first method
-          setSelectedProviderId(
-            defaultShippingProviderId ?? fetchedMethods[0].idshippingprovider_profile
-          )
-          setPhase('select_method')
+          setSelectedProviderId(fetchedMethods[0].idshippingprovider_profile)
         }
+
+        // Always show configure screen first
+        setPhase('configure')
       })
       .catch((err) => {
         if (cancelled) return
-        // If fetch fails but we have a default provider, auto-start anyway
         if (defaultShippingProviderId) {
           setSelectedProviderId(defaultShippingProviderId)
-          setPhase('shipping')
-          autoStartedRef.current = true
-          onShipAll(defaultShippingProviderId, boxWeights)
+          setPhase('configure')
         } else {
           setPhase('error')
           setLoadError(err instanceof Error ? err.message : 'Onbekende fout bij ophalen verzendmethoden')
@@ -233,11 +240,19 @@ export default function ShipmentProgress({
     }
   }, [isOpen, boxes, shipProgress])
 
-  const handleStartWithSelectedMethod = useCallback(() => {
+  const handleStartShipping = useCallback(() => {
     if (!resolvedProviderId) return
+    // Build weight map from the weight input
+    const weight = weightInput ? parseInt(weightInput, 10) : undefined
+    const weightMap = weight ? new Map(boxes.map(b => [b.id, weight])) : boxWeights
     setPhase('shipping')
-    onShipAll(resolvedProviderId, boxWeights)
-  }, [resolvedProviderId, onShipAll, boxWeights])
+    autoStartedRef.current = true
+    onShipAll(resolvedProviderId, weightMap, selectedPackagingId)
+  }, [resolvedProviderId, onShipAll, boxWeights, boxes, weightInput, selectedPackagingId])
+
+  const handleStartWithSelectedMethod = useCallback(() => {
+    handleStartShipping()
+  }, [handleStartShipping])
 
   const handleRetryBox = useCallback((boxId: string) => {
     if (!resolvedProviderId) return
@@ -352,6 +367,94 @@ export default function ShipmentProgress({
                 className="px-4 py-2 min-h-[48px] text-sm rounded-lg hover:bg-muted transition-colors"
               >
                 Sluiten
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Phase: Configure shipment (like Picqer's modal) */}
+        {phase === 'configure' && (
+          <div className="py-2 space-y-4">
+            {/* Verzendprofiel */}
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Verzendprofiel</span>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">
+                  {methods.find(m => m.idshippingprovider_profile === resolvedProviderId)?.name || 'Onbekend'}
+                </span>
+                {methods.length > 1 && (
+                  <button
+                    onClick={() => setPhase('select_method')}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    Wijzig
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Verpakking */}
+            {picqerPackagings && picqerPackagings.length > 0 && (
+              <div className="flex items-center justify-between">
+                <label htmlFor="shipment-packaging" className="text-sm text-muted-foreground">Verpakking</label>
+                <select
+                  id="shipment-packaging"
+                  value={selectedPackagingId ?? ''}
+                  onChange={(e) => setSelectedPackagingId(e.target.value ? Number(e.target.value) : null)}
+                  className="w-48 px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Geen</option>
+                  {picqerPackagings.map((p) => (
+                    <option key={p.idpackaging} value={p.idpackaging}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Gewicht */}
+            <div className="flex items-center justify-between">
+              <label htmlFor="shipment-weight" className="text-sm text-muted-foreground">Gewicht</label>
+              <div className="flex items-center gap-1">
+                <input
+                  id="shipment-weight"
+                  type="number"
+                  value={weightInput}
+                  onChange={(e) => setWeightInput(e.target.value)}
+                  placeholder="0"
+                  className="w-24 px-3 py-2 text-sm text-right border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <span className="text-sm text-muted-foreground">gram</span>
+              </div>
+            </div>
+
+            {/* Aantal pakketten */}
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Aantal pakketten</span>
+              <span className="text-sm font-medium">{boxes.length}</span>
+            </div>
+
+            {/* No packing station warning */}
+            {!hasPackingStation && (
+              <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <span>Geen werkstation geselecteerd. Labels worden niet automatisch geprint.</span>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex items-center justify-between pt-4 border-t border-border">
+              <button
+                onClick={onClose}
+                className="px-4 py-2 min-h-[48px] text-sm rounded-lg hover:bg-muted transition-colors"
+              >
+                Annuleren
+              </button>
+              <button
+                onClick={handleStartShipping}
+                disabled={!resolvedProviderId}
+                className="px-6 py-2.5 min-h-[48px] bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
+              >
+                Zending maken
               </button>
             </div>
           </div>
@@ -479,11 +582,11 @@ export default function ShipmentProgress({
                 Annuleren
               </button>
               <button
-                onClick={handleStartWithSelectedMethod}
+                onClick={() => setPhase('configure')}
                 disabled={!resolvedProviderId}
                 className="px-6 py-2.5 min-h-[48px] bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
               >
-                Start verzenden
+                Bevestigen
               </button>
             </div>
           </div>
@@ -668,22 +771,22 @@ export default function ShipmentProgress({
 
               {/* Right side: next or close */}
               <div className="flex items-center gap-2">
-                {!isShipping && !allDone && (
-                  <button
-                    onClick={onClose}
-                    className="px-4 py-2 min-h-[48px] text-sm rounded-lg hover:bg-muted transition-colors"
-                  >
-                    Sluiten
-                  </button>
-                )}
                 {allDone && hasNextPicklist && onNextPicklist ? (
-                  <button
-                    onClick={onNextPicklist}
-                    className="flex items-center gap-2 px-5 py-2.5 min-h-[48px] bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors"
-                  >
-                    Volgende order
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
+                  <>
+                    <button
+                      onClick={onClose}
+                      className="px-4 py-2 min-h-[48px] text-sm rounded-lg hover:bg-muted transition-colors"
+                    >
+                      Sluiten
+                    </button>
+                    <button
+                      onClick={onNextPicklist}
+                      className="flex items-center gap-2 px-5 py-2.5 min-h-[48px] bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors"
+                    >
+                      Volgende order
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </>
                 ) : (
                   <button
                     onClick={onClose}
