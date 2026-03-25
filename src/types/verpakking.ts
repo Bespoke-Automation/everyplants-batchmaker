@@ -206,7 +206,7 @@ export interface QueueBatch {
   // Enriched from Supabase:
   isClaimed: boolean
   claimedByName?: string
-  batchSessionId?: string  // If already claimed by current worker
+  batchSessionId?: string  // Session ID if batch has active session (any worker)
 }
 
 // Batch claim result

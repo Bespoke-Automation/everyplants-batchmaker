@@ -286,14 +286,9 @@ export default function BatchQueue({
                           Afgerond
                         </span>
                       )}
-                      {hasMySession && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium leading-none bg-primary/10 text-primary">
-                          Actief
-                        </span>
-                      )}
-                      {!hasMySession && batch.isClaimed && batch.claimedByName && (
+                      {batch.isClaimed && batch.claimedByName && (
                         <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium leading-none bg-blue-100 text-blue-700">
-                          {batch.claimedByName}
+                          Actief · {batch.claimedByName}
                         </span>
                       )}
                     </div>

@@ -47,11 +47,9 @@ export async function createBatchSession(
   }
 
   if (existing) {
-    // Same worker → return existing (doorgaan)
-    if (existing.assigned_to === workerId) {
-      return existing
-    }
-    throw new Error(`Batch ${batchId} is already claimed by ${existing.assigned_to_name}`)
+    // Active session exists — return it so the worker can join
+    // (concurrent access is allowed, Picqer assignment stays with original claimer)
+    return existing
   }
 
   // Create new batch session

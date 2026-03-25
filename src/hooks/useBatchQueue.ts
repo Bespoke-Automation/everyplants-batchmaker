@@ -99,7 +99,6 @@ export function useBatchQueue(workerId: number | null) {
       // Transform and enrich
       const enriched: QueueBatch[] = uniqueBatches.map((b) => {
         const session = sessionMap.get(b.idpicklist_batch)
-        const isClaimedByMe = session?.assigned_to === workerId
         return {
           idpicklistBatch: b.idpicklist_batch,
           batchDisplayId: b.picklist_batchid,
@@ -112,7 +111,7 @@ export function useBatchQueue(workerId: number | null) {
           totalComments: commentCountsRef.current[b.idpicklist_batch] ?? 0,
           isClaimed: !!session,
           claimedByName: session?.assigned_to_name,
-          batchSessionId: isClaimedByMe ? session?.id : undefined,
+          batchSessionId: session?.id,
         }
       })
 
