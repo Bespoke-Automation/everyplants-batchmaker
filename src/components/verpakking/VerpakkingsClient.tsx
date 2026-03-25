@@ -697,7 +697,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
       name: box.packagingName,
       index: i + 1,
       productCount: box.products.length,
-      isClosed: closedBoxes.has(box.id),
+      isClosed: closedBoxes.has(box.id) || box.status === 'closed',
     }))
   }, [session, closedBoxes])
 
@@ -734,7 +734,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
           imageUrl: picklistProduct?.image ?? null,
         }
       }),
-      isClosed: closedBoxes.has(box.id),
+      isClosed: closedBoxes.has(box.id) || box.status === 'closed',
       shipmentCreated: box.status === 'shipped' || box.status === 'label_fetched',
       trackingCode: box.trackingCode,
       trackingUrl: box.trackingUrl,
@@ -1055,7 +1055,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
   }, [session])
 
   const handleShipAll = useCallback(
-    (providerId: number, weights?: Map<string, number>) => {
+    (providerId: number, weights?: Map<string, number>, _packagingId?: number | null) => {
       shipAllBoxes(providerId, weights, packingStationId)
     },
     [shipAllBoxes, packingStationId]
@@ -2587,6 +2587,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         boxWeights={boxWeights}
         onNextPicklist={nextPicklistInBatch ? () => handleBatchNavigate(nextPicklistInBatch) : undefined}
         hasNextPicklist={!!nextPicklistInBatch}
+        picqerPackagings={packagings.map(p => ({ idpackaging: p.idpackaging, name: p.name }))}
+        defaultWeight={picklist?.weight ?? undefined}
       />
     </DndContext>
   )
