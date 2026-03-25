@@ -140,6 +140,7 @@ export interface LocalPackaging {
   picqerTagName: string | null
   numShippingLabels: number
   facturatieBoxSku: string | null
+  strappedVariantId: string | null
 }
 
 // Tag to packaging mapping

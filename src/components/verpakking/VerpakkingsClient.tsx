@@ -322,6 +322,12 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
   const [showAddBoxModal, setShowAddBoxModal] = useState(false)
   const [showShipmentModal, setShowShipmentModal] = useState(false)
   const [showStationPicker, setShowStationPicker] = useState(false)
+  const [quantityPickerState, setQuantityPickerState] = useState<{
+    productItemId: string
+    boxId: string
+    maxAmount: number
+    productName: string
+  } | null>(null)
   const [boxSearchQuery, setBoxSearchQuery] = useState('')
   const [closedBoxes, setClosedBoxes] = useState<Set<string>>(new Set())
   const [activeTab, setActiveTab] = useState<'products' | 'boxes'>('products')
@@ -951,6 +957,19 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
       if (!picklistProduct) return
 
       const remaining = productItem.amount - productItem.amountAssigned
+      if (remaining <= 0) return
+
+      // If amount not specified and multiple units remain, show quantity picker
+      if (amount === undefined && remaining > 1) {
+        setQuantityPickerState({
+          productItemId,
+          boxId,
+          maxAmount: remaining,
+          productName: productItem.name,
+        })
+        return
+      }
+
       const assignAmount = amount ?? remaining
 
       if (assignAmount <= 0) return
@@ -974,6 +993,16 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
       }
     },
     [productItems, picklist, session, assignProduct, updateProductAmount]
+  )
+
+  const handleQuantitySelect = useCallback(
+    async (amount: number) => {
+      if (!quantityPickerState) return
+      const { productItemId, boxId } = quantityPickerState
+      setQuantityPickerState(null)
+      await handleAssignProduct(productItemId, boxId, amount)
+    },
+    [quantityPickerState, handleAssignProduct]
   )
 
   const handleUpdateProductAmount = useCallback(
@@ -1109,10 +1138,25 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
   )
 
   // Total unassigned units (not product lines)
-  const unassignedUnitCount = useMemo(
-    () => productItems.reduce((sum, p) => sum + Math.max(0, p.amount - p.amountAssigned), 0),
-    [productItems]
-  )
+  // Group by idproduct to avoid double-counting assignments when products span multiple pick locations
+  const unassignedUnitCount = useMemo(() => {
+    const byProduct = new Map<string, { totalAmount: number; amountAssigned: number }>()
+    for (const p of productItems) {
+      const key = `${p.idproduct ?? 0}-${p.productCode}`
+      const existing = byProduct.get(key)
+      if (existing) {
+        existing.totalAmount += p.amount
+        // amountAssigned is the same for all location lines of the same product, don't re-add
+      } else {
+        byProduct.set(key, { totalAmount: p.amount, amountAssigned: p.amountAssigned })
+      }
+    }
+    let total = 0
+    for (const { totalAmount, amountAssigned } of byProduct.values()) {
+      total += Math.max(0, totalAmount - amountAssigned)
+    }
+    return total
+  }, [productItems])
 
   const handleToggleSelect = useCallback((productId: string) => {
     setSelectedProducts((prev) => {
@@ -2384,8 +2428,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                       onClick={() => handleAddBox(pkg)}
                       className="w-full flex items-center gap-3 p-2 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 transition-colors text-left"
                     >
-                      <div className="w-14 h-14 bg-emerald-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <Sparkles className="w-6 h-6 text-emerald-600" />
+                      <div className="w-24 h-24 bg-emerald-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <Sparkles className="w-8 h-8 text-emerald-600" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-sm">{adviceBox.packaging_name}</p>
@@ -2430,8 +2474,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                     onClick={() => handleAddBox(pkg)}
                     className="w-full flex items-center gap-3 p-2 rounded-lg border border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors text-left"
                   >
-                    <div className="w-14 h-14 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <Box className="w-6 h-6 text-primary" />
+                    <div className="w-24 h-24 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <Box className="w-8 h-8 text-primary" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm">{pkg.name}</p>
@@ -2482,11 +2526,11 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                       <img
                         src={packagingImageMap.get(pkg.idpackaging)}
                         alt={pkg.name}
-                        className="w-14 h-14 rounded-lg object-cover flex-shrink-0"
+                        className="w-24 h-24 rounded-lg object-cover flex-shrink-0"
                       />
                     ) : (
-                      <div className="w-14 h-14 bg-muted rounded-lg flex items-center justify-center flex-shrink-0">
-                        <Box className="w-6 h-6 text-muted-foreground" />
+                      <div className="w-24 h-24 bg-muted rounded-lg flex items-center justify-center flex-shrink-0">
+                        <Box className="w-8 h-8 text-muted-foreground" />
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
@@ -2597,6 +2641,40 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         defaultWeight={picklist?.weight ?? undefined}
         hasPackingStation={!!packingStationId}
       />
+
+      {/* Quantity picker modal */}
+      {quantityPickerState && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setQuantityPickerState(null)}>
+          <div className="bg-card rounded-xl shadow-xl p-6 mx-4 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-1">Hoeveel stuks?</h3>
+            <p className="text-sm text-muted-foreground mb-4 truncate">{quantityPickerState.productName}</p>
+            <div className="grid grid-cols-3 gap-3">
+              {(quantityPickerState.maxAmount > 12
+                ? [1, 2, 3, 5, 10, quantityPickerState.maxAmount].filter((v, i, a) => a.indexOf(v) === i)
+                : Array.from({ length: quantityPickerState.maxAmount }, (_, i) => i + 1)
+              ).map((num) => (
+                <button
+                  key={num}
+                  onClick={() => handleQuantitySelect(num)}
+                  className={`py-4 min-h-[60px] rounded-xl text-xl font-bold transition-colors ${
+                    num === quantityPickerState.maxAmount
+                      ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                      : 'bg-muted hover:bg-muted/80 text-foreground'
+                  }`}
+                >
+                  {num}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setQuantityPickerState(null)}
+              className="w-full mt-4 py-3 min-h-[48px] text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Annuleren
+            </button>
+          </div>
+        </div>
+      )}
     </DndContext>
   )
 }

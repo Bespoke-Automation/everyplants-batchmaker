@@ -12,6 +12,7 @@ import type { BatchPicklistItem } from '@/types/verpakking'
 interface BatchContext {
   batchSessionId: string
   batchDisplayId: string
+  picqerBatchId: number | null
   picklists: BatchPicklistItem[]
 }
 
@@ -110,6 +111,7 @@ export default function PicklistPage({ params }: { params: Promise<{ sessionId: 
         setBatchContext({
           batchSessionId,
           batchDisplayId: batchData.batch_display_id || String(batchId),
+          picqerBatchId: batchId,
           picklists,
         })
       } else {
@@ -134,6 +136,7 @@ export default function PicklistPage({ params }: { params: Promise<{ sessionId: 
         setBatchContext({
           batchSessionId,
           batchDisplayId: batchData.batch_display_id || String(batchId),
+          picqerBatchId: batchId,
           picklists,
         })
       }
@@ -160,6 +163,7 @@ export default function PicklistPage({ params }: { params: Promise<{ sessionId: 
       setBatchContext({
         batchSessionId: '',
         batchDisplayId: picqerData.picklist_batchid || String(batchId),
+        picqerBatchId: batchId,
         picklists,
       })
     }
@@ -199,7 +203,9 @@ export default function PicklistPage({ params }: { params: Promise<{ sessionId: 
       <VerpakkingsClient
         sessionId={sessionId}
         onBack={() => {
-          if (window.history.length > 1) {
+          if (batchContext?.picqerBatchId) {
+            router.push(`/verpakkingsmodule/batch/${batchContext.picqerBatchId}`)
+          } else if (window.history.length > 1) {
             router.back()
           } else {
             router.push('/verpakkingsmodule')

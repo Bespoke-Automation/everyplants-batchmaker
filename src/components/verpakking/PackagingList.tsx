@@ -16,6 +16,7 @@ import {
   ImageIcon,
 } from 'lucide-react'
 import { useLocalPackagings } from '@/hooks/useLocalPackagings'
+import { useLocalTags } from '@/hooks/useLocalTags'
 import type { LocalPackaging } from '@/types/verpakking'
 
 interface PackagingFormData {
@@ -34,6 +35,7 @@ interface PackagingFormData {
   picqerTagName: string
   numShippingLabels: string
   facturatieBoxSku: string
+  strappedVariantId: string
   // Skip Picqer
   skipPicqer: boolean
   manualIdpackaging: string
@@ -54,6 +56,7 @@ const emptyFormData: PackagingFormData = {
   picqerTagName: '',
   numShippingLabels: '1',
   facturatieBoxSku: '',
+  strappedVariantId: '',
   skipPicqer: false,
   manualIdpackaging: '',
 }
@@ -72,6 +75,7 @@ export default function PackagingList() {
     deletePackaging,
     refresh,
   } = useLocalPackagings()
+  const { tags: availableTags } = useLocalTags()
 
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -208,6 +212,7 @@ export default function PackagingList() {
       picqerTagName: pkg.picqerTagName || '',
       numShippingLabels: pkg.numShippingLabels.toString(),
       facturatieBoxSku: pkg.facturatieBoxSku || '',
+      strappedVariantId: pkg.strappedVariantId || '',
       skipPicqer: false,
       manualIdpackaging: pkg.idpackaging > 0 ? pkg.idpackaging.toString() : '',
     })
@@ -253,6 +258,7 @@ export default function PackagingList() {
           picqer_tag_name: formData.picqerTagName.trim() || null,
           num_shipping_labels: formData.numShippingLabels ? parseInt(formData.numShippingLabels, 10) : 1,
           facturatie_box_sku: formData.facturatieBoxSku.trim() || null,
+          strapped_variant_id: formData.strappedVariantId || null,
         }
         // Include new_idpackaging if changed
         const newId = formData.manualIdpackaging ? parseInt(formData.manualIdpackaging, 10) : null
@@ -656,15 +662,36 @@ export default function PackagingList() {
 
                 <div>
                   <label className="block text-sm font-medium mb-1">Picqer tag naam</label>
-                  <input
-                    type="text"
+                  <select
                     value={formData.picqerTagName}
                     onChange={(e) => setFormData((prev) => ({ ...prev, picqerTagName: e.target.value }))}
-                    placeholder="Bijv. 10. Fold box 100"
                     className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
-                  />
+                  >
+                    <option value="">— Geen tag —</option>
+                    {availableTags
+                      .filter(t => t.tagType === 'packaging')
+                      .sort((a, b) => a.title.localeCompare(b.title))
+                      .map(tag => (
+                        <option key={tag.idtag} value={tag.title}>
+                          {tag.title}
+                        </option>
+                      ))}
+                    {/* Show all other tags in a separate group */}
+                    {availableTags.filter(t => t.tagType !== 'packaging').length > 0 && (
+                      <optgroup label="Overige tags">
+                        {availableTags
+                          .filter(t => t.tagType !== 'packaging')
+                          .sort((a, b) => a.title.localeCompare(b.title))
+                          .map(tag => (
+                            <option key={tag.idtag} value={tag.title}>
+                              {tag.title}
+                            </option>
+                          ))}
+                      </optgroup>
+                    )}
+                  </select>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Naam van de Picqer tag die geschreven wordt op orders (bijv. &quot;10. Fold box 100&quot;).
+                    Picqer tag die op orders geschreven wordt bij engine advies.
                   </p>
                 </div>
 
@@ -680,6 +707,28 @@ export default function PackagingList() {
                   />
                   <p className="text-xs text-muted-foreground mt-1">
                     Hoeveel verzendlabels er aangemaakt worden voor deze doos.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">Strapped variant</label>
+                  <select
+                    value={formData.strappedVariantId}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, strappedVariantId: e.target.value }))}
+                    className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                  >
+                    <option value="">— Geen —</option>
+                    {packagings
+                      .filter(p => p.idpackaging !== editingId && p.active)
+                      .sort((a, b) => a.name.localeCompare(b.name))
+                      .map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                  </select>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Als de engine 2x deze doos adviseert, wordt het geconsolideerd naar de strapped variant (1 verzendlabel).
                   </p>
                 </div>
 

@@ -1221,6 +1221,132 @@ export async function solveMultiBox(
   return { boxes, confidence }
 }
 
+// ── 4d. Strapped consolidation ────────────────────────────────────────────
+
+/**
+ * After multi-box solving, check if 2+ boxes use the same packaging that has
+ * a strapped variant (e.g. 2x Kokerdoos → 1 strapped doublepack).
+ * If so, consolidate pairs into the strapped variant.
+ *
+ * Uses the `strapped_variant_id` column on the `packagings` table.
+ */
+async function applyStrappedConsolidation(
+  boxes: AdviceBox[],
+  costMap: Map<string, CostEntry[]> | null
+): Promise<AdviceBox[]> {
+  if (boxes.length < 2) return boxes
+
+  // Count boxes per packaging_id
+  const countByPkg = new Map<string, number>()
+  for (const box of boxes) {
+    countByPkg.set(box.packaging_id, (countByPkg.get(box.packaging_id) ?? 0) + 1)
+  }
+
+  // Find packagings that appear 2+ times
+  const duplicatePkgIds = Array.from(countByPkg.entries())
+    .filter(([, count]) => count >= 2)
+    .map(([id]) => id)
+
+  if (duplicatePkgIds.length === 0) return boxes
+
+  // Fetch strapped variants for these packagings
+  const { data: strappedData } = await supabase
+    .schema('batchmaker')
+    .from('packagings')
+    .select('id, strapped_variant_id')
+    .in('id', duplicatePkgIds)
+    .not('strapped_variant_id', 'is', null)
+
+  if (!strappedData || strappedData.length === 0) return boxes
+
+  // Fetch strapped variant details
+  const variantIds = strappedData.map(s => s.strapped_variant_id!)
+  const { data: variants } = await supabase
+    .schema('batchmaker')
+    .from('packagings')
+    .select('id, idpackaging, name, facturatie_box_sku, num_shipping_labels, active')
+    .in('id', variantIds)
+    .eq('active', true)
+
+  if (!variants || variants.length === 0) return boxes
+
+  const variantMap = new Map(variants.map(v => [v.id, v]))
+  const strappedLookup = new Map<string, string>() // base packaging_id → strapped variant id
+  for (const s of strappedData) {
+    if (variantMap.has(s.strapped_variant_id!)) {
+      strappedLookup.set(s.id, s.strapped_variant_id!)
+    }
+  }
+
+  if (strappedLookup.size === 0) return boxes
+
+  // Consolidate: pair up boxes and replace with strapped variant
+  const result: AdviceBox[] = []
+  const consumed = new Set<number>() // indices of boxes consumed by strapped pairs
+
+  for (const [basePkgId, strappedVariantId] of strappedLookup) {
+    const variant = variantMap.get(strappedVariantId)!
+    const indices = boxes
+      .map((b, i) => ({ box: b, index: i }))
+      .filter(({ box, index }) => box.packaging_id === basePkgId && !consumed.has(index))
+
+    // Pair them up (2 at a time)
+    for (let i = 0; i + 1 < indices.length; i += 2) {
+      const box1 = indices[i].box
+      const box2 = indices[i + 1].box
+      consumed.add(indices[i].index)
+      consumed.add(indices[i + 1].index)
+
+      // Merge products
+      const mergedProducts = [...box1.products]
+      for (const p of box2.products) {
+        const existing = mergedProducts.find(
+          ep => ep.productcode === p.productcode && ep.shipping_unit_name === p.shipping_unit_name
+        )
+        if (existing) {
+          existing.quantity += p.quantity
+        } else {
+          mergedProducts.push({ ...p })
+        }
+      }
+
+      // Build strapped box with cost data
+      let strappedBox: AdviceBox = {
+        packaging_id: variant.id,
+        packaging_name: variant.name,
+        idpackaging: variant.idpackaging,
+        products: mergedProducts,
+      }
+
+      // Enrich with cost data if available
+      if (costMap && variant.facturatie_box_sku) {
+        const entries = costMap.get(variant.facturatie_box_sku)
+        if (entries && entries.length > 0) {
+          const entry = entries[0] // Use first entry (weight refinement happens later)
+          strappedBox.box_cost = entry.boxCost
+          strappedBox.box_pick_cost = entry.boxPickCost
+          strappedBox.box_pack_cost = entry.boxPackCost
+          strappedBox.transport_cost = entry.transportCost
+          strappedBox.total_cost = entry.totalCost
+          strappedBox.carrier_code = entry.carrier
+        }
+      }
+
+      console.log(`[packagingEngine] Strapped consolidation: 2x "${box1.packaging_name}" → 1x "${variant.name}"`)
+      result.push(strappedBox)
+    }
+  }
+
+  // Add remaining non-consumed boxes
+  for (let i = 0; i < boxes.length; i++) {
+    if (!consumed.has(i)) {
+      result.push(boxes[i])
+    }
+  }
+
+  return result
+}
+
 /**
  * Recalculate matches for a subset of the original shipping units.
  * Filters allMatches to only those that can still be satisfied by remaining units.
@@ -1916,14 +2042,17 @@ export async function calculateAdvice(
     }
   }
 
-  // Step 4c: Build alternatives (single-box options for comparison)
+  // Step 4c: Strapped consolidation (2x same box → 1x strapped variant)
+  boxes = await applyStrappedConsolidation(boxes, costMap)
+
+  // Step 4d: Build alternatives (single-box options for comparison)
   const recommendedPkgId = boxes.length === 1 ? boxes[0].packaging_id : null
   let alternatives = buildAlternatives(rankedAlternativesRaw, recommendedPkgId)
   if (alternatives.length === 0 && shippingUnits.size > 0 && costDataAvailable && costMap) {
     alternatives = await buildAlternativesByShippingUnit(shippingUnits, recommendedPkgId, costMap)
   }
 
-  // Step 4d: Weight validation
+  // Step 4e: Weight validation
   const weightExceeded = !(await validateWeightsForBoxes(boxes, products))
 
   // Build detected shipping units array
@@ -2388,7 +2517,7 @@ export async function previewAdvice(
       shippingUnits, unclassified, ranked, products,
       costMap, costDataAvailable
     )
-    boxes = multiBoxResult.boxes
+    boxes = await applyStrappedConsolidation(multiBoxResult.boxes, costMap)
     confidence = multiBoxResult.confidence
 
     const recommendedPkgId = boxes.length === 1 ? boxes[0].packaging_id : null
