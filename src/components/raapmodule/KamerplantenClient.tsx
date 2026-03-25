@@ -40,6 +40,7 @@ function CameraScanner({ onScan, onClose }: { onScan: (code: string) => void; on
           Html5QrcodeSupportedFormats.UPC_E,
           Html5QrcodeSupportedFormats.QR_CODE,
         ],
+        useBarCodeDetectorIfSupported: true,
         verbose: false,
       })
       html5QrCodeRef.current = scanner
@@ -47,7 +48,7 @@ function CameraScanner({ onScan, onClose }: { onScan: (code: string) => void; on
       try {
         await scanner.start(
           { facingMode: 'environment' },
-          { fps: 15, qrbox: { width: 300, height: 150 }, aspectRatio: 1.0 },
+          { fps: 20 },
           (decodedText) => { onScan(decodedText) },
           () => {}
         )
