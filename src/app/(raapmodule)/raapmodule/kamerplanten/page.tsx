@@ -1,5 +1,5 @@
-import PickListClient from '@/components/raapmodule/PickListClient'
+import KamerplantenClient from '@/components/raapmodule/KamerplantenClient'
 
 export default function KamerplantenPage() {
-  return <PickListClient category="kamerplanten" label="Kamerplanten" />
+  return <KamerplantenClient />
 }

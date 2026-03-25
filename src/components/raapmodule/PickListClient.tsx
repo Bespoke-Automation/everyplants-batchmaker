@@ -16,9 +16,11 @@ export default function PickListClient({ category, label }: Props) {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async (forceNew = false) => {
     setIsLoading(true)
+    setError(null)
     try {
       let session = null
 
@@ -30,11 +32,34 @@ export default function PickListClient({ category, label }: Props) {
       }
 
       if (session) {
-        // Resume: load existing items
+        // Resume: load checked state, then refresh with fresh data
         setSessionId(session.id)
-        const itemsRes = await fetch(`/api/raapmodule/sessions/${session.id}/items`)
+        const [itemsRes, pickRes] = await Promise.all([
+          fetch(`/api/raapmodule/sessions/${session.id}/items`),
+          fetch(`/api/raapmodule/products/${category}`),
+        ])
         const { items: existingItems } = await itemsRes.json()
-        setItems(existingItems || [])
+        const { items: freshItems } = await pickRes.json()
+
+        // Preserve checked state from existing session
+        const checkedKeys = new Set(
+          (existingItems || []).filter((i: RaapSessionItem) => i.checked).map((i: RaapSessionItem) => `${i.product_id}::${i.location}`)
+        )
+        const mergedItems = (freshItems || []).map((item: RaapSessionItem) => ({
+          ...item,
+          checked: checkedKeys.has(`${item.product_id}::${item.location}`),
+          qty_picked: checkedKeys.has(`${item.product_id}::${item.location}`) ? item.qty_needed : 0,
+        }))
+
+        // Persist merged items to session
+        if (mergedItems.length > 0) {
+          await fetch(`/api/raapmodule/sessions/${session.id}/items`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: mergedItems }),
+          })
+        }
+        setItems(mergedItems)
       } else {
         // Create new session and build pick list
         const createRes = await fetch('/api/raapmodule/sessions', {
@@ -42,7 +67,11 @@ export default function PickListClient({ category, label }: Props) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ category }),
         })
-        const { session: newSession } = await createRes.json()
+        const createData = await createRes.json()
+        if (!createRes.ok || !createData.session) {
+          throw new Error(createData.error || 'Sessie aanmaken mislukt')
+        }
+        const newSession = createData.session
         setSessionId(newSession.id)
 
         const pickRes = await fetch(`/api/raapmodule/products/${category}`)
@@ -58,6 +87,8 @@ export default function PickListClient({ category, label }: Props) {
         }
         setItems(pickItems || [])
       }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Er is een fout opgetreden')
     } finally {
       setIsLoading(false)
     }
@@ -103,6 +134,23 @@ export default function PickListClient({ category, label }: Props) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-6">
+        <div className="text-center">
+          <p className="text-destructive font-medium mb-2">Fout bij laden</p>
+          <p className="text-sm text-muted-foreground mb-4">{error}</p>
+          <button
+            onClick={() => load(false)}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
+          >
+            Opnieuw proberen
+          </button>
+        </div>
       </div>
     )
   }

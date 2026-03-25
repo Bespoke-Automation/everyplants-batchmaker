@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { buildPickList } from '@/lib/raapmodule/pickListBuilder'
+import { buildPickList, buildPickListByBatch } from '@/lib/raapmodule/pickListBuilder'
 import type { RaapCategory } from '@/lib/supabase/raapCategoryLocations'
 
 export const dynamic = 'force-dynamic'
@@ -13,13 +13,19 @@ export async function GET(
   const { category } = await params
   const { searchParams } = new URL(request.url)
   const vervoerder_id = searchParams.get('vervoerder_id') || undefined
+  const vervoerder_ids = vervoerder_id?.includes(',') ? vervoerder_id.split(',') : undefined
+  const groupBy = searchParams.get('group_by')
 
   if (!VALID_CATEGORIES.includes(category as RaapCategory)) {
     return NextResponse.json({ error: 'Invalid category' }, { status: 400 })
   }
 
   try {
-    const items = await buildPickList(category as RaapCategory, vervoerder_id)
+    if (groupBy === 'batch') {
+      const items = await buildPickListByBatch(category as RaapCategory)
+      return NextResponse.json({ items })
+    }
+    const items = await buildPickList(category as RaapCategory, vervoerder_ids || vervoerder_id)
     return NextResponse.json({ items })
   } catch (error) {
     console.error(`Error building pick list for ${category}:`, error)

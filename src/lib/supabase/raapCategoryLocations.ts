@@ -47,3 +47,9 @@ export async function getCategoryLocationMap(): Promise<Map<number, RaapCategory
   const locations = await getCategoryLocations()
   return new Map(locations.map(l => [l.picqer_location_id, l.category]))
 }
+
+/** Returns a Map of picqer_location_name (lowercase) -> category for fallback name-based lookup */
+export async function getCategoryLocationNameMap(): Promise<Map<string, RaapCategory>> {
+  const locations = await getCategoryLocations()
+  return new Map(locations.map(l => [l.picqer_location_name.toLowerCase(), l.category]))
+}

@@ -2527,26 +2527,40 @@ export async function reactivateWebhook(idhook: number): Promise<PicqerWebhook> 
 }
 
 /**
- * Fetch all warehouse locations from Picqer.
- * Note: returns first page only (up to 100 locations). Sufficient for typical warehouses.
+ * Fetch all warehouse locations from Picqer (paginates through all pages).
  */
 export async function getLocations(): Promise<PicqerLocation[]> {
-  const response = await rateLimitedFetch(`${PICQER_BASE_URL}/locations`, {
-    headers: {
-      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
-      'User-Agent': 'EveryPlants-Batchmaker/2.0',
-      'Content-Type': 'application/json',
-    },
-    cache: 'no-store',
-  })
+  const all: PicqerLocation[] = []
+  let offset = 0
+  const limit = 100
 
-  if (!response.ok) {
-    const errorText = await response.text()
-    console.error('Picqer API error fetching locations:', response.status, errorText)
-    throw new Error(`Picqer API error: ${response.status}`)
+  while (true) {
+    const response = await rateLimitedFetch(
+      `${PICQER_BASE_URL}/locations?offset=${offset}&limit=${limit}`,
+      {
+        headers: {
+          'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+          'User-Agent': 'EveryPlants-Batchmaker/2.0',
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store',
+      }
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('Picqer API error fetching locations:', response.status, errorText)
+      throw new Error(`Picqer API error: ${response.status}`)
+    }
+
+    const page: PicqerLocation[] = await response.json()
+    all.push(...page)
+
+    if (page.length < limit) break
+    offset += limit
   }
 
-  return response.json()
+  return all
 }
 
 /**

@@ -21,6 +21,8 @@ export interface RaapSessionItem {
   qty_needed: number
   qty_picked: number
   checked: boolean
+  batch_id: number | null
+  batch_name: string | null
   created_at: string
   updated_at: string
 }
@@ -86,7 +88,14 @@ export async function createSession(
     .select('*')
     .single()
 
-  if (error) throw error
+  if (error) {
+    // Concurrent request already created this session (unique constraint violation)
+    if (error.code === '23505') {
+      const existing = await getActiveSession(category, vervoerder_id)
+      if (existing) return existing
+    }
+    throw error
+  }
   return data
 }
 
@@ -118,7 +127,7 @@ export async function getSessionItems(sessionId: string): Promise<RaapSessionIte
 
 export async function upsertSessionItems(
   sessionId: string,
-  items: Omit<RaapSessionItem, 'id' | 'session_id' | 'created_at' | 'updated_at'>[]
+  items: Record<string, unknown>[]
 ): Promise<void> {
   // Replace all items for this session
   const { error: deleteError } = await supabase
@@ -130,10 +139,24 @@ export async function upsertSessionItems(
 
   if (items.length === 0) return
 
+  // Only insert columns that exist in the DB
+  const rows = items.map(item => ({
+    session_id: sessionId,
+    product_id: item.product_id,
+    productcode: item.productcode,
+    product_name: item.product_name,
+    location: item.location,
+    qty_needed: item.qty_needed,
+    qty_picked: item.qty_picked ?? 0,
+    checked: item.checked ?? false,
+    batch_id: item.batch_id ?? null,
+    batch_name: item.batch_name ?? null,
+  }))
+
   const { error } = await supabase
     .schema('batchmaker')
     .from('raap_session_items')
-    .insert(items.map(item => ({ ...item, session_id: sessionId })))
+    .insert(rows)
 
   if (error) throw error
 }
