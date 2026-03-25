@@ -36,6 +36,10 @@ export interface ProductCardItem {
   amountAssigned: number
   assignedBoxes: BoxAssignment[]
   customFields?: ProductCustomFields
+  // Picqer IDs for picking (used by assign product API)
+  idpicklist_product?: number
+  idpicklist_product_location?: number
+  idproduct?: number
 }
 
 // Lightweight box reference for the dropdown

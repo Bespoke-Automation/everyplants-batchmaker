@@ -313,6 +313,7 @@ src/
 
 | Tabel | Doel |
 |-------|------|
+| `packing_stations` | Werkstations met PrintNode printer koppeling voor auto-print labels |
 | `packagings` | Verpakkingen gesynchroniseerd uit Picqer + engine config (max_weight, cost, specificity, picqer_tag_name, num_shipping_labels) |
 | `tags` | Tags uit Picqer met type classificatie (packaging/plantura/other) |
 | `tag_packaging_map` | Tag → verpakking aanbevelingen |
@@ -502,6 +503,9 @@ FLORIDAY_CLIENT_ID=                   # OAuth2 client ID
 FLORIDAY_CLIENT_SECRET=               # OAuth2 client secret
 FLORIDAY_AUTH_URL=                     # Token endpoint
 FLORIDAY_API_URL=                     # API base URL
+
+# PrintNode (auto-print labels)
+PRINTNODE_API_KEY=                    # PrintNode API key voor automatisch label printen
 
 # Optioneel
 N8N_BATCH_WEBHOOK_URL=                # n8n webhook voor batch creatie

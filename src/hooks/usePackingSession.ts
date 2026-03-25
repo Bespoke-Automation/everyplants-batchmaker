@@ -43,6 +43,7 @@ interface Session {
   boxes: SessionBox[]
   createdAt: string
   updatedAt: string
+  batchSessionId: string | null
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -92,6 +93,7 @@ function transformSession(raw: any): Session {
     boxes: boxes.map(transformBox),
     createdAt: raw.created_at ?? raw.createdAt,
     updatedAt: raw.updated_at ?? raw.updatedAt,
+    batchSessionId: raw.batch_session_id ?? raw.batchSessionId ?? null,
   }
 }
 
@@ -570,7 +572,7 @@ export function usePackingSession(sessionId: string | null) {
   // --- Shipping methods ---
 
   const shipBox = useCallback(
-    async (boxId: string, shippingProviderId: number, packagingId?: number, weight?: number) => {
+    async (boxId: string, shippingProviderId: number, packagingId?: number, weight?: number, packingStationId?: string) => {
       if (!sessionId) return
 
       setShipProgress((prev) => {
@@ -583,7 +585,7 @@ export function usePackingSession(sessionId: string | null) {
         const response = await fetch(`/api/verpakking/sessions/${sessionId}/ship`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ boxId, shippingProviderId, packagingId: packagingId ?? null, weight: weight ?? null }),
+          body: JSON.stringify({ boxId, shippingProviderId, packagingId: packagingId ?? null, weight: weight ?? null, packingStationId: packingStationId ?? null }),
         })
         const data = await response.json()
 
@@ -703,7 +705,7 @@ export function usePackingSession(sessionId: string | null) {
   )
 
   const shipAllBoxes = useCallback(
-    async (shippingProviderId: number, boxWeights?: Map<string, number>) => {
+    async (shippingProviderId: number, boxWeights?: Map<string, number>, packingStationId?: string) => {
       const currentSession = sessionRef.current
       if (!sessionId || !currentSession) return
 
@@ -726,6 +728,7 @@ export function usePackingSession(sessionId: string | null) {
           body: JSON.stringify({
             shippingProviderId,
             boxWeights: boxWeights ? Object.fromEntries(boxWeights) : undefined,
+            packingStationId: packingStationId ?? null,
           }),
         })
         const data = await response.json()

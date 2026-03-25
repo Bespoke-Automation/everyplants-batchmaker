@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Code2 } from 'lucide-react'
 import { useWorker } from '@/hooks/useWorker'
+import { usePackingStation } from '@/hooks/usePackingStation'
 import WorkerSelector from '@/components/verpakking/WorkerSelector'
 import BatchQueue from '@/components/verpakking/BatchQueue'
 import BatchOverview from '@/components/verpakking/BatchOverview'
@@ -14,6 +15,7 @@ import { DEV_MODE_USER_IDS } from '@/lib/constants'
 export default function VerpakkingsmodulePage() {
   const router = useRouter()
   const { workers, selectedWorker, isLoading, error, selectWorker, clearWorker } = useWorker()
+  const { stations, selectedStation, selectStation, clearStation } = usePackingStation()
 
   // Developer mode: browse batches/picklists without claiming, preview engine advice
   const canUseDevMode = selectedWorker && DEV_MODE_USER_IDS.includes(selectedWorker.iduser)
@@ -134,6 +136,10 @@ export default function VerpakkingsmodulePage() {
           isLoading={isLoading}
           error={error}
           onSelectWorker={selectWorker}
+          stations={stations}
+          selectedStation={selectedStation}
+          onSelectStation={selectStation}
+          onSkipStation={clearStation}
         />
         {devModeToggle}
       </main>

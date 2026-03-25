@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { Check, Loader2, AlertCircle, AlertTriangle, Clock, Download, ExternalLink, RefreshCw, CheckCircle2, ChevronDown, Truck, Search, Boxes } from 'lucide-react'
+import { Check, Loader2, AlertCircle, AlertTriangle, Clock, Download, ExternalLink, RefreshCw, CheckCircle2, ChevronDown, Truck, Search, Boxes, ChevronRight, Printer } from 'lucide-react'
 import Dialog from '@/components/ui/Dialog'
 import type { BoxShipmentStatus } from '@/types/verpakking'
 import type { ShippingMethod } from '@/lib/picqer/types'
@@ -33,6 +33,8 @@ interface ShipmentProgressProps {
   picklistId: number | null
   defaultShippingProviderId: number | null
   boxWeights?: Map<string, number>
+  onNextPicklist?: () => void
+  hasNextPicklist?: boolean
 }
 
 function getStatusIcon(status: BoxShipmentStatus['status'] | undefined) {
@@ -77,6 +79,8 @@ export default function ShipmentProgress({
   picklistId,
   defaultShippingProviderId,
   boxWeights,
+  onNextPicklist,
+  hasNextPicklist,
 }: ShipmentProgressProps) {
   const [phase, setPhase] = useState<DialogPhase>('loading')
   const [methods, setMethods] = useState<ShippingMethod[]>([])
@@ -198,14 +202,33 @@ export default function ShipmentProgress({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen])
 
-  // Auto-open labels as they become available
+  // Auto-print labels as they become available
   useEffect(() => {
     if (!isOpen) return
     for (const box of boxes) {
       const progress = shipProgress.get(box.id)
       if (progress?.labelUrl && !openedLabelsRef.current.has(box.id)) {
         openedLabelsRef.current.add(box.id)
-        window.open(progress.labelUrl, '_blank')
+        // Open in new tab and trigger print dialog
+        const printWindow = window.open(progress.labelUrl, '_blank')
+        if (printWindow) {
+          // Wait for PDF to load, then trigger print
+          printWindow.addEventListener('load', () => {
+            try {
+              printWindow.print()
+            } catch {
+              // If print fails (e.g. cross-origin), the tab is already open
+            }
+          })
+          // Fallback: try print after a delay if load event doesn't fire
+          setTimeout(() => {
+            try {
+              printWindow.print()
+            } catch {
+              // Silent fallback — tab is open for manual print
+            }
+          }, 1500)
+        }
       }
     }
   }, [isOpen, boxes, shipProgress])
@@ -617,7 +640,7 @@ export default function ShipmentProgress({
             {allDone && (
               <div className="mb-4 flex items-start gap-2 px-3 py-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
                 <CheckCircle2 className="w-5 h-5 mt-0.5 flex-shrink-0 text-green-600" />
-                <div>
+                <div className="flex-1">
                   <p className="font-semibold">Alle zendingen aangemaakt</p>
                   {sessionCompleted && (
                     <p className="mt-0.5 text-green-700">Picklist is afgesloten in Picqer</p>
@@ -628,33 +651,55 @@ export default function ShipmentProgress({
 
             {/* Actions */}
             <div className="flex items-center justify-between pt-4 border-t border-border">
-              {/* Download all labels */}
-              {labelUrls.length > 0 && (
-                <button
-                  onClick={handleDownloadAllLabels}
-                  className="flex items-center gap-2 px-4 py-2 min-h-[48px] text-sm text-primary hover:bg-primary/10 rounded-lg transition-colors"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                  Alle labels openen
-                </button>
-              )}
+              {/* Left side: label actions */}
+              <div className="flex items-center gap-2">
+                {labelUrls.length > 0 && (
+                  <>
+                    <button
+                      onClick={handleDownloadAllLabels}
+                      className="flex items-center gap-2 px-3 py-2 min-h-[48px] text-sm text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                    >
+                      <Printer className="w-4 h-4" />
+                      Labels printen
+                    </button>
+                  </>
+                )}
+              </div>
 
-              {/* Spacer */}
-              {labelUrls.length === 0 && <div />}
-
-              <button
-                onClick={onClose}
-                disabled={isShipping}
-                className={`px-4 py-2 min-h-[48px] text-sm rounded-lg transition-colors ${
-                  isShipping
-                    ? 'text-muted-foreground bg-muted cursor-not-allowed'
-                    : allDone
-                    ? 'bg-primary text-primary-foreground hover:bg-primary/90 font-medium'
-                    : 'hover:bg-muted'
-                }`}
-              >
-                {allDone ? 'Klaar' : 'Sluiten'}
-              </button>
+              {/* Right side: next or close */}
+              <div className="flex items-center gap-2">
+                {!isShipping && !allDone && (
+                  <button
+                    onClick={onClose}
+                    className="px-4 py-2 min-h-[48px] text-sm rounded-lg hover:bg-muted transition-colors"
+                  >
+                    Sluiten
+                  </button>
+                )}
+                {allDone && hasNextPicklist && onNextPicklist ? (
+                  <button
+                    onClick={onNextPicklist}
+                    className="flex items-center gap-2 px-5 py-2.5 min-h-[48px] bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors"
+                  >
+                    Volgende order
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={onClose}
+                    disabled={isShipping}
+                    className={`px-4 py-2 min-h-[48px] text-sm rounded-lg transition-colors ${
+                      isShipping
+                        ? 'text-muted-foreground bg-muted cursor-not-allowed'
+                        : allDone
+                        ? 'bg-primary text-primary-foreground hover:bg-primary/90 font-medium'
+                        : 'hover:bg-muted'
+                    }`}
+                  >
+                    {allDone ? 'Klaar' : 'Sluiten'}
+                  </button>
+                )}
+              </div>
             </div>
           </>
         )}

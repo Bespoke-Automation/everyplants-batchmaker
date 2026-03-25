@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase/client'
 import { recordSessionOutcome } from '@/lib/engine/feedbackTracking'
 import { logActivity } from '@/lib/supabase/activityLog'
 import { getRequestUser } from '@/lib/supabase/getRequestUser'
+import { tryAutoPrint } from '@/lib/printnode/autoPrint'
 
 export const dynamic = 'force-dynamic'
 
@@ -59,7 +60,7 @@ export async function POST(
   try {
     const body = await request.json()
     boxId = body.boxId
-    const { shippingProviderId, packagingId, weight } = body
+    const { shippingProviderId, packagingId, weight, packingStationId } = body
 
     if (!boxId || !shippingProviderId) {
       return NextResponse.json(
@@ -116,10 +117,16 @@ export async function POST(
         status: 'error',
       })
 
+      // Parse Picqer error for user-friendly message
+      let userError = shipmentResult.error || 'Failed to create shipment'
+      if (userError.includes('Packaging not found') || userError.includes('error_code":26') || userError.includes('error_code\\":26')) {
+        userError = `Verpakking niet gevonden in Picqer (ID: ${packagingId}). Synchroniseer verpakkingen opnieuw via Instellingen.`
+      }
+
       return NextResponse.json(
         {
           success: false,
-          error: shipmentResult.error || 'Failed to create shipment',
+          error: userError,
         },
         { status: 500 }
       )
@@ -149,6 +156,13 @@ export async function POST(
       console.error('[verpakking] Failed to fetch label:', labelResult.error)
       // Use the Picqer label URL as fallback
       labelUrl = labelPdfUrl
+    }
+
+    // Step 7b: Auto-print label via PrintNode (non-blocking)
+    if (labelResult.success && labelResult.labelData) {
+      tryAutoPrint(packingStationId, labelResult.labelData, shipmentId, boxId).catch((err) => {
+        console.error('[verpakking] Auto-print failed (non-blocking):', err)
+      })
     }
 
     // Step 8: Update box with shipment data

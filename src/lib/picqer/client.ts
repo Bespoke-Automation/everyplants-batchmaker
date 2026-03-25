@@ -1,4 +1,4 @@
-import { PicqerOrder, PicqerPicklist, PicqerPicklistWithProducts, PicqerProduct, PicqerTag, PicqerShipment, CreateShipmentResult, CancelShipmentResult, GetLabelResult, PicqerPackaging, ShippingMethod, PicqerUser, PicqerPicklistBatch, PicqerBatchPicklist, type MulticolloParcelInput, PicqerProductFull, PicqerCompositionPart, PicqerCustomer, CreateOrderInput, PicqerProductStock, PicqerPurchaseOrder, PicqerExpectedPurchaseOrder, PicqerWebhook } from './types'
+import { PicqerOrder, PicqerPicklist, PicqerPicklistWithProducts, PicqerProduct, PicqerTag, PicqerShipment, CreateShipmentResult, CancelShipmentResult, GetLabelResult, PicqerPackaging, PicqerPackingStation, ShippingMethod, PicqerUser, PicqerPicklistBatch, PicqerBatchPicklist, type MulticolloParcelInput, PicqerProductFull, PicqerCompositionPart, PicqerCustomer, CreateOrderInput, PicqerProductStock, PicqerPurchaseOrder, PicqerExpectedPurchaseOrder, PicqerWebhook } from './types'
 
 const PICQER_SUBDOMAIN = process.env.PICQER_SUBDOMAIN!
 const PICQER_API_KEY = process.env.PICQER_API_KEY!
@@ -302,6 +302,40 @@ export async function createPicklistBatch(picklistIds: number[]): Promise<Create
   }
 
   return result
+}
+
+/**
+ * Get all packing stations from Picqer (with printer config)
+ */
+export async function getPackingStations(): Promise<PicqerPackingStation[]> {
+  console.log('Fetching packing stations from Picqer...')
+
+  try {
+    const response = await rateLimitedFetch(
+      `${PICQER_BASE_URL}/packingstations`,
+      {
+        method: 'GET',
+        headers: {
+          'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+          'User-Agent': 'EveryPlants-Batchmaker/2.0',
+          'Content-Type': 'application/json',
+        },
+      }
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('Picqer API error fetching packing stations:', response.status, errorText)
+      return []
+    }
+
+    const stations: PicqerPackingStation[] = await response.json()
+    console.log(`Found ${stations.length} packing stations`)
+    return stations
+  } catch (error) {
+    console.error('Error fetching packing stations:', error)
+    return []
+  }
 }
 
 /**

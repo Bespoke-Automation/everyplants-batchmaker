@@ -81,7 +81,7 @@ export default function BatchPage({ params }: { params: Promise<{ batchId: strin
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Sessie aanmaken mislukt')
 
-      router.push(`/verpakkingsmodule/picklist/${data.id}`)
+      router.push(`/verpakkingsmodule/picklist/${data.id}?batchId=${batchId}`)
     } catch (err) {
       console.error('Dev session creation failed:', err)
       // Fallback to engine preview

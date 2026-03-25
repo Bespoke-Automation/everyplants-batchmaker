@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { assignProduct, updateProductAssignment, removeProduct, getPackingSession } from '@/lib/supabase/packingSessions'
 import { pickProduct, fetchPicklist } from '@/lib/picqer/client'
+import { supabase } from '@/lib/supabase/client'
 
 export const dynamic = 'force-dynamic'
 
@@ -106,14 +107,14 @@ export async function PUT(
 
 /**
  * DELETE /api/verpakking/sessions/[id]/products
- * Removes a product assignment
+ * Removes a product assignment and unpicks in Picqer
  */
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await params // acknowledge route param
+    const { id: sessionId } = await params
     const body = await request.json()
     const { productId } = body
 
@@ -124,9 +125,38 @@ export async function DELETE(
       )
     }
 
+    // Fetch the product record before deleting so we know what to unpick
+    const { data: productRecord } = await supabase
+      .schema('batchmaker')
+      .from('packing_session_products')
+      .select('picqer_product_id, amount, session_id')
+      .eq('id', productId)
+      .single()
+
+    const session = await getPackingSession(sessionId)
+
     await removeProduct(productId)
 
-    return NextResponse.json({ success: true })
+    // Unpick in Picqer (non-blocking — send negative amount)
+    let picqerWarning: string | undefined
+    if (productRecord && productRecord.amount > 0) {
+      try {
+        const picklist = await fetchPicklist(session.picklist_id)
+        const picklistProduct = picklist.products.find(
+          (p) => p.idproduct === productRecord.picqer_product_id
+        )
+
+        if (picklistProduct && picklistProduct.amount_picked > 0) {
+          const amountToUnpick = Math.min(productRecord.amount, picklistProduct.amount_picked)
+          await pickProduct(session.picklist_id, picklistProduct.idpicklist_product, -amountToUnpick)
+        }
+      } catch (unpickError) {
+        console.error('[verpakking] Failed to unpick product in Picqer:', unpickError)
+        picqerWarning = `Product removed but Picqer unpick failed: ${unpickError instanceof Error ? unpickError.message : 'Unknown error'}`
+      }
+    }
+
+    return NextResponse.json({ success: true, warning: picqerWarning })
   } catch (error) {
     console.error('[verpakking] Error removing product:', error)
     return NextResponse.json(

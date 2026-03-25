@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   DndContext,
   DragOverlay,
@@ -37,9 +38,11 @@ import {
   ExternalLink,
   Sparkles,
   Check,
+  Printer,
 } from 'lucide-react'
 import Dialog from '@/components/ui/Dialog'
 import { usePackingSession } from '@/hooks/usePackingSession'
+import { usePackingStation } from '@/hooks/usePackingStation'
 import { useLocalPackagings } from '@/hooks/useLocalPackagings'
 import { useTagMappings } from '@/hooks/useTagMappings'
 import { usePicqerUsers } from '@/hooks/usePicqerUsers'
@@ -47,6 +50,7 @@ import { usePicklistComments, type PicklistComment } from '@/hooks/usePicklistCo
 import MentionTextarea from '@/components/verpakking/MentionTextarea'
 import type { PicqerPicklistWithProducts, PicqerPicklistProduct, PicqerPackaging, PicqerOrder, PicqerOrderfield } from '@/lib/picqer/types'
 import { ORDERFIELD_IDS } from '@/lib/picqer/types'
+import BatchNavigationBar from './BatchNavigationBar'
 import BarcodeListener from './BarcodeListener'
 import ProductCard, { type ProductCardItem, type BoxRef, type ProductCustomFields } from './ProductCard'
 import BoxCard, { type BoxCardItem, type BoxProductItem } from './BoxCard'
@@ -139,13 +143,22 @@ function translateStatus(status: string): string {
   return STATUS_TRANSLATIONS[status] ?? status
 }
 
+interface BatchContextProps {
+  batchSessionId: string
+  batchDisplayId: string
+  picklists: import('@/types/verpakking').BatchPicklistItem[]
+}
+
 interface VerpakkingsClientProps {
   sessionId: string
   onBack: () => void
   workerName: string
+  batchContext?: BatchContextProps
 }
 
-export default function VerpakkingsClient({ sessionId, onBack, workerName }: VerpakkingsClientProps) {
+export default function VerpakkingsClient({ sessionId, onBack, workerName, batchContext }: VerpakkingsClientProps) {
+  const router = useRouter()
+
   // Session hook
   const {
     session,
@@ -165,6 +178,60 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
     cancelBoxShipment,
     dismissWarning,
   } = usePackingSession(sessionId)
+
+  // Batch navigation: derive next picklist for ShipmentProgress
+  const nextPicklistInBatch = useMemo(() => {
+    if (!batchContext) return null
+    const currentIndex = batchContext.picklists.findIndex((pl) => pl.sessionId === sessionId)
+    if (currentIndex === -1) return null
+    for (let i = currentIndex + 1; i < batchContext.picklists.length; i++) {
+      const pl = batchContext.picklists[i]
+      if (pl.sessionStatus !== 'completed' && pl.status !== 'closed') return pl
+    }
+    for (let i = 0; i < currentIndex; i++) {
+      const pl = batchContext.picklists[i]
+      if (pl.sessionStatus !== 'completed' && pl.status !== 'closed') return pl
+    }
+    return null
+  }, [batchContext, sessionId])
+
+  const [isNavCreatingSession, setIsNavCreatingSession] = useState(false)
+
+  const handleBatchNavigate = useCallback(async (picklist: import('@/types/verpakking').BatchPicklistItem) => {
+    if (picklist.sessionId) {
+      const batchIdParam = new URLSearchParams(window.location.search).get('batchId')
+      const url = `/verpakkingsmodule/picklist/${picklist.sessionId}${batchIdParam ? `?batchId=${batchIdParam}` : ''}`
+      router.push(url)
+      return
+    }
+
+    // No session yet (dev mode) — create one on the fly
+    setIsNavCreatingSession(true)
+    try {
+      const res = await fetch('/api/verpakking/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          picklistId: picklist.idpicklist,
+          assignedTo: session?.workerId || 0,
+          assignedToName: session?.workerName || workerName,
+          devMode: true,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Sessie aanmaken mislukt')
+
+      const batchIdParam = new URLSearchParams(window.location.search).get('batchId')
+      router.push(`/verpakkingsmodule/picklist/${data.id}${batchIdParam ? `?batchId=${batchIdParam}` : ''}`)
+    } catch (err) {
+      console.error('Failed to create nav session:', err)
+    } finally {
+      setIsNavCreatingSession(false)
+    }
+  }, [router, workerName, session?.workerId, session?.workerName])
+
+  // Packing station (for auto-print)
+  const { selectedStation, stations, selectStation, clearStation, packingStationId } = usePackingStation()
 
   // Local packagings (for image URLs)
   const { packagings: localPackagings } = useLocalPackagings(true)
@@ -210,6 +277,9 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
   // Product custom fields (from Supabase product_attributes)
   const [productCustomFields, setProductCustomFields] = useState<Map<number, ProductCustomFields>>(new Map())
 
+  // Shipping profile name (resolved from idshippingprovider_profile)
+  const [shippingProfileName, setShippingProfileName] = useState<string | null>(null)
+
   // Engine packaging advice
   const [engineAdvice, setEngineAdvice] = useState<EngineAdvice | null>(null)
   const [engineLoading, setEngineLoading] = useState(false)
@@ -251,6 +321,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
   const [activeProduct, setActiveProduct] = useState<ProductCardItem | null>(null)
   const [showAddBoxModal, setShowAddBoxModal] = useState(false)
   const [showShipmentModal, setShowShipmentModal] = useState(false)
+  const [showStationPicker, setShowStationPicker] = useState(false)
   const [boxSearchQuery, setBoxSearchQuery] = useState('')
   const [closedBoxes, setClosedBoxes] = useState<Set<string>>(new Set())
   const [activeTab, setActiveTab] = useState<'products' | 'boxes'>('products')
@@ -290,6 +361,26 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
 
     return () => { cancelled = true }
   }, [session?.picklistId])
+
+  // Resolve shipping profile name when picklist loads
+  useEffect(() => {
+    if (!picklist?.idshippingprovider_profile || !picklist?.idpicklist) return
+
+    let cancelled = false
+    fetch(`/api/picqer/shipping-methods?picklistId=${picklist.idpicklist}`)
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (cancelled || !data?.methods) return
+        const match = data.methods.find(
+          (m: { idshippingprovider_profile: number; name: string }) =>
+            m.idshippingprovider_profile === picklist.idshippingprovider_profile
+        )
+        if (match) setShippingProfileName(match.name)
+      })
+      .catch(() => {})
+
+    return () => { cancelled = true }
+  }, [picklist?.idpicklist, picklist?.idshippingprovider_profile])
 
   // Fetch product custom fields when picklist loads
   useEffect(() => {
@@ -491,14 +582,15 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
   }, [outcomeFeedback])
 
   // Map picklist products to ProductCardItems (supports split assignments across boxes)
+  // Products with multiple pick_locations are split into separate lines per location.
   const productItems: ProductCardItem[] = useMemo(() => {
     if (!picklist?.products) return []
 
     // Filter out packaging products (boxes that appear as line items)
     const realProducts = picklist.products.filter(pp => !packagingBarcodeMap.has(pp.productcode))
 
-    return realProducts.map((pp: PicqerPicklistProduct, index: number) => {
-      // Collect all box assignments for this product
+    // Helper: collect box assignments for a product
+    const getAssignments = (pp: PicqerPicklistProduct) => {
       const assignments: { boxId: string; boxName: string; boxIndex: number; amount: number; sessionProductId: string }[] = []
       if (session) {
         for (let i = 0; i < session.boxes.length; i++) {
@@ -517,33 +609,84 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
           }
         }
       }
+      return assignments
+    }
 
+    // Helper: build a ProductCardItem from product + location info
+    const buildItem = (
+      pp: PicqerPicklistProduct,
+      index: number,
+      amount: number,
+      amountPicked: number,
+      location: string,
+      idSuffix: string,
+      idpicklist_product_location?: number,
+    ): ProductCardItem => {
+      const assignments = getAssignments(pp)
       const amountAssigned = assignments.reduce((sum, a) => sum + a.amount, 0)
-      // Fully assigned → mark with first box ID; partially/unassigned → null (stays in unassigned list)
-      const assignedBoxId = amountAssigned >= pp.amount && assignments.length === 1
+      const assignedBoxId = amountAssigned >= amount && assignments.length >= 1
         ? assignments[0].boxId
-        : amountAssigned >= pp.amount && assignments.length > 1
-          ? assignments[0].boxId // fully assigned across multiple boxes
-          : null
+        : null
 
       const firstSessionProductId = assignments.length > 0 ? assignments[0].sessionProductId : null
-      const id = firstSessionProductId ?? `picklist-${pp.idpicklist_product ?? index}-${pp.idproduct}`
+      const id = firstSessionProductId ?? `picklist-${idSuffix}-${pp.idproduct}`
 
       return {
         id,
         productCode: pp.productcode,
         name: pp.name,
-        amount: pp.amount,
-        amountPicked: pp.amount_picked,
+        amount,
+        amountPicked,
         weight: 0,
         imageUrl: pp.image ?? null,
-        location: '',
+        location,
         assignedBoxId,
         amountAssigned,
         assignedBoxes: assignments,
         customFields: productCustomFields.get(pp.idproduct),
+        idpicklist_product: pp.idpicklist_product,
+        idpicklist_product_location: idpicklist_product_location,
+        idproduct: pp.idproduct,
       }
-    })
+    }
+
+    const items: ProductCardItem[] = []
+
+    for (let index = 0; index < realProducts.length; index++) {
+      const pp = realProducts[index]
+      const locations = pp.pick_locations?.filter(l => l.amount > 0) ?? []
+
+      if (locations.length > 1) {
+        // Split into separate lines per location
+        for (const loc of locations) {
+          items.push(buildItem(
+            pp,
+            index,
+            loc.amount,
+            loc.amount_picked,
+            loc.name,
+            `${pp.idpicklist_product ?? index}-loc-${loc.idlocation ?? loc.name}`,
+            loc.idpicklist_product_location,
+          ))
+        }
+      } else {
+        // Single location or no locations — one line
+        const location = locations.length === 1
+          ? locations[0].name
+          : pp.stocklocation || ''
+        items.push(buildItem(
+          pp,
+          index,
+          pp.amount,
+          pp.amount_picked,
+          location,
+          `${pp.idpicklist_product ?? index}`,
+          locations[0]?.idpicklist_product_location,
+        ))
+      }
+    }
+
+    return items
   }, [picklist, session, productCustomFields, packagingBarcodeMap])
 
   // Build BoxRef array for the ProductCard dropdown
@@ -913,9 +1056,9 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
 
   const handleShipAll = useCallback(
     (providerId: number, weights?: Map<string, number>) => {
-      shipAllBoxes(providerId, weights)
+      shipAllBoxes(providerId, weights, packingStationId)
     },
-    [shipAllBoxes]
+    [shipAllBoxes, packingStationId]
   )
 
   const handleCancelShipment = useCallback(
@@ -941,7 +1084,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
       if (!session) return
       const box = session.boxes.find((b) => b.id === boxId)
       if (!box) return
-      shipBox(boxId, providerId, box.picqerPackagingId ?? undefined, boxWeights.get(boxId))
+      shipBox(boxId, providerId, box.picqerPackagingId ?? undefined, boxWeights.get(boxId), packingStationId)
     },
     [shipBox, session, boxWeights]
   )
@@ -1139,6 +1282,17 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
     >
       <BarcodeListener onScan={handleBarcodeScan} enabled={!showAddBoxModal && !showShipmentModal} />
       <div className="flex flex-col h-full">
+        {/* Batch navigation bar */}
+        {batchContext && batchContext.picklists.length > 1 && (
+          <BatchNavigationBar
+            batchDisplayId={batchContext.batchDisplayId}
+            picklists={batchContext.picklists}
+            currentSessionId={sessionId}
+            onNavigate={handleBatchNavigate}
+            onBatchClick={onBack}
+            isNavigating={isNavCreatingSession}
+          />
+        )}
         {/* Header */}
         <div className="bg-card border-b border-border px-3 py-2 lg:px-4 lg:py-3">
           <div className="flex items-center justify-between gap-2">
@@ -1193,9 +1347,39 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
                         </span>
                       )}
                     </div>
-                    <p className="text-sm text-muted-foreground mt-0.5 hidden sm:block">
-                      {workerName}
-                    </p>
+                    {order ? (
+                      <div className="text-sm text-muted-foreground mt-0.5 hidden sm:flex sm:items-center sm:gap-2">
+                        <span className="font-medium text-foreground">{order.deliveryname}</span>
+                        {order.reference && <span>Ref: {order.reference}</span>}
+                        <span>{workerName}</span>
+                        <button
+                          onClick={() => setShowStationPicker(true)}
+                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium leading-none border transition-colors ${
+                            selectedStation
+                              ? 'border-green-300 bg-green-50 text-green-800 hover:bg-green-100'
+                              : 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                          }`}
+                        >
+                          <Printer className="w-3 h-3" />
+                          {selectedStation ? selectedStation.name : 'Geen werkstation'}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-muted-foreground mt-0.5 hidden sm:flex sm:items-center sm:gap-2">
+                        <span>{workerName}</span>
+                        <button
+                          onClick={() => setShowStationPicker(true)}
+                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium leading-none border transition-colors ${
+                            selectedStation
+                              ? 'border-green-300 bg-green-50 text-green-800 hover:bg-green-100'
+                              : 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                          }`}
+                        >
+                          <Printer className="w-3 h-3" />
+                          {selectedStation ? selectedStation.name : 'Geen werkstation'}
+                        </button>
+                      </div>
+                    )}
                     {picklist?.tags && picklist.tags.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-1">
                         {picklist.tags.map((tag) => (
@@ -1936,7 +2120,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
                   {picklist?.idshippingprovider_profile && (
                     <div className="mt-2 pt-2 border-t border-border">
                       <p className="text-xs text-muted-foreground">Verzendprofiel</p>
-                      <p className="text-xs font-medium">#{picklist.idshippingprovider_profile}</p>
+                      <p className="text-xs font-medium">{shippingProfileName ?? `#${picklist.idshippingprovider_profile}`}</p>
                     </div>
                   )}
                 </div>
@@ -2330,6 +2514,66 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
         </div>
       </Dialog>
 
+      {/* Station Picker Modal */}
+      <Dialog
+        open={showStationPicker}
+        onClose={() => setShowStationPicker(false)}
+        title="Werkstation"
+        className="max-w-md"
+      >
+        <div className="p-4">
+          <p className="text-sm text-muted-foreground mb-4">
+            Kies een werkstation. Labels worden automatisch op de gekoppelde printer geprint.
+          </p>
+          <div className="space-y-2">
+            <button
+              onClick={() => {
+                clearStation()
+                setShowStationPicker(false)
+              }}
+              className={`w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-colors ${
+                !selectedStation
+                  ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                  : 'border-border hover:border-primary/50 hover:bg-muted/50'
+              }`}
+            >
+              <X className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium">Geen</p>
+                <p className="text-xs text-muted-foreground">Labels openen in browser</p>
+              </div>
+              {!selectedStation && <Check className="w-4 h-4 text-primary ml-auto flex-shrink-0" />}
+            </button>
+            {stations.map((station) => {
+              const isSelected = selectedStation?.id === station.id
+              return (
+                <button
+                  key={station.id}
+                  onClick={() => {
+                    selectStation(station)
+                    setShowStationPicker(false)
+                  }}
+                  className={`w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-colors ${
+                    isSelected
+                      ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                      : 'border-border hover:border-primary/50 hover:bg-muted/50'
+                  }`}
+                >
+                  <Printer className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">{station.name}</p>
+                    {station.printnode_printer_name && (
+                      <p className="text-xs text-muted-foreground truncate">{station.printnode_printer_name}</p>
+                    )}
+                  </div>
+                  {isSelected && <Check className="w-4 h-4 text-primary flex-shrink-0" />}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      </Dialog>
+
       {/* Shipment Progress Modal */}
       <ShipmentProgress
         boxes={session.boxes.filter((b) => b.status === 'closed' || b.status === 'shipped')}
@@ -2341,6 +2585,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName }: Ver
         picklistId={session.picklistId}
         defaultShippingProviderId={shippingProviderId}
         boxWeights={boxWeights}
+        onNextPicklist={nextPicklistInBatch ? () => handleBatchNavigate(nextPicklistInBatch) : undefined}
+        hasNextPicklist={!!nextPicklistInBatch}
       />
     </DndContext>
   )

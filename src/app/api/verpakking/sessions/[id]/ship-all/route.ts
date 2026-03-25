@@ -17,6 +17,7 @@ import {
 import { supabase } from '@/lib/supabase/client'
 import type { PicqerShipmentParcel } from '@/lib/picqer/types'
 import { recordSessionOutcome } from '@/lib/engine/feedbackTracking'
+import { tryAutoPrint } from '@/lib/printnode/autoPrint'
 
 export const dynamic = 'force-dynamic'
 
@@ -70,7 +71,7 @@ export async function POST(
 
   try {
     const body = await request.json()
-    const { shippingProviderId, boxWeights } = body
+    const { shippingProviderId, boxWeights, packingStationId } = body
 
     if (!shippingProviderId) {
       return NextResponse.json(
@@ -174,6 +175,10 @@ export async function POST(
                 } catch {
                   labelUrl = labelPdfUrl
                 }
+                // Auto-print via PrintNode (non-blocking)
+                tryAutoPrint(packingStationId, labelResult.labelData, shipment.idshipment, box.id).catch((err) => {
+                  console.error('[verpakking] Auto-print failed (non-blocking):', err)
+                })
               } else {
                 labelUrl = labelPdfUrl
               }
@@ -216,7 +221,7 @@ export async function POST(
         const result = await shipSingleBox(
           sessionId, session.picklist_id, box.id,
           shippingProviderId, box.picqer_packaging_id ?? undefined,
-          weights?.[box.id]
+          weights?.[box.id], packingStationId
         )
         results.push(result)
       }
@@ -245,7 +250,7 @@ export async function POST(
         const result = await shipSingleBox(
           sessionId, session.picklist_id, box.id,
           shippingProviderId, box.picqer_packaging_id ?? undefined,
-          weights?.[box.id]
+          weights?.[box.id], packingStationId
         )
         results.push(result)
       }
@@ -356,6 +361,7 @@ async function shipSingleBox(
   shippingProviderId: number,
   packagingId?: number,
   weight?: number,
+  packingStationId?: string,
 ): Promise<BoxResult> {
   try {
     const shipmentResult = await createShipment(
@@ -388,6 +394,10 @@ async function shipSingleBox(
       } catch {
         labelUrl = labelPdfUrl
       }
+      // Auto-print via PrintNode (non-blocking)
+      tryAutoPrint(packingStationId, labelResult.labelData, shipment.idshipment, boxId).catch((err) => {
+        console.error('[verpakking] Auto-print failed (non-blocking):', err)
+      })
     } else {
       labelUrl = labelPdfUrl
     }

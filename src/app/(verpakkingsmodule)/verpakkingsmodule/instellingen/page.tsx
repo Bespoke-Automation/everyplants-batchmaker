@@ -17,6 +17,7 @@ const CompartmentRules = dynamic(() => import('@/components/verpakking/Compartme
 const ProductStatus = dynamic(() => import('@/components/verpakking/ProductStatus'), { loading: TabLoading })
 const ShippingUnitList = dynamic(() => import('@/components/verpakking/ShippingUnitList'), { loading: TabLoading })
 const DefaultPackagingList = dynamic(() => import('@/components/verpakking/DefaultPackagingList'), { loading: TabLoading })
+const PackingStationSettings = dynamic(() => import('@/components/verpakking/PackingStationSettings'), { loading: TabLoading })
 
 const TABS = [
   { id: 'koppelingen', label: 'Koppelingen' },
@@ -26,6 +27,7 @@ const TABS = [
   { id: 'producten', label: 'Producten' },
   { id: 'verzendeenheden', label: 'Verzendeenheden' },
   { id: 'default-verpakkingen', label: 'Default Verpakkingen' },
+  { id: 'werkstations', label: 'Werkstations' },
 ] as const
 
 type TabId = (typeof TABS)[number]['id']
@@ -86,6 +88,7 @@ export default function InstellingenPage() {
       {activeTab === 'producten' && <ProductStatus />}
       {activeTab === 'verzendeenheden' && <ShippingUnitList />}
       {activeTab === 'default-verpakkingen' && <DefaultPackagingList />}
+      {activeTab === 'werkstations' && <PackingStationSettings />}
     </main>
   )
 }

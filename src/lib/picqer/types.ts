@@ -91,6 +91,15 @@ export const EXCLUDED_TAGS = [
   'Versturen wanneer op voorraad',
 ] as const
 
+// Pick location within a picklist product
+export interface PicqerPickLocation {
+  idlocation: number | null
+  name: string
+  amount: number
+  amount_picked: number
+  idpicklist_product_location?: number // Behind feature flag, may not be present
+}
+
 // Picklist product (line item within a picklist)
 export interface PicqerPicklistProduct {
   idpicklist_product: number
@@ -100,6 +109,8 @@ export interface PicqerPicklistProduct {
   amount: number
   amount_picked: number
   image?: string | null // Enriched from batch products (not in Picqer response)
+  stocklocation?: string | null // Deprecated but still returned by Picqer
+  pick_locations?: PicqerPickLocation[]
 }
 
 // Extended picklist with products
@@ -128,6 +139,26 @@ export interface PicqerPackaging {
   height: number | null
   use_in_auto_advice: boolean
   active: boolean
+}
+
+// Packing station types
+export interface PicqerPackingStationPrinter {
+  idprinter: number
+  name: string
+  format: string
+  custom_width: number | null
+  custom_height: number | null
+  zpl_support: boolean
+  printnode_printerid: number
+}
+
+export interface PicqerPackingStation {
+  idpacking_station: number
+  name: string
+  printer_shipping_labels: PicqerPackingStationPrinter | null
+  printer_packinglists: PicqerPackingStationPrinter | null
+  printer_shipping_documents: PicqerPackingStationPrinter | null
+  printer_product_labels: PicqerPackingStationPrinter | null
 }
 
 // Shipping method types

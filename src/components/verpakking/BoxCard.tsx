@@ -329,10 +329,10 @@ export default function BoxCard({
                 {unassignedProductCount > 0 && onAssignAllProducts && (
                   <button
                     onClick={onAssignAllProducts}
-                    className="w-full flex items-center justify-center gap-2 py-2 min-h-[44px] text-primary text-xs font-medium hover:bg-primary/10 rounded-lg transition-colors"
+                    className="w-full flex items-center justify-center gap-2 py-2.5 min-h-[44px] bg-primary/10 text-primary border border-primary/30 rounded-lg text-sm font-medium hover:bg-primary/20 transition-colors"
                   >
-                    <Package className="w-3.5 h-3.5" />
-                    Rest toewijzen ({unassignedProductCount} producten)
+                    <Package className="w-4 h-4" />
+                    Alle resterende producten hierin ({unassignedProductCount})
                   </button>
                 )}
                 <div className={`py-3 text-center border-2 border-dashed rounded-lg transition-all ${
