@@ -138,11 +138,11 @@ export default function BoxCard({
           <img
             src={box.packagingImageUrl}
             alt={box.packagingName}
-            className="w-14 h-14 rounded object-cover flex-shrink-0"
+            className="w-20 h-20 rounded-lg object-cover flex-shrink-0"
           />
         ) : (
-          <div className="w-14 h-14 bg-muted rounded flex items-center justify-center flex-shrink-0">
-            <Box className="w-7 h-7 text-muted-foreground" />
+          <div className="w-20 h-20 bg-muted rounded-lg flex items-center justify-center flex-shrink-0">
+            <Box className="w-8 h-8 text-muted-foreground" />
           </div>
         )}
 
@@ -236,11 +236,11 @@ export default function BoxCard({
                     <img
                       src={product.imageUrl}
                       alt={product.name}
-                      className="w-8 h-8 rounded object-cover flex-shrink-0"
+                      className="w-11 h-11 rounded object-cover flex-shrink-0"
                     />
                   ) : (
-                    <div className="w-8 h-8 bg-muted rounded flex items-center justify-center flex-shrink-0">
-                      <Package className="w-4 h-4 text-muted-foreground" />
+                    <div className="w-11 h-11 bg-muted rounded flex items-center justify-center flex-shrink-0">
+                      <Package className="w-5 h-5 text-muted-foreground" />
                     </div>
                   )}
                   <div className="flex-1 min-w-0">

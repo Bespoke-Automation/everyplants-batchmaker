@@ -1108,6 +1108,12 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     [productItems]
   )
 
+  // Total unassigned units (not product lines)
+  const unassignedUnitCount = useMemo(
+    () => productItems.reduce((sum, p) => sum + Math.max(0, p.amount - p.amountAssigned), 0),
+    [productItems]
+  )
+
   const handleToggleSelect = useCallback((productId: string) => {
     setSelectedProducts((prev) => {
       const next = new Set(prev)
@@ -2049,7 +2055,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                         onCreateShipment={() => setShowShipmentModal(true)}
                         onCancelShipment={() => handleCancelShipment(box.id)}
                         onAssignAllProducts={() => handleAssignAllToBox(box.id)}
-                        unassignedProductCount={unassignedProducts.length}
+                        unassignedProductCount={unassignedUnitCount}
                       />
                     )
                   })}
@@ -2378,8 +2384,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                       onClick={() => handleAddBox(pkg)}
                       className="w-full flex items-center gap-3 p-2 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 transition-colors text-left"
                     >
-                      <div className="w-10 h-10 bg-emerald-100 rounded flex items-center justify-center flex-shrink-0">
-                        <Sparkles className="w-5 h-5 text-emerald-600" />
+                      <div className="w-14 h-14 bg-emerald-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <Sparkles className="w-6 h-6 text-emerald-600" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-sm">{adviceBox.packaging_name}</p>
@@ -2424,8 +2430,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                     onClick={() => handleAddBox(pkg)}
                     className="w-full flex items-center gap-3 p-2 rounded-lg border border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors text-left"
                   >
-                    <div className="w-10 h-10 bg-primary/10 rounded flex items-center justify-center flex-shrink-0">
-                      <Box className="w-5 h-5 text-primary" />
+                    <div className="w-14 h-14 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <Box className="w-6 h-6 text-primary" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm">{pkg.name}</p>
@@ -2476,11 +2482,11 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                       <img
                         src={packagingImageMap.get(pkg.idpackaging)}
                         alt={pkg.name}
-                        className="w-10 h-10 rounded object-cover flex-shrink-0"
+                        className="w-14 h-14 rounded-lg object-cover flex-shrink-0"
                       />
                     ) : (
-                      <div className="w-10 h-10 bg-muted rounded flex items-center justify-center flex-shrink-0">
-                        <Box className="w-5 h-5 text-muted-foreground" />
+                      <div className="w-14 h-14 bg-muted rounded-lg flex items-center justify-center flex-shrink-0">
+                        <Box className="w-6 h-6 text-muted-foreground" />
                       </div>
                     )}
                     <div className="flex-1 min-w-0">

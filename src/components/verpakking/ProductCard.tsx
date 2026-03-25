@@ -363,9 +363,9 @@ export default function ProductCard({
                                       e.stopPropagation()
                                       setSplitAmount((a) => Math.max(1, a - 1))
                                     }}
-                                    className="w-8 h-8 flex items-center justify-center rounded bg-card border border-border hover:bg-muted transition-colors"
+                                    className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg bg-card border border-border hover:bg-muted transition-colors"
                                   >
-                                    <Minus className="w-3 h-3" />
+                                    <Minus className="w-5 h-5" />
                                   </button>
                                   <input
                                     ref={inputRef}
@@ -377,7 +377,7 @@ export default function ProductCard({
                                       const v = parseInt(e.target.value, 10)
                                       if (!isNaN(v)) setSplitAmount(Math.max(1, Math.min(remaining, v)))
                                     }}
-                                    className="w-12 h-8 text-center text-sm border border-border rounded bg-card focus:outline-none focus:ring-1 focus:ring-primary"
+                                    className="w-14 min-h-[44px] text-center text-base font-bold border border-border rounded-lg bg-card focus:outline-none focus:ring-2 focus:ring-primary"
                                     onClick={(e) => e.stopPropagation()}
                                   />
                                   <button
@@ -386,9 +386,9 @@ export default function ProductCard({
                                       e.stopPropagation()
                                       setSplitAmount((a) => Math.min(remaining, a + 1))
                                     }}
-                                    className="w-8 h-8 flex items-center justify-center rounded bg-card border border-border hover:bg-muted transition-colors"
+                                    className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg bg-card border border-border hover:bg-muted transition-colors"
                                   >
-                                    <Plus className="w-3 h-3" />
+                                    <Plus className="w-5 h-5" />
                                   </button>
                                   <button
                                     type="button"
@@ -396,7 +396,7 @@ export default function ProductCard({
                                       e.stopPropagation()
                                       handleConfirmSplit()
                                     }}
-                                    className="px-3 h-8 bg-primary text-primary-foreground text-xs font-medium rounded hover:bg-primary/90 transition-colors whitespace-nowrap"
+                                    className="px-4 min-h-[44px] bg-primary text-primary-foreground text-sm font-semibold rounded-lg hover:bg-primary/90 transition-colors whitespace-nowrap"
                                   >
                                     Bevestig
                                   </button>
