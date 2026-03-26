@@ -391,6 +391,7 @@ export default function FilterPanel({
         naam: name,
         retailer: filters.retailers,
         tags: filters.tags,
+        tags_exclusive: filters.tagsExclusive,
         bezorgland: filters.countries,
         leverdag: filters.leverdagen,
         pps: filters.pps === 'ja',
@@ -458,6 +459,18 @@ export default function FilterPanel({
               disabled={isLoading}
               placeholder="Select tags"
             />
+            {filters.tags.length > 0 && (
+              <label className="flex items-center gap-2 text-sm cursor-pointer mt-1.5">
+                <input
+                  type="checkbox"
+                  checked={filters.tagsExclusive}
+                  onChange={(e) => onFilterChange('tagsExclusive', e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                  disabled={isLoading}
+                />
+                Alleen deze tags
+              </label>
+            )}
           </div>
 
           {/* Bezorgland Dropdown */}

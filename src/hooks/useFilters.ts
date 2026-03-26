@@ -17,7 +17,7 @@ function normalizeTag(tag: string): string {
 
 export type SortOrder = 'oldest' | 'newest'
 
-export function useFilters(orders: TransformedOrder[], postalRegions: PostalRegion[] = [], vervoerders: Vervoerder[] = []) {
+export function useFilters(orders: TransformedOrder[], postalRegions: PostalRegion[] = [], vervoerders: Vervoerder[] = [], availableTags: string[] = []) {
   const [filters, setFilters] = useState<FilterState>(initialFilterState)
   const [sortOrder, setSortOrder] = useState<SortOrder>('oldest')
   const [maxResults, setMaxResults] = useState<number | null>(null)
@@ -46,7 +46,7 @@ export function useFilters(orders: TransformedOrder[], postalRegions: PostalRegi
         }
       }
 
-      // Tags filter (order must have at least one of the selected tags)
+      // Tags filter
       // Uses normalized comparison to handle inconsistent spacing
       if (filters.tags.length > 0) {
         const normalizedOrderTags = order.tagTitles.map(normalizeTag)
@@ -55,6 +55,17 @@ export function useFilters(orders: TransformedOrder[], postalRegions: PostalRegi
         )
         if (!hasMatchingTag) {
           return false
+        }
+
+        // Exclusive mode: order must NOT have other tags from the available tags list
+        if (filters.tagsExclusive) {
+          const normalizedAvailableTags = availableTags.map(normalizeTag)
+          const otherKnownTags = normalizedOrderTags.filter(
+            tag => normalizedAvailableTags.includes(tag) && !normalizedFilterTags.includes(tag)
+          )
+          if (otherKnownTags.length > 0) {
+            return false
+          }
         }
       }
 
@@ -120,7 +131,7 @@ export function useFilters(orders: TransformedOrder[], postalRegions: PostalRegi
     }
 
     return filtered
-  }, [orders, filters, postalRegions, vervoerders, sortOrder, maxResults])
+  }, [orders, filters, postalRegions, vervoerders, availableTags, sortOrder, maxResults])
 
   const updateFilter = useCallback(<K extends keyof FilterState>(
     key: K,
@@ -139,6 +150,7 @@ export function useFilters(orders: TransformedOrder[], postalRegions: PostalRegi
     setFilters({
       retailers: preset.retailer,
       tags: preset.tags,
+      tagsExclusive: preset.tags_exclusive ?? false,
       countries: preset.bezorgland,
       leverdagen: preset.leverdag,
       pps: preset.pps ? 'ja' : 'nee',

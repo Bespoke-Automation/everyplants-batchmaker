@@ -3,6 +3,7 @@ export interface Preset {
   naam: string
   retailer: string[]
   tags: string[]
+  tags_exclusive?: boolean
   bezorgland: string[]
   leverdag: string[]
   pps: boolean

@@ -19,7 +19,7 @@ export default function BatchmakerClient() {
   const { orders, metadata, total, isLoading, error, refetch, fetchedAt } = useOrders()
   const { regions: postalRegions } = usePostalRegions()
   const { vervoerders } = useVervoerders()
-  const { filters, filteredOrders, updateFilter, resetFilters, applyPreset, sortOrder, maxResults, updateSortOrder, updateMaxResults } = useFilters(orders, postalRegions, vervoerders)
+  const { filters, filteredOrders, updateFilter, resetFilters, applyPreset, sortOrder, maxResults, updateSortOrder, updateMaxResults } = useFilters(orders, postalRegions, vervoerders, metadata.tags)
   const { presets, isLoading: presetsLoading, removePreset, addPreset } = usePresets('batch')
 
   // Batch creation state

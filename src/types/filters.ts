@@ -1,6 +1,7 @@
 export interface FilterState {
   retailers: string[]
   tags: string[]
+  tagsExclusive: boolean
   countries: string[]
   leverdagen: string[]
   pps: 'ja' | 'nee'
@@ -21,6 +22,7 @@ export const ALL_RETAILERS = [
 export const initialFilterState: FilterState = {
   retailers: ALL_RETAILERS,
   tags: [],
+  tagsExclusive: false,
   countries: [],
   leverdagen: [],
   pps: 'nee',

@@ -154,6 +154,7 @@ export function useSingleOrderFilters(groups: ProductGroup[], postalRegions: Pos
     setFilters({
       retailers: preset.retailer,
       tags: preset.tags,
+      tagsExclusive: preset.tags_exclusive ?? false,
       countries: preset.bezorgland,
       leverdagen: preset.leverdag,
       pps: preset.pps ? 'ja' : 'nee',
