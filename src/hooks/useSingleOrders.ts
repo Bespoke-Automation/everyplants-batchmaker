@@ -10,7 +10,7 @@ interface OrdersMetadata {
   leverdagen: string[]
 }
 
-export function useSingleOrders() {
+export function useSingleOrders(minGroupSize: number = 5) {
   const [data, setData] = useState<SingleOrdersResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
@@ -20,7 +20,7 @@ export function useSingleOrders() {
     setError(null)
 
     try {
-      const response = await fetch('/api/single-orders', { signal })
+      const response = await fetch(`/api/single-orders?minGroupSize=${minGroupSize}`, { signal })
       if (!response.ok) {
         const errorData = await response.json()
         throw new Error(errorData.error || 'Failed to fetch single orders')
@@ -33,7 +33,7 @@ export function useSingleOrders() {
       setError(err instanceof Error ? err : new Error('Unknown error'))
       setIsLoading(false)
     }
-  }, [])
+  }, [minGroupSize])
 
   useEffect(() => {
     const abortController = new AbortController()

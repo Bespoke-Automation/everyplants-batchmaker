@@ -88,10 +88,7 @@ function orderMatchesFilters(
   return true
 }
 
-// Minimum orders for a group to be shown
-const MIN_GROUP_SIZE = 5
-
-export function useSingleOrderFilters(groups: ProductGroup[], postalRegions: PostalRegion[] = [], vervoerders: Vervoerder[] = []) {
+export function useSingleOrderFilters(groups: ProductGroup[], postalRegions: PostalRegion[] = [], vervoerders: Vervoerder[] = [], minGroupSize: number = 5) {
   const [filters, setFilters] = useState<FilterState>(initialFilterState)
   const [maxResults, setMaxResults] = useState<number | null>(null)
 
@@ -135,11 +132,11 @@ export function useSingleOrderFilters(groups: ProductGroup[], postalRegions: Pos
           retailerBreakdown,
         }
       })
-      // Only keep groups with MIN_GROUP_SIZE or more orders
-      .filter(group => group.totalCount >= MIN_GROUP_SIZE)
+      // Only keep groups with minGroupSize or more orders
+      .filter(group => group.totalCount >= minGroupSize)
       // Sort by total count descending
       .sort((a, b) => b.totalCount - a.totalCount)
-  }, [groups, filters, postalRegions, vervoerders, maxResults])
+  }, [groups, filters, postalRegions, vervoerders, maxResults, minGroupSize])
 
   const updateFilter = useCallback(<K extends keyof FilterState>(
     key: K,

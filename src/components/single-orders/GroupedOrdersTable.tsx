@@ -13,6 +13,7 @@ interface GroupedOrdersTableProps {
   totalMatchedOrders: number
   selectedGroups: ProductGroup[]
   onSelectionChange: (groups: ProductGroup[]) => void
+  minGroupSize: number
 }
 
 const RETAILER_COLORS: Record<string, string> = {
@@ -31,6 +32,7 @@ export default function GroupedOrdersTable({
   totalMatchedOrders,
   selectedGroups,
   onSelectionChange,
+  minGroupSize,
 }: GroupedOrdersTableProps) {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
@@ -174,7 +176,7 @@ export default function GroupedOrdersTable({
         ) : searchedGroups.length === 0 ? (
           <div className="flex items-center justify-center py-20">
             <div className="text-center">
-              <p className="text-sm text-muted-foreground">No combination groups found with 5+ orders</p>
+              <p className="text-sm text-muted-foreground">Geen combinatiegroepen gevonden met {minGroupSize}+ orders</p>
               <p className="text-xs text-muted-foreground mt-1">Try selecting more retailers or adjusting filters</p>
             </div>
           </div>

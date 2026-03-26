@@ -9,9 +9,11 @@ import { getTagsByType } from '@/lib/supabase/localTags'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    console.log('Fetching single orders...')
+    const { searchParams } = new URL(request.url)
+    const minGroupSize = Math.max(1, parseInt(searchParams.get('minGroupSize') || '5', 10))
+    console.log(`Fetching single orders (minGroupSize=${minGroupSize})...`)
 
     // 1. Fetch excluded product codes and packaging tag titles in parallel
     const [excludedProductCodes, packagingTags] = await Promise.all([
@@ -58,9 +60,9 @@ export async function GET() {
 
     console.log(`Found ${matchedOrders.length} orders with valid combinations`)
 
-    // 5. Group by combination fingerprint (minimum 5 orders per group)
-    const productGroups = groupOrdersByCombination(matchedOrders, 5)
-    console.log(`Created ${productGroups.length} combination groups with 5+ orders`)
+    // 5. Group by combination fingerprint
+    const productGroups = groupOrdersByCombination(matchedOrders, minGroupSize)
+    console.log(`Created ${productGroups.length} combination groups with ${minGroupSize}+ orders`)
 
     // 6. Extract metadata for filters
     const metadata = extractMetadata(matchedOrders)
