@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useCallback } from 'react'
-import { FilterState, initialFilterState } from '@/types/filters'
+import { FilterState, initialFilterState, ALL_RETAILERS } from '@/types/filters'
 import { TransformedOrder } from '@/types/order'
 import { Preset } from '@/types/preset'
 import { PostalRegion, matchesPostalRegion } from '@/lib/supabase/postalRegions'
@@ -58,8 +58,11 @@ export function useFilters(orders: TransformedOrder[], postalRegions: PostalRegi
         }
 
         // Exclusive mode: order must NOT have other tags from the available tags list
+        // Retailer tags are ignored (they have their own filter)
         if (filters.tagsExclusive) {
+          const normalizedRetailers = ALL_RETAILERS.map(normalizeTag)
           const normalizedAvailableTags = availableTags.map(normalizeTag)
+            .filter(tag => !normalizedRetailers.includes(tag))
           const otherKnownTags = normalizedOrderTags.filter(
             tag => normalizedAvailableTags.includes(tag) && !normalizedFilterTags.includes(tag)
           )
