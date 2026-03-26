@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
-import { History, Users } from 'lucide-react'
+import { History } from 'lucide-react'
 import { useSingleOrders } from '@/hooks/useSingleOrders'
 import { useSingleOrderFilters } from '@/hooks/useSingleOrderFilters'
 import { usePresets } from '@/hooks/usePresets'
@@ -228,24 +228,7 @@ export default function SingleOrdersClient() {
       <main className="flex-1 p-6 space-y-6 overflow-auto">
         {/* Header with history link */}
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-bold">Single Orders</h1>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Users className="w-4 h-4" />
-              <span>Min. orders:</span>
-              <input
-                type="number"
-                min={1}
-                max={100}
-                value={minGroupSize}
-                onChange={(e) => {
-                  const val = parseInt(e.target.value, 10)
-                  if (!isNaN(val) && val >= 1) setMinGroupSize(val)
-                }}
-                className="w-16 px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground text-center"
-              />
-            </div>
-          </div>
+          <h1 className="text-2xl font-bold">Single Orders</h1>
           <Link
             href="/batchmaker/single-orders/history"
             className="inline-flex items-center gap-2 px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors border border-border"
@@ -307,6 +290,8 @@ export default function SingleOrdersClient() {
             maxResults={maxResults}
             onMaxResultsChange={updateMaxResults}
             vervoerders={vervoerders}
+            minGroupSize={minGroupSize}
+            onMinGroupSizeChange={setMinGroupSize}
           />
           <PresetsPanel
             presets={presets}

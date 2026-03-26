@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Filter, Calendar, ChevronDown, X, Loader2 } from 'lucide-react'
+import { Filter, Calendar, ChevronDown, X, Loader2, Search } from 'lucide-react'
 import { FilterState, ALL_RETAILERS } from '@/types/filters'
 import { SortOrder } from '@/hooks/useFilters'
 import { COUNTRIES, COUNTRY_NAMES, DAYS } from '@/constants'
@@ -31,6 +31,8 @@ interface FilterPanelProps {
   onSortOrderChange?: (order: SortOrder) => void
   onMaxResultsChange?: (value: number | null) => void
   vervoerders?: Vervoerder[]
+  minGroupSize?: number
+  onMinGroupSizeChange?: (value: number) => void
 }
 
 interface MultiSelectDropdownProps {
@@ -41,6 +43,7 @@ interface MultiSelectDropdownProps {
   disabled?: boolean
   placeholder?: string
   displayNames?: Record<string, string>
+  searchable?: boolean
 }
 
 interface OptionGroup {
@@ -211,9 +214,11 @@ function GroupedMultiSelectDropdown({ groups, selected, onChange, disabled, plac
   )
 }
 
-function MultiSelectDropdown({ label, options, selected, onChange, disabled, placeholder = 'Select options', displayNames }: MultiSelectDropdownProps) {
+function MultiSelectDropdown({ label, options, selected, onChange, disabled, placeholder = 'Select options', displayNames, searchable }: MultiSelectDropdownProps) {
   const [isOpen, setIsOpen] = useState(false)
+  const [search, setSearch] = useState('')
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
 
   const getDisplayName = (option: string) => displayNames?.[option] || option
 
@@ -221,11 +226,22 @@ function MultiSelectDropdown({ label, options, selected, onChange, disabled, pla
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsOpen(false)
+        setSearch('')
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
+
+  useEffect(() => {
+    if (isOpen && searchable) {
+      searchRef.current?.focus()
+    }
+  }, [isOpen, searchable])
+
+  const filteredOptions = searchable && search
+    ? options.filter(option => getDisplayName(option).toLowerCase().includes(search.toLowerCase()))
+    : options
 
   const toggleOption = (option: string) => {
     if (selected.includes(option)) {
@@ -269,25 +285,44 @@ function MultiSelectDropdown({ label, options, selected, onChange, disabled, pla
       </button>
 
       {isOpen && (
-        <div className="absolute z-50 mt-1 w-full bg-card border border-border rounded-md shadow-lg max-h-60 overflow-auto">
-          {options.length === 0 ? (
-            <div className="px-3 py-2 text-sm text-muted-foreground">No options available</div>
-          ) : (
-            options.map(option => (
-              <label
-                key={option}
-                className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-muted/50 transition-colors"
-              >
+        <div className="absolute z-50 mt-1 w-full bg-card border border-border rounded-md shadow-lg max-h-60 overflow-hidden flex flex-col">
+          {searchable && (
+            <div className="p-2 border-b border-border">
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
                 <input
-                  type="checkbox"
-                  checked={selected.includes(option)}
-                  onChange={() => toggleOption(option)}
-                  className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                  ref={searchRef}
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Zoeken..."
+                  className="w-full h-8 pl-7 pr-2 rounded border border-input bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary"
                 />
-                <span className="truncate">{getDisplayName(option)}</span>
-              </label>
-            ))
+              </div>
+            </div>
           )}
+          <div className="overflow-auto">
+            {filteredOptions.length === 0 ? (
+              <div className="px-3 py-2 text-sm text-muted-foreground">
+                {options.length === 0 ? 'No options available' : 'Geen resultaten'}
+              </div>
+            ) : (
+              filteredOptions.map(option => (
+                <label
+                  key={option}
+                  className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-muted/50 transition-colors"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(option)}
+                    onChange={() => toggleOption(option)}
+                    className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                  />
+                  <span className="truncate">{getDisplayName(option)}</span>
+                </label>
+              ))
+            )}
+          </div>
         </div>
       )}
 
@@ -334,6 +369,8 @@ export default function FilterPanel({
   onSortOrderChange,
   onMaxResultsChange,
   vervoerders = [],
+  minGroupSize,
+  onMinGroupSizeChange,
 }: FilterPanelProps) {
   const [isPresetDialogOpen, setIsPresetDialogOpen] = useState(false)
   const [isCreatingPreset, setIsCreatingPreset] = useState(false)
@@ -458,6 +495,7 @@ export default function FilterPanel({
               onChange={(selected) => onFilterChange('tags', selected)}
               disabled={isLoading}
               placeholder="Select tags"
+              searchable
             />
             {filters.tags.length > 0 && (
               <label className="flex items-center gap-2 text-sm cursor-pointer mt-1.5">
@@ -585,8 +623,8 @@ export default function FilterPanel({
             </div>
           )}
 
-          {/* Sorting & Max Results */}
-          <div className="grid grid-cols-2 gap-4">
+          {/* Sorting & Max Results & Min Group Size */}
+          <div className={`grid gap-4 ${onMinGroupSizeChange ? 'grid-cols-3' : 'grid-cols-2'}`}>
             <div>
               <label className="text-xs font-bold text-muted-foreground uppercase mb-1 block">
                 Sorteren
@@ -618,6 +656,25 @@ export default function FilterPanel({
                 disabled={isLoading}
               />
             </div>
+            {onMinGroupSizeChange && (
+              <div>
+                <label className="text-xs font-bold text-muted-foreground uppercase mb-1 block">
+                  Min. orders
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={minGroupSize ?? 5}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10)
+                    if (!isNaN(val) && val >= 1) onMinGroupSizeChange(val)
+                  }}
+                  className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
+                  disabled={isLoading}
+                />
+              </div>
+            )}
           </div>
 
           {/* Buttons */}
