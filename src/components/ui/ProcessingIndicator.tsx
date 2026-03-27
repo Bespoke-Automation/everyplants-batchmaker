@@ -70,12 +70,13 @@ export default function ProcessingIndicator({ newlyCreatedBatch }: ProcessingInd
 
         const allLabelsDone = (batch.completed + batch.failed) >= batch.total
           && batch.queued === 0 && batch.processing === 0 && batch.total > 0
-        const noProgressTimeout = Date.now() - new Date(batch.createdAt).getTime() > 60000
+        // Only trigger no-progress recovery after 5 minutes (large batches need time for Inngest setup + first label)
+        const noProgressTimeout = Date.now() - new Date(batch.createdAt).getTime() > 300000
           && batch.completed === 0 && batch.failed === 0
-        // Catch batches where Inngest died mid-processing: some done, some still queued, batch older than 5 min
+        // Catch batches where Inngest died mid-processing: some done, some still queued, batch older than 10 min
         const stuckWithQueuedLabels = batch.queued > 0 && (batch.completed + batch.failed) > 0
           && batch.processing === 0
-          && Date.now() - new Date(batch.createdAt).getTime() > 300000
+          && Date.now() - new Date(batch.createdAt).getTime() > 600000
 
         if (allLabelsDone || noProgressTimeout || stuckWithQueuedLabels) {
           autoFinalizingRef.current.add(batch.batchId)
@@ -272,7 +273,7 @@ export default function ProcessingIndicator({ newlyCreatedBatch }: ProcessingInd
               && batch.queued === 0 && batch.processing === 0 && batch.total > 0
             const isStuck = batch.status === 'trigger_failed' ||
               (batch.completed === 0 && batch.failed === 0 &&
-               Date.now() - new Date(batch.createdAt).getTime() > 120000) ||
+               Date.now() - new Date(batch.createdAt).getTime() > 300000) ||
               (allLabelsDone && !['completed', 'partial', 'failed'].includes(batch.status))
             const isRetrying = retryingBatches.has(batch.batchId)
 

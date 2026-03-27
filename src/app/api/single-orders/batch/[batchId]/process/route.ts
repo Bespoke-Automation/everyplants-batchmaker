@@ -129,36 +129,45 @@ export async function POST(
         // Update status to processing
         await updateShipmentLabel(label.id, { status: 'pending' })
 
-        // Step 1: Create shipment in Picqer (per-label override takes precedence over batch-level)
-        const effectiveShippingId = label.shipping_provider_id ?? shippingProviderId
-        console.log(`[${batchId}] Creating shipment for picklist ${label.picklist_id} (shipping: ${effectiveShippingId ?? 'default'})...`)
-        const shipmentResult = await createShipment(
-          label.picklist_id,
-          effectiveShippingId ?? undefined,
-          packagingId
-        )
+        // Idempotency check: if a shipment already exists for this picklist, reuse it
+        // This prevents duplicate shipments when multiple processors run concurrently
+        const existingShipments = await getPicklistShipments(label.picklist_id)
+        let shipment = existingShipments.length > 0 ? existingShipments[existingShipments.length - 1] : null
+        let skipPickClose = existingShipments.length > 0
 
-        let shipment = shipmentResult.shipment
-        let skipPickClose = false
+        if (shipment) {
+          console.log(`[${batchId}] Picklist ${label.picklist_id} already has shipment ${shipment.idshipment}, reusing (idempotency check)`)
+        } else {
+          // Step 1: Create shipment in Picqer (per-label override takes precedence over batch-level)
+          const effectiveShippingId = label.shipping_provider_id ?? shippingProviderId
+          console.log(`[${batchId}] Creating shipment for picklist ${label.picklist_id} (shipping: ${effectiveShippingId ?? 'default'})...`)
+          const shipmentResult = await createShipment(
+            label.picklist_id,
+            effectiveShippingId ?? undefined,
+            packagingId
+          )
 
-        if (!shipmentResult.success || !shipment) {
-          // Recovery: if picklist is already closed/picked, try to use existing shipment
-          const isAlreadyProcessed = shipmentResult.error?.includes('Picklist status is')
-          if (isAlreadyProcessed) {
-            console.log(`[${batchId}] Picklist ${label.picklist_id} already processed, attempting to recover existing shipment...`)
-            const existingShipments = await getPicklistShipments(label.picklist_id)
-            if (existingShipments.length > 0) {
-              shipment = existingShipments[existingShipments.length - 1]
-              skipPickClose = true
-              console.log(`[${batchId}] Recovered existing shipment ${shipment.idshipment} (tracking: ${shipment.trackingcode})`)
+          shipment = shipmentResult.shipment ?? null
+
+          if (!shipmentResult.success || !shipment) {
+            // Recovery: if picklist is already closed/picked, try to use existing shipment
+            const isAlreadyProcessed = shipmentResult.error?.includes('Picklist status is')
+            if (isAlreadyProcessed) {
+              console.log(`[${batchId}] Picklist ${label.picklist_id} already processed, attempting to recover existing shipment...`)
+              const recoveredShipments = await getPicklistShipments(label.picklist_id)
+              if (recoveredShipments.length > 0) {
+                shipment = recoveredShipments[recoveredShipments.length - 1]
+                skipPickClose = true
+                console.log(`[${batchId}] Recovered existing shipment ${shipment.idshipment} (tracking: ${shipment.trackingcode})`)
+              } else {
+                throw new Error(shipmentResult.error || 'Failed to create shipment')
+              }
             } else {
               throw new Error(shipmentResult.error || 'Failed to create shipment')
             }
           } else {
-            throw new Error(shipmentResult.error || 'Failed to create shipment')
+            console.log(`[${batchId}] Shipment created: ${shipment.idshipment}`)
           }
-        } else {
-          console.log(`[${batchId}] Shipment created: ${shipment.idshipment}`)
         }
 
         // Update label with shipment info
