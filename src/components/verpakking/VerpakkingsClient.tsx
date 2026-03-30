@@ -50,6 +50,7 @@ import { usePicklistComments, type PicklistComment } from '@/hooks/usePicklistCo
 import MentionTextarea from '@/components/verpakking/MentionTextarea'
 import type { PicqerPicklistWithProducts, PicqerPicklistProduct, PicqerPackaging, PicqerOrder, PicqerOrderfield } from '@/lib/picqer/types'
 import { ORDERFIELD_IDS } from '@/lib/picqer/types'
+import { getTagPackagingFilter } from '@/lib/verpakking/tag-packaging-filter'
 import BatchNavigationBar from './BatchNavigationBar'
 import BarcodeListener from './BarcodeListener'
 import ProductCard, { type ProductCardItem, type BoxRef, type ProductCustomFields } from './ProductCard'
@@ -329,6 +330,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     productName: string
   } | null>(null)
   const [boxSearchQuery, setBoxSearchQuery] = useState('')
+  const [showAllPackagings, setShowAllPackagings] = useState(false)
   const [closedBoxes, setClosedBoxes] = useState<Set<string>>(new Set())
   const [activeTab, setActiveTab] = useState<'products' | 'boxes'>('products')
   const [showSessionInfo, setShowSessionInfo] = useState(false)
@@ -771,15 +773,28 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     return [...picqerActive, ...localOnly]
   }, [packagings, localPackagings])
 
+  // Tag-based packaging filter: restrict available packagings when order has a matching tag
+  const tagFilter = useMemo(() => {
+    if (!picklist?.tags || picklist.tags.length === 0) return null
+    return getTagPackagingFilter(picklist.tags.map((t) => t.idtag))
+  }, [picklist])
+
+  const tagFilteredPackagings = useMemo(() => {
+    if (!tagFilter) return activePackagings
+    const allowedIds = new Set(tagFilter.packagingIds)
+    return activePackagings.filter((p) => allowedIds.has(p.idpackaging))
+  }, [tagFilter, activePackagings])
+
   const filteredPackagings = useMemo(() => {
-    if (!boxSearchQuery.trim()) return activePackagings
+    const base = tagFilteredPackagings
+    if (!boxSearchQuery.trim()) return base
     const query = boxSearchQuery.toLowerCase()
-    return activePackagings.filter(
+    return base.filter(
       (pkg) =>
         pkg.name.toLowerCase().includes(query) ||
         pkg.barcode?.toLowerCase().includes(query)
     )
-  }, [boxSearchQuery, activePackagings])
+  }, [boxSearchQuery, tagFilteredPackagings])
 
   // Suggested packagings based on picklist tags
   const suggestedPackagings = useMemo(() => {
@@ -792,20 +807,33 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     const seenIds = new Set<number>()
     for (const mapping of tagMappings) {
       if (seenIds.has(mapping.picqerPackagingId)) continue
-      const pkg = activePackagings.find((p) => p.idpackaging === mapping.picqerPackagingId)
+      const pkg = tagFilteredPackagings.find((p) => p.idpackaging === mapping.picqerPackagingId)
       if (pkg) {
         suggested.push(pkg)
         seenIds.add(mapping.picqerPackagingId)
       }
     }
     return suggested
-  }, [picklist, getMappingsForTags, activePackagings])
+  }, [picklist, getMappingsForTags, tagFilteredPackagings])
 
   // IDs of suggested packagings (for filtering them from the full list)
   const suggestedPackagingIds = useMemo(
     () => new Set(suggestedPackagings.map((p) => p.idpackaging)),
     [suggestedPackagings]
   )
+
+  // IDs of engine-advised packagings (for filtering them from the full list)
+  const engineAdviceIds = useMemo(
+    () => new Set(
+      engineAdvice && engineAdvice.confidence !== 'no_match'
+        ? engineAdvice.advice_boxes.map((ab) => ab.idpackaging)
+        : []
+    ),
+    [engineAdvice]
+  )
+
+  // Whether there are any suggestions to show (engine or tags)
+  const hasSuggestions = (engineAdvice && engineAdvice.confidence !== 'no_match' && engineAdvice.advice_boxes.length > 0) || suggestedPackagings.length > 0
 
   // Auto-create boxes: prefer engine advice, fall back to tag mappings
   useEffect(() => {
@@ -1039,6 +1067,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
       await addBox(packaging.name, packaging.idpackaging, packaging.barcode ?? undefined, adviceMeta)
       setShowAddBoxModal(false)
       setBoxSearchQuery('')
+      setShowAllPackagings(false)
     },
     [addBox, engineAdvice]
   )
@@ -2393,173 +2422,251 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         onClose={() => {
           setShowAddBoxModal(false)
           setBoxSearchQuery('')
+          setShowAllPackagings(false)
         }}
         title="Doos toevoegen"
-        className="max-w-lg"
+        className="max-w-5xl max-h-[90vh] flex flex-col"
       >
-        <div className="p-4">
-          {/* Search input */}
-          <div className="relative mb-4">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Zoek verpakking..."
-              value={boxSearchQuery}
-              onChange={(e) => setBoxSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              autoFocus
-            />
+        <div className="flex flex-col overflow-hidden">
+          {/* Sticky search input */}
+          <div className="p-4 pb-0">
+            <div className="relative mb-4">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Zoek verpakking..."
+                value={boxSearchQuery}
+                onChange={(e) => {
+                  setBoxSearchQuery(e.target.value)
+                  if (e.target.value.trim()) {
+                    setShowAllPackagings(true)
+                  } else {
+                    setShowAllPackagings(false)
+                  }
+                }}
+                className="w-full pl-10 pr-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                autoFocus
+              />
+            </div>
           </div>
 
-          {/* Engine-advised packagings */}
-          {engineAdvice && engineAdvice.confidence !== 'no_match' && engineAdvice.advice_boxes.length > 0 && !boxSearchQuery.trim() && (
-            <div className="mb-4">
-              <h4 className="text-xs font-medium text-emerald-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5" />
-                Engine advies
-              </h4>
-              <div className="space-y-1">
-                {engineAdvice.advice_boxes.map((adviceBox, idx) => {
-                  const pkg = activePackagings.find((p) => p.idpackaging === adviceBox.idpackaging)
-                  if (!pkg) return null
-                  return (
-                    <button
-                      key={`engine-${adviceBox.idpackaging}-${idx}`}
-                      onClick={() => handleAddBox(pkg)}
-                      className="w-full flex items-center gap-3 p-2 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 transition-colors text-left"
-                    >
-                      <div className="w-24 h-24 bg-emerald-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <Sparkles className="w-8 h-8 text-emerald-600" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm">{adviceBox.packaging_name}</p>
-                        <p className="text-xs text-muted-foreground">
+          {/* Scrollable content */}
+          <div className="overflow-y-auto px-4 pb-4">
+            {/* Engine-advised packagings */}
+            {engineAdvice && engineAdvice.confidence !== 'no_match' && engineAdvice.advice_boxes.length > 0 && !boxSearchQuery.trim() && (
+              <div className="mb-6">
+                <h4 className="text-xs font-medium text-emerald-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Engine advies
+                  {engineAdvice.advice_boxes.length > 1 && (
+                    <span className="text-emerald-600 normal-case">— {engineAdvice.advice_boxes.length} dozen aanbevolen</span>
+                  )}
+                </h4>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                  {engineAdvice.advice_boxes.map((adviceBox, idx) => {
+                    const pkg = activePackagings.find((p) => p.idpackaging === adviceBox.idpackaging)
+                    if (!pkg) return null
+                    return (
+                      <button
+                        key={`engine-${adviceBox.idpackaging}-${idx}`}
+                        onClick={() => handleAddBox(pkg)}
+                        className="flex flex-col items-center p-3 rounded-lg border-2 border-emerald-300 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 transition-colors text-center min-h-[140px]"
+                      >
+                        {engineAdvice.advice_boxes.length > 1 && (
+                          <span className="text-[10px] font-medium text-emerald-600 mb-1">Doos {idx + 1} van {engineAdvice.advice_boxes.length}</span>
+                        )}
+                        <div className="w-16 h-16 bg-emerald-100 rounded-lg flex items-center justify-center mb-2">
+                          {packagingImageMap.get(adviceBox.idpackaging) ? (
+                            <img
+                              src={packagingImageMap.get(adviceBox.idpackaging)}
+                              alt={adviceBox.packaging_name}
+                              className="w-16 h-16 rounded-lg object-cover"
+                            />
+                          ) : (
+                            <Sparkles className="w-7 h-7 text-emerald-600" />
+                          )}
+                        </div>
+                        <p className="font-medium text-sm leading-tight line-clamp-2">{adviceBox.packaging_name}</p>
+                        <p className="text-[11px] text-muted-foreground mt-1 line-clamp-2">
                           {adviceBox.products.map((p) => `${p.quantity}x ${p.shipping_unit_name}`).join(', ')}
                         </p>
                         {adviceBox.total_cost !== undefined && (
-                          <p className="text-xs text-emerald-700 font-medium mt-0.5">
-                            {formatCost(adviceBox.total_cost)} totaal
-                            {adviceBox.carrier_code && <span className="opacity-75"> via {adviceBox.carrier_code}</span>}
+                          <p className="text-xs text-emerald-700 font-medium mt-1">
+                            {formatCost(adviceBox.total_cost)}
                           </p>
                         )}
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-emerald-600" />
-                    </button>
-                  )
-                })}
-              </div>
-
-              {/* Divider before tag suggestions */}
-              {suggestedPackagings.length > 0 && (
-                <div className="flex items-center gap-2 mt-4 mb-2">
-                  <div className="flex-1 border-t border-border" />
-                  <span className="text-xs text-muted-foreground">Tag-suggesties</span>
-                  <div className="flex-1 border-t border-border" />
+                      </button>
+                    )
+                  })}
                 </div>
-              )}
-            </div>
-          )}
-
-          {/* Suggested packagings based on tags */}
-          {suggestedPackagings.length > 0 && !boxSearchQuery.trim() && (
-            <div className="mb-4">
-              <h4 className="text-xs font-medium text-primary uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                <Tag className="w-3.5 h-3.5" />
-                Aanbevolen verpakking
-              </h4>
-              <div className="space-y-1">
-                {suggestedPackagings.map((pkg) => (
-                  <button
-                    key={`suggested-${pkg.idpackaging}`}
-                    onClick={() => handleAddBox(pkg)}
-                    className="w-full flex items-center gap-3 p-2 rounded-lg border border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors text-left"
-                  >
-                    <div className="w-24 h-24 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <Box className="w-8 h-8 text-primary" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm">{pkg.name}</p>
-                      {(pkg.length || pkg.width || pkg.height) && (
-                        <p className="text-xs text-muted-foreground">
-                          {pkg.length ?? '?'} x {pkg.width ?? '?'} x {pkg.height ?? '?'} cm
-                        </p>
-                      )}
-                      {pkg.barcode && (
-                        <p className="text-xs text-muted-foreground font-mono">{pkg.barcode}</p>
-                      )}
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-primary" />
-                  </button>
-                ))}
-              </div>
-
-              {/* Divider */}
-              <div className="flex items-center gap-2 mt-4 mb-2">
-                <div className="flex-1 border-t border-border" />
-                <span className="text-xs text-muted-foreground">Of kies handmatig</span>
-                <div className="flex-1 border-t border-border" />
-              </div>
-            </div>
-          )}
-
-          {/* Packaging list */}
-          <div>
-            <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
-              {boxSearchQuery ? `Resultaten (${filteredPackagings.length})` : `Alle verpakkingen (${activePackagings.length})`}
-            </h4>
-            {packagingsLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                <span className="ml-2 text-sm text-muted-foreground">Verpakkingen laden...</span>
-              </div>
-            ) : (
-              <div className="max-h-64 overflow-y-auto space-y-1">
-                {filteredPackagings
-                  .filter((pkg) => boxSearchQuery.trim() || !suggestedPackagingIds.has(pkg.idpackaging))
-                  .map((pkg) => (
-                  <button
-                    key={pkg.idpackaging}
-                    onClick={() => handleAddBox(pkg)}
-                    className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-muted transition-colors text-left"
-                  >
-                    {packagingImageMap.get(pkg.idpackaging) ? (
-                      <img
-                        src={packagingImageMap.get(pkg.idpackaging)}
-                        alt={pkg.name}
-                        className="w-24 h-24 rounded-lg object-cover flex-shrink-0"
-                      />
-                    ) : (
-                      <div className="w-24 h-24 bg-muted rounded-lg flex items-center justify-center flex-shrink-0">
-                        <Box className="w-8 h-8 text-muted-foreground" />
-                      </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm">{pkg.name}</p>
-                      {(pkg.length || pkg.width || pkg.height) && (
-                        <p className="text-xs text-muted-foreground">
-                          {pkg.length ?? '?'} x {pkg.width ?? '?'} x {pkg.height ?? '?'} cm
-                        </p>
-                      )}
-                      {pkg.barcode && (
-                        <p className="text-xs text-muted-foreground font-mono">{pkg.barcode}</p>
-                      )}
-                      {(!pkg.idpackaging || pkg.idpackaging < 0) && (
-                        <p className="text-xs text-amber-600 flex items-center gap-1">
-                          <AlertTriangle className="w-3 h-3" />
-                          Geen Picqer ID — zending niet mogelijk
-                        </p>
-                      )}
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                  </button>
-                ))}
-                {filteredPackagings.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-4">
-                    Geen verpakkingen gevonden
-                  </p>
-                )}
               </div>
             )}
+
+            {/* Suggested packagings based on tags */}
+            {suggestedPackagings.length > 0 && !boxSearchQuery.trim() && (
+              <div className="mb-6">
+                <h4 className="text-xs font-medium text-primary uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                  <Tag className="w-3.5 h-3.5" />
+                  Tag-suggesties
+                </h4>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                  {suggestedPackagings.map((pkg) => (
+                    <button
+                      key={`suggested-${pkg.idpackaging}`}
+                      onClick={() => handleAddBox(pkg)}
+                      className="flex flex-col items-center p-3 rounded-lg border-2 border-primary/30 bg-primary/5 hover:bg-primary/10 active:bg-primary/20 transition-colors text-center min-h-[140px]"
+                    >
+                      <div className="w-16 h-16 rounded-lg flex items-center justify-center mb-2">
+                        {packagingImageMap.get(pkg.idpackaging) ? (
+                          <img
+                            src={packagingImageMap.get(pkg.idpackaging)}
+                            alt={pkg.name}
+                            className="w-16 h-16 rounded-lg object-cover"
+                          />
+                        ) : (
+                          <Box className="w-7 h-7 text-primary" />
+                        )}
+                      </div>
+                      <p className="font-medium text-sm leading-tight line-clamp-2">{pkg.name}</p>
+                      {pkg.barcode && (
+                        <p className="text-[11px] text-muted-foreground font-mono mt-1">{pkg.barcode}</p>
+                      )}
+                      {(pkg.length || pkg.width || pkg.height) && (
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          {pkg.length ?? '?'}×{pkg.width ?? '?'}×{pkg.height ?? '?'} cm
+                        </p>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* All packagings — collapsible */}
+            <div>
+              {packagingsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                  <span className="ml-2 text-sm text-muted-foreground">Verpakkingen laden...</span>
+                </div>
+              ) : boxSearchQuery.trim() ? (
+                /* When searching: always show results in grid, no collapsible */
+                <>
+                  <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+                    Resultaten ({filteredPackagings.length})
+                  </h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                    {filteredPackagings.map((pkg) => (
+                      <button
+                        key={pkg.idpackaging}
+                        onClick={() => handleAddBox(pkg)}
+                        className="flex flex-col items-center p-3 rounded-lg border border-border hover:bg-muted active:bg-muted/80 transition-colors text-center min-h-[140px]"
+                      >
+                        <div className="w-16 h-16 rounded-lg flex items-center justify-center mb-2">
+                          {packagingImageMap.get(pkg.idpackaging) ? (
+                            <img
+                              src={packagingImageMap.get(pkg.idpackaging)}
+                              alt={pkg.name}
+                              className="w-16 h-16 rounded-lg object-cover"
+                            />
+                          ) : (
+                            <Box className="w-7 h-7 text-muted-foreground" />
+                          )}
+                        </div>
+                        <p className="font-medium text-sm leading-tight line-clamp-2">{pkg.name}</p>
+                        {pkg.barcode && (
+                          <p className="text-[11px] text-muted-foreground font-mono mt-1">{pkg.barcode}</p>
+                        )}
+                        {(pkg.length || pkg.width || pkg.height) && (
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            {pkg.length ?? '?'}×{pkg.width ?? '?'}×{pkg.height ?? '?'} cm
+                          </p>
+                        )}
+                        {(!pkg.idpackaging || pkg.idpackaging < 0) && (
+                          <p className="text-[10px] text-amber-600 flex items-center gap-1 mt-1">
+                            <AlertTriangle className="w-3 h-3" />
+                            Geen Picqer ID
+                          </p>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                  {filteredPackagings.length === 0 && (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      Geen verpakkingen gevonden
+                    </p>
+                  )}
+                </>
+              ) : (
+                /* Not searching: collapsible section (auto-expand when no suggestions) */
+                <>
+                  {hasSuggestions ? (
+                    <button
+                      onClick={() => setShowAllPackagings(!showAllPackagings)}
+                      className="w-full flex items-center gap-2 py-2 text-left hover:bg-muted/50 rounded-lg transition-colors px-1"
+                    >
+                      <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${showAllPackagings ? 'rotate-180' : '-rotate-90'}`} />
+                      <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        {tagFilter
+                          ? `${tagFilter.label} verpakkingen (${tagFilteredPackagings.length})`
+                          : `Alle verpakkingen (${activePackagings.length})`}
+                      </h4>
+                    </button>
+                  ) : (
+                    <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+                      {tagFilter
+                        ? `${tagFilter.label} verpakkingen (${tagFilteredPackagings.length})`
+                        : `Alle verpakkingen (${activePackagings.length})`}
+                    </h4>
+                  )}
+                  {(showAllPackagings || !hasSuggestions) && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 mt-3">
+                      {filteredPackagings
+                        .filter((pkg) => !suggestedPackagingIds.has(pkg.idpackaging) && !engineAdviceIds.has(pkg.idpackaging))
+                        .map((pkg) => (
+                        <button
+                          key={pkg.idpackaging}
+                          onClick={() => handleAddBox(pkg)}
+                          className="flex flex-col items-center p-3 rounded-lg border border-border hover:bg-muted active:bg-muted/80 transition-colors text-center min-h-[140px]"
+                        >
+                          <div className="w-16 h-16 rounded-lg flex items-center justify-center mb-2">
+                            {packagingImageMap.get(pkg.idpackaging) ? (
+                              <img
+                                src={packagingImageMap.get(pkg.idpackaging)}
+                                alt={pkg.name}
+                                className="w-16 h-16 rounded-lg object-cover"
+                              />
+                            ) : (
+                              <Box className="w-7 h-7 text-muted-foreground" />
+                            )}
+                          </div>
+                          <p className="font-medium text-sm leading-tight line-clamp-2">{pkg.name}</p>
+                          {pkg.barcode && (
+                            <p className="text-[11px] text-muted-foreground font-mono mt-1">{pkg.barcode}</p>
+                          )}
+                          {(pkg.length || pkg.width || pkg.height) && (
+                            <p className="text-[11px] text-muted-foreground mt-0.5">
+                              {pkg.length ?? '?'}×{pkg.width ?? '?'}×{pkg.height ?? '?'} cm
+                            </p>
+                          )}
+                          {(!pkg.idpackaging || pkg.idpackaging < 0) && (
+                            <p className="text-[10px] text-amber-600 flex items-center gap-1 mt-1">
+                              <AlertTriangle className="w-3 h-3" />
+                              Geen Picqer ID
+                            </p>
+                          )}
+                        </button>
+                      ))}
+                      {filteredPackagings.filter((pkg) => !suggestedPackagingIds.has(pkg.idpackaging) && !engineAdviceIds.has(pkg.idpackaging)).length === 0 && (
+                        <p className="text-sm text-muted-foreground text-center py-4 col-span-full">
+                          Geen verpakkingen gevonden
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         </div>
       </Dialog>

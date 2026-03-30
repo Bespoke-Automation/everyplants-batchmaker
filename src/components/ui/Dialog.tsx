@@ -88,7 +88,7 @@ export default function Dialog({ open, onClose, title, children, className = '' 
         )}
 
         {/* Content */}
-        <div className={title ? '' : 'pt-4'}>
+        <div className={`${title ? '' : 'pt-4'} ${className?.includes('flex-col') ? 'flex-1 min-h-0 flex flex-col overflow-hidden' : ''}`}>
           {children}
         </div>
       </div>
