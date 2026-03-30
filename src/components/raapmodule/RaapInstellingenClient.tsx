@@ -25,7 +25,7 @@ const CATEGORIES: { value: RaapCategory; label: string }[] = [
 ]
 
 /** Find all sub-locations that belong to a given top-level location */
-function findChildren(parent: PicqerLocation, all: PicqerLocation[]): PicqerLocation[] {
+function findChildren(parent: { idlocation: number; name: string }, all: PicqerLocation[]): PicqerLocation[] {
   // Match by Picqer parent_idlocation (e.g. "Planten Lange Broekweg" → "Kas 1", "Kas 2")
   // or by name prefix (e.g. "1. Pots" → "1. Pots A", "1. Pots.1")
   const prefix = parent.name
