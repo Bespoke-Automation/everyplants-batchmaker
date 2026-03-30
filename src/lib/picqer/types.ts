@@ -450,5 +450,6 @@ export interface PicqerLocation {
   idlocation: number
   name: string
   idwarehouse: number
+  parent_idlocation: number | null
   num_products?: number
 }

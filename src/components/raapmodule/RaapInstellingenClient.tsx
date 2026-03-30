@@ -8,6 +8,7 @@ import type { RaapCategory, RaapCategoryLocation } from '@/lib/supabase/raapCate
 interface PicqerLocation {
   idlocation: number
   name: string
+  parent_idlocation: number | null
 }
 
 interface ConfiguredLocation {
@@ -25,12 +26,13 @@ const CATEGORIES: { value: RaapCategory; label: string }[] = [
 
 /** Find all sub-locations that belong to a given top-level location */
 function findChildren(parent: PicqerLocation, all: PicqerLocation[]): PicqerLocation[] {
-  // Children must start with the full parent name (e.g. "1. Pots" → "1. Pots A", "1. Pots.1")
-  // This prevents "1.1 WT" from being matched as a child of "1. Pots"
+  // Match by Picqer parent_idlocation (e.g. "Planten Lange Broekweg" → "Kas 1", "Kas 2")
+  // or by name prefix (e.g. "1. Pots" → "1. Pots A", "1. Pots.1")
   const prefix = parent.name
   return all.filter(loc =>
     loc.idlocation !== parent.idlocation &&
-    (loc.name.startsWith(prefix + ' ') || loc.name.startsWith(prefix + '.'))
+    (loc.parent_idlocation === parent.idlocation ||
+     loc.name.startsWith(prefix + ' ') || loc.name.startsWith(prefix + '.'))
   )
 }
 
