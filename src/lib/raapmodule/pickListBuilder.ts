@@ -52,10 +52,13 @@ export async function buildPickList(
   // 3. Fetch open batches
   const batches = await getPicklistBatches({ status: 'open' })
 
+  console.log(`[pickListBuilder] Building pick list for category="${category}", ${batches.length} open batches, ${locationNameMap.size} mapped locations`)
+
   const aggregated = new Map<string, PickListItem>()
 
   // Cache for picklist shipping profiles (used only when vervoerder filter is active)
   const picklistProfileCache = new Map<number, number | null>()
+  const unmatchedLocations = new Set<string>()
 
   for (const batch of batches) {
     // 4. Get full batch detail — products include stock_location
@@ -67,7 +70,10 @@ export async function buildPickList(
 
       // 5. Check if this product's location belongs to the requested category
       const productCategory = locationNameMap.get(batchProduct.stock_location.toLowerCase())
-      if (productCategory !== category) continue
+      if (productCategory !== category) {
+        if (!productCategory) unmatchedLocations.add(batchProduct.stock_location)
+        continue
+      }
 
       // 6. Sum quantities across picklist allocations
       let qtyNeeded = 0
@@ -121,6 +127,11 @@ export async function buildPickList(
       }
     }
   }
+
+  if (unmatchedLocations.size > 0) {
+    console.log(`[pickListBuilder] Unmatched stock_locations (not in any category): ${[...unmatchedLocations].join(', ')}`)
+  }
+  console.log(`[pickListBuilder] Result: ${aggregated.size} items for category="${category}"`)
 
   return Array.from(aggregated.values())
     .sort((a, b) => a.location.localeCompare(b.location) || a.product_name.localeCompare(b.product_name))

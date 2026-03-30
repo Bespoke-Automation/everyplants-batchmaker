@@ -28,17 +28,27 @@ export default function BuitenplantenClient() {
   const [isDownloading, setIsDownloading] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
 
+  const [error, setError] = useState<string | null>(null)
+
   const load = useCallback(async () => {
     setIsLoading(true)
+    setError(null)
     try {
       const [pickRes, pickedRes] = await Promise.all([
         fetch('/api/raapmodule/products/buitenplanten'),
         fetch('/api/raapmodule/picked-items'),
       ])
+      if (!pickRes.ok) {
+        const errData = await pickRes.json().catch(() => ({}))
+        throw new Error(errData.error || `Products API error: ${pickRes.status}`)
+      }
       const { items: pickItems } = await pickRes.json()
       const { items: picked } = await pickedRes.json()
       setItems(pickItems || [])
       setPickedItems(picked || [])
+    } catch (err) {
+      console.error('Buitenplanten load error:', err)
+      setError(err instanceof Error ? err.message : 'Er is een fout opgetreden')
     } finally {
       setIsLoading(false)
     }
@@ -113,6 +123,20 @@ export default function BuitenplantenClient() {
     return (
       <div className="flex-1 flex items-center justify-center">
         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-6">
+        <div className="text-center">
+          <p className="text-destructive font-medium mb-2">Fout bij laden</p>
+          <p className="text-sm text-muted-foreground mb-4">{error}</p>
+          <button onClick={load} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors">
+            Opnieuw proberen
+          </button>
+        </div>
       </div>
     )
   }
