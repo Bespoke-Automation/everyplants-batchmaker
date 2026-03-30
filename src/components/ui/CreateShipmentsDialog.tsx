@@ -19,12 +19,18 @@ interface ShippingProfileEntry {
   count: number
 }
 
+interface SelectedGroupInfo {
+  fingerprint: string
+  displayName: string
+  totalCount: number
+}
+
 interface CreateShipmentsDialogProps {
   open: boolean
   onClose: () => void
   onConfirm: (
     shippingProviderId: number | null,
-    packagingId: number | null,
+    packagingOverrides: Record<string, number | null>,
     name?: string,
     shippingOverrides?: Map<number | null, number>
   ) => Promise<void>
@@ -33,6 +39,7 @@ interface CreateShipmentsDialogProps {
   shippingProfileBreakdown: Map<number | null, ShippingProfileEntry>
   firstPicklistId: number | null
   isLoading: boolean
+  selectedGroups: SelectedGroupInfo[]
 }
 
 export default function CreateShipmentsDialog({
@@ -44,11 +51,13 @@ export default function CreateShipmentsDialog({
   shippingProfileBreakdown,
   firstPicklistId,
   isLoading,
+  selectedGroups,
 }: CreateShipmentsDialogProps) {
   const [shippingMethods, setShippingMethods] = useState<ShippingMethod[]>([])
   const [packagings, setPackagings] = useState<Packaging[]>([])
   const [selectedShippingId, setSelectedShippingId] = useState<number | null>(null)
-  const [selectedPackagingId, setSelectedPackagingId] = useState<number | null>(null)
+  // Per-group packaging: fingerprint → packagingId (null = geen)
+  const [groupPackagings, setGroupPackagings] = useState<Record<string, number | null>>({})
   const [batchName, setBatchName] = useState('')
   const [isLoadingData, setIsLoadingData] = useState(false)
   const [isOverriding, setIsOverriding] = useState(false)
@@ -62,11 +71,18 @@ export default function CreateShipmentsDialog({
   useEffect(() => {
     if (open) {
       fetchData()
+      // Initialize per-group packaging state
+      const initial: Record<string, number | null> = {}
+      for (const group of selectedGroups) {
+        initial[group.fingerprint] = null
+      }
+      setGroupPackagings(initial)
     } else {
       setIsOverriding(false)
       setError(null)
       setBatchName('')
       setSelectedShippingId(null)
+      setGroupPackagings({})
       setProfileOverrides(new Map())
       setEditingProfileId(undefined)
     }
@@ -149,6 +165,10 @@ export default function CreateShipmentsDialog({
     })
   }
 
+  const handleGroupPackagingChange = (fingerprint: string, packagingId: number | null) => {
+    setGroupPackagings(prev => ({ ...prev, [fingerprint]: packagingId }))
+  }
+
   const handleConfirm = async () => {
     if (isOverriding && !selectedShippingId) {
       setError('Selecteer een verzendprofiel')
@@ -157,7 +177,7 @@ export default function CreateShipmentsDialog({
     const shippingId = isOverriding ? selectedShippingId : null
     // Pass per-profile overrides if any exist and not doing full override
     const overrides = !isOverriding && hasOverrides ? profileOverrides : undefined
-    await onConfirm(shippingId, selectedPackagingId, batchName.trim() || undefined, overrides)
+    await onConfirm(shippingId, groupPackagings, batchName.trim() || undefined, overrides)
   }
 
   return (
@@ -317,27 +337,38 @@ export default function CreateShipmentsDialog({
               )}
             </div>
 
-            {/* Packaging Section */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-muted-foreground w-32">
-                  Verpakking
-                </label>
-                <div className="flex-1 relative">
-                  <select
-                    value={selectedPackagingId || ''}
-                    onChange={(e) => setSelectedPackagingId(e.target.value ? Number(e.target.value) : null)}
-                    className="w-full px-3 py-2 border border-border rounded-md bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 appearance-none pr-8"
-                  >
-                    <option value="">Geen</option>
-                    {packagings.map((packaging) => (
-                      <option key={packaging.idpackaging} value={packaging.idpackaging}>
-                        {packaging.name}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                </div>
+            {/* Per-group Packaging Section */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-muted-foreground">
+                Verpakking per productgroep
+              </label>
+              <div className="border border-border rounded-md divide-y divide-border">
+                {selectedGroups.map((group) => (
+                  <div key={group.fingerprint} className="px-3 py-2 flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium truncate block">{group.displayName}</span>
+                      <span className="text-xs text-muted-foreground">{group.totalCount} orders</span>
+                    </div>
+                    <div className="relative shrink-0 w-48">
+                      <select
+                        value={groupPackagings[group.fingerprint] ?? ''}
+                        onChange={(e) => handleGroupPackagingChange(
+                          group.fingerprint,
+                          e.target.value ? Number(e.target.value) : null
+                        )}
+                        className="w-full px-3 py-1.5 border border-border rounded-md bg-card text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 appearance-none pr-8"
+                      >
+                        <option value="">Geen</option>
+                        {packagings.map((packaging) => (
+                          <option key={packaging.idpackaging} value={packaging.idpackaging}>
+                            {packaging.name}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 

@@ -99,7 +99,7 @@ export default function SingleOrdersClient() {
   // Handler for actual batch creation
   const handleConfirmBatch = async (
     shippingProviderId: number | null,
-    packagingId: number | null,
+    packagingOverrides: Record<string, number | null>,
     name?: string,
     profileOverrides?: Map<number | null, number>
   ) => {
@@ -109,6 +109,7 @@ export default function SingleOrdersClient() {
       // Prepare product groups for API, filtering out orders without a valid picklist
       const productGroupsPayload = selectedGroups.map(group => ({
         displayName: group.displayName,
+        fingerprint: group.fingerprint,
         orders: group.orders
           .filter(order => order.idPicklist !== null && order.idPicklist !== undefined)
           .map(order => ({
@@ -152,7 +153,7 @@ export default function SingleOrdersClient() {
           productGroups: productGroupsPayload,
           idShippingProvider: shippingProviderId ?? undefined,
           shippingOverrides,
-          idPackaging: packagingId,
+          packagingOverrides,
           name,
         }),
       })
@@ -325,6 +326,11 @@ export default function SingleOrdersClient() {
         shippingProfileBreakdown={shippingProfileBreakdown}
         firstPicklistId={selectedGroups[0]?.orders[0]?.idPicklist ?? null}
         isLoading={isCreatingBatch}
+        selectedGroups={selectedGroups.map(g => ({
+          fingerprint: g.fingerprint,
+          displayName: g.displayName,
+          totalCount: g.totalCount,
+        }))}
       />
 
       {/* Processing indicator for background batch processing */}

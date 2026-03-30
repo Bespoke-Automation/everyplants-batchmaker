@@ -22,6 +22,7 @@ interface OrderInGroup {
 
 interface ProductGroupInput {
   displayName: string
+  fingerprint: string
   orders: OrderInGroup[]
 }
 
@@ -29,7 +30,7 @@ interface BatchRequestBody {
   productGroups: ProductGroupInput[]
   idShippingProvider?: number  // Override shipping provider for all orders
   shippingOverrides?: Record<string, number>  // Per-order shipping overrides (orderId → shippingProviderId)
-  idPackaging?: number | null  // Packaging to use for all shipments
+  packagingOverrides?: Record<string, number | null>  // Per-group packaging (fingerprint → packagingId)
   name?: string  // Optional internal name for the batch
 }
 
@@ -66,7 +67,7 @@ export async function POST(request: Request) {
 
   try {
     const body: BatchRequestBody = await request.json()
-    const { productGroups, idShippingProvider, shippingOverrides, idPackaging, name } = body
+    const { productGroups, idShippingProvider, shippingOverrides, packagingOverrides, name } = body
 
     if (!productGroups || productGroups.length === 0) {
       return NextResponse.json(
@@ -133,6 +134,9 @@ export async function POST(request: Request) {
         ?? idShippingProvider
         ?? null
 
+      // Per-group packaging override
+      const orderPackagingId = packagingOverrides?.[productGroup.fingerprint] ?? null
+
       await createShipmentLabel({
         batch_id: batchId,
         picklist_id: order.idPicklist,
@@ -142,6 +146,7 @@ export async function POST(request: Request) {
         plant_name: productGroup.displayName,
         country: order.country,
         shipping_provider_id: orderShippingId,
+        packaging_id: orderPackagingId,
       })
     }
 
@@ -152,7 +157,7 @@ export async function POST(request: Request) {
       picqer_batch_ids: picqerBatchIds,
       picqer_batch_number: picqerBatchNumber,
       shipping_provider_id: idShippingProvider ?? null,
-      packaging_id: idPackaging ?? null,
+      packaging_id: null,
       status: 'processing_shipments',
     })
 

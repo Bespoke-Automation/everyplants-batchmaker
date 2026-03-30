@@ -44,7 +44,6 @@ export const processSingleOrderBatch = inngest.createFunction(
       if (!b) throw new Error(`Batch ${batchId} not found`)
       return {
         shippingProviderId: b.shipping_provider_id,
-        packagingId: b.packaging_id,
         picqerBatchIds: b.picqer_batch_ids,
       }
     })
@@ -71,7 +70,7 @@ export const processSingleOrderBatch = inngest.createFunction(
       // Safety wrapper: ensure step NEVER throws so one label failure can't kill the function
       const result = await step.run(`process-label-${label.id}`, async () => {
         try {
-          return await processLabel(label, batchId, batch.shippingProviderId, batch.packagingId)
+          return await processLabel(label, batchId, batch.shippingProviderId)
         } catch (e) {
           // processLabel's own catch failed (e.g. Supabase down during error recording)
           const msg = e instanceof Error ? e.message : "Unknown error"
@@ -175,7 +174,6 @@ async function processLabel(
   label: ShipmentLabel,
   batchId: string,
   shippingProviderId: number | null,
-  packagingId: number | null
 ): Promise<{ success: boolean; error?: string }> {
   console.log(`[${batchId}] Processing label ${label.id} for picklist ${label.picklist_id}...`)
 
@@ -194,11 +192,11 @@ async function processLabel(
     } else {
       // Create shipment in Picqer (per-label override takes precedence over batch-level)
       const effectiveShippingId = label.shipping_provider_id ?? shippingProviderId
-      console.log(`[${batchId}] Creating shipment for picklist ${label.picklist_id} (shipping: ${effectiveShippingId ?? 'default'})...`)
+      console.log(`[${batchId}] Creating shipment for picklist ${label.picklist_id} (shipping: ${effectiveShippingId ?? 'default'}, packaging: ${label.packaging_id ?? 'default'})...`)
       const shipmentResult = await createShipment(
         label.picklist_id,
         effectiveShippingId ?? undefined,
-        packagingId
+        label.packaging_id
       )
 
       shipment = shipmentResult.shipment ?? null

@@ -61,7 +61,7 @@ export async function POST(
       )
     }
 
-    const { shipping_provider_id: shippingProviderId, packaging_id: packagingId } = batch
+    const { shipping_provider_id: shippingProviderId } = batch
 
     // Get all queued shipment labels
     const labels = await getShipmentLabelsByBatch(batchId)
@@ -140,11 +140,11 @@ export async function POST(
         } else {
           // Step 1: Create shipment in Picqer (per-label override takes precedence over batch-level)
           const effectiveShippingId = label.shipping_provider_id ?? shippingProviderId
-          console.log(`[${batchId}] Creating shipment for picklist ${label.picklist_id} (shipping: ${effectiveShippingId ?? 'default'})...`)
+          console.log(`[${batchId}] Creating shipment for picklist ${label.picklist_id} (shipping: ${effectiveShippingId ?? 'default'}, packaging: ${label.packaging_id ?? 'default'})...`)
           const shipmentResult = await createShipment(
             label.picklist_id,
             effectiveShippingId ?? undefined,
-            packagingId
+            label.packaging_id
           )
 
           shipment = shipmentResult.shipment ?? null

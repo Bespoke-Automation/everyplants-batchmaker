@@ -20,6 +20,7 @@ export interface ShipmentLabel {
   error_message: string | null
   country: string | null
   shipping_provider_id: number | null
+  packaging_id: number | null
   created_at: string
   updated_at: string
 }
@@ -53,6 +54,7 @@ export interface CreateShipmentLabelInput {
   plant_product_code?: string
   country?: string
   shipping_provider_id?: number | null
+  packaging_id?: number | null
 }
 
 /**
@@ -72,6 +74,7 @@ export async function createShipmentLabel(input: CreateShipmentLabelInput): Prom
       plant_product_code: input.plant_product_code,
       country: input.country || 'NL',
       shipping_provider_id: input.shipping_provider_id ?? null,
+      packaging_id: input.packaging_id ?? null,
       status: 'queued',
     })
     .select()
