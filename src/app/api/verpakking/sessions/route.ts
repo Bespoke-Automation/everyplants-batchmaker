@@ -123,7 +123,7 @@ export async function POST(request: NextRequest) {
     const picqerOrderId = picqerPicklist?.idorder
 
     // Claim the picklist in Supabase (checks for existing claims)
-    const session = await claimPicklist(picklistId, assignedTo, assignedToName)
+    const session = await claimPicklist(picklistId, assignedTo, assignedToName, !!devMode)
 
     // Update session with optional fields and Picqer metadata
     {

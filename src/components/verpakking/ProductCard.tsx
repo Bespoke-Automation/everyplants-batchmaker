@@ -40,6 +40,12 @@ export interface ProductCardItem {
   idpicklist_product?: number
   idpicklist_product_location?: number
   idproduct?: number
+  // Composition info (if this product is part of a set)
+  compositionParent?: {
+    name: string
+    productCode: string
+    idproduct: number
+  }
 }
 
 // Lightweight box reference for the dropdown

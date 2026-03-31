@@ -210,7 +210,8 @@ export async function updatePackingSession(
 export async function claimPicklist(
   picklistId: number,
   workerId: number,
-  workerName: string
+  workerName: string,
+  devMode = false
 ): Promise<PackingSession> {
   // Check if an active session already exists for this picklist (including expired locks)
   const { data: existing, error: checkError } = await supabase
@@ -230,6 +231,11 @@ export async function claimPicklist(
   if (existing) {
     // If the same worker is re-claiming, return the existing session (for "Doorgaan" flow)
     if (existing.assigned_to === workerId) {
+      return existing
+    }
+
+    // In dev mode, return the existing session regardless of who claimed it
+    if (devMode) {
       return existing
     }
 

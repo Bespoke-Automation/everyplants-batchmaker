@@ -71,18 +71,18 @@ export default function Dialog({ open, onClose, title, children, className = '' 
       <div
         ref={dialogRef}
         tabIndex={-1}
-        className={`relative bg-card border border-border rounded-lg shadow-xl max-w-md w-full mx-4 animate-in zoom-in-95 fade-in duration-200 ${className}`}
+        className={`relative bg-card border border-border rounded-lg shadow-xl w-full mx-4 animate-in zoom-in-95 fade-in duration-200 ${className || 'max-w-md'}`}
       >
         {/* Header */}
         {title && (
-          <div className="flex items-center justify-between p-4 border-b border-border">
-            <h2 id="dialog-title" className="font-semibold text-lg">{title}</h2>
+          <div className="flex items-center justify-between p-4 sm:p-5 border-b border-border">
+            <h2 id="dialog-title" className="font-semibold text-lg sm:text-xl">{title}</h2>
             <button
               onClick={onClose}
-              className="p-1 rounded-md hover:bg-muted transition-colors"
+              className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg hover:bg-muted transition-colors"
               aria-label="Close dialog"
             >
-              <X className="w-4 h-4" />
+              <X className="w-5 h-5" />
             </button>
           </div>
         )}

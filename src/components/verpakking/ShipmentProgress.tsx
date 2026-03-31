@@ -43,6 +43,7 @@ interface ShipmentProgressProps {
   picqerPackagings?: PicqerPackagingOption[]
   defaultWeight?: number
   hasPackingStation?: boolean
+  activeBoxId?: string | null
 }
 
 function getStatusIcon(status: BoxShipmentStatus['status'] | undefined) {
@@ -92,6 +93,7 @@ export default function ShipmentProgress({
   picqerPackagings,
   defaultWeight,
   hasPackingStation,
+  activeBoxId,
 }: ShipmentProgressProps) {
   const [phase, setPhase] = useState<DialogPhase>('loading')
   const [methods, setMethods] = useState<ShippingMethod[]>([])
@@ -170,16 +172,16 @@ export default function ShipmentProgress({
     // Initialize weight from default
     setWeightInput(defaultWeight ? String(defaultWeight) : '')
 
-    // Pre-select packaging from the first box
-    const firstBoxPackaging = boxes[0]?.picqerPackagingId ?? null
-    setSelectedPackagingId(firstBoxPackaging)
+    // Pre-select packaging from the active box (clicked "Maak zending"), or first box
+    const activeBox = activeBoxId ? boxes.find(b => b.id === activeBoxId) : null
+    const initialPackagingId = activeBox?.picqerPackagingId ?? boxes[0]?.picqerPackagingId ?? null
 
     // Start flow: fetch shipping methods, then show configure screen
     setPhase('loading')
     setLoadError(null)
     setMethods([])
     setSelectedProviderId(null)
-    setSelectedPackagingId(null)
+    setSelectedPackagingId(initialPackagingId)
     autoStartedRef.current = false
 
     if (!picklistId) {
@@ -375,9 +377,9 @@ export default function ShipmentProgress({
       open={isOpen}
       onClose={onClose}
       title="Zendingen maken"
-      className="max-w-lg"
+      className="max-w-2xl"
     >
-      <div className="p-4">
+      <div className="p-6 sm:p-8">
         {/* Phase: Loading */}
         {phase === 'loading' && (
           <div className="flex flex-col items-center justify-center py-8 gap-3">
@@ -406,18 +408,18 @@ export default function ShipmentProgress({
 
         {/* Phase: Configure shipment (like Picqer's modal) */}
         {phase === 'configure' && (
-          <div className="py-2 space-y-4">
+          <div className="space-y-6">
             {/* Verzendprofiel */}
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Verzendprofiel</span>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">
+            <div className="flex items-center justify-between gap-4 min-h-[56px]">
+              <span className="text-lg text-muted-foreground flex-shrink-0">Verzendprofiel</span>
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="text-lg font-medium truncate">
                   {methods.find(m => m.idshippingprovider_profile === resolvedProviderId)?.name || 'Onbekend'}
                 </span>
                 {methods.length > 1 && (
                   <button
                     onClick={() => setPhase('select_method')}
-                    className="text-xs text-primary hover:underline"
+                    className="px-5 py-2.5 text-lg text-primary border border-primary/30 rounded-lg hover:bg-primary/5 transition-colors min-h-[52px]"
                   >
                     Wijzig
                   </button>
@@ -427,13 +429,13 @@ export default function ShipmentProgress({
 
             {/* Verpakking */}
             {picqerPackagings && picqerPackagings.length > 0 && (
-              <div className="flex items-center justify-between">
-                <label htmlFor="shipment-packaging" className="text-sm text-muted-foreground">Verpakking</label>
+              <div className="flex items-center justify-between gap-4 min-h-[56px]">
+                <label htmlFor="shipment-packaging" className="text-lg text-muted-foreground flex-shrink-0">Verpakking</label>
                 <select
                   id="shipment-packaging"
                   value={selectedPackagingId ?? ''}
                   onChange={(e) => setSelectedPackagingId(e.target.value ? Number(e.target.value) : null)}
-                  className="w-48 px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="flex-1 min-w-0 px-4 py-3.5 text-lg border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary min-h-[56px]"
                 >
                   <option value="">Geen</option>
                   {picqerPackagings.map((p) => (
@@ -444,47 +446,48 @@ export default function ShipmentProgress({
             )}
 
             {/* Gewicht */}
-            <div className="flex items-center justify-between">
-              <label htmlFor="shipment-weight" className="text-sm text-muted-foreground">Gewicht</label>
-              <div className="flex items-center gap-1">
+            <div className="flex items-center justify-between min-h-[56px]">
+              <label htmlFor="shipment-weight" className="text-lg text-muted-foreground">Gewicht</label>
+              <div className="flex items-center gap-2">
                 <input
                   id="shipment-weight"
                   type="number"
+                  inputMode="numeric"
                   value={weightInput}
                   onChange={(e) => setWeightInput(e.target.value)}
                   placeholder="0"
-                  className="w-24 px-3 py-2 text-sm text-right border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="w-32 px-4 py-3.5 text-lg text-right border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary min-h-[56px]"
                 />
-                <span className="text-sm text-muted-foreground">gram</span>
+                <span className="text-lg text-muted-foreground">gram</span>
               </div>
             </div>
 
             {/* Aantal pakketten */}
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Aantal pakketten</span>
-              <span className="text-sm font-medium">{boxes.length}</span>
+            <div className="flex items-center justify-between min-h-[56px]">
+              <span className="text-lg text-muted-foreground">Aantal pakketten</span>
+              <span className="text-lg font-medium">{boxes.length}</span>
             </div>
 
             {/* No packing station warning */}
             {!hasPackingStation && (
-              <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
-                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <div className="flex items-start gap-3 px-4 py-3.5 bg-amber-50 border border-amber-200 rounded-lg text-base text-amber-800">
+                <AlertTriangle className="w-5 h-5 mt-0.5 flex-shrink-0" />
                 <span>Geen werkstation geselecteerd. Labels worden niet automatisch geprint.</span>
               </div>
             )}
 
             {/* Actions */}
-            <div className="flex items-center justify-between pt-4 border-t border-border">
+            <div className="flex items-center justify-between pt-6 border-t border-border gap-4">
               <button
                 onClick={onClose}
-                className="px-4 py-2 min-h-[48px] text-sm rounded-lg hover:bg-muted transition-colors"
+                className="px-6 py-4 min-h-[56px] text-lg rounded-lg hover:bg-muted transition-colors"
               >
                 Annuleren
               </button>
               <button
                 onClick={handleStartShipping}
                 disabled={!resolvedProviderId}
-                className="px-6 py-2.5 min-h-[48px] bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
+                className="flex-1 max-w-[280px] py-4 min-h-[56px] bg-primary text-primary-foreground rounded-lg text-lg font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
               >
                 Zending maken
               </button>

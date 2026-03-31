@@ -32,6 +32,14 @@ export interface BoxProductItem {
   imageUrl: string | null
 }
 
+// Packaging part that belongs to a composition (e.g. inlay, box set)
+export interface PackagingPartItem {
+  productCode: string
+  name: string
+  amount: number
+  picked: boolean
+}
+
 // Lightweight box type for display
 export interface BoxCardItem {
   id: string
@@ -39,6 +47,7 @@ export interface BoxCardItem {
   packagingImageUrl: string | null
   picqerPackagingId: number | null
   products: BoxProductItem[]
+  packagingParts?: PackagingPartItem[]
   isClosed: boolean
   shipmentCreated: boolean
   trackingCode: string | null
@@ -195,6 +204,8 @@ export default function BoxCard({
           </span>
         </div>
       </div>
+
+      {/* Packaging parts checklist removed — feedback: not needed */}
 
       {/* Products in box */}
       <div className="p-3">

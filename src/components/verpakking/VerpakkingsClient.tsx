@@ -39,6 +39,7 @@ import {
   Sparkles,
   Check,
   Printer,
+  Puzzle,
 } from 'lucide-react'
 import Dialog from '@/components/ui/Dialog'
 import { usePackingSession } from '@/hooks/usePackingSession'
@@ -54,7 +55,7 @@ import { getTagPackagingFilter } from '@/lib/verpakking/tag-packaging-filter'
 import BatchNavigationBar from './BatchNavigationBar'
 import BarcodeListener from './BarcodeListener'
 import ProductCard, { type ProductCardItem, type BoxRef, type ProductCustomFields } from './ProductCard'
-import BoxCard, { type BoxCardItem, type BoxProductItem } from './BoxCard'
+import BoxCard, { type BoxCardItem, type BoxProductItem, type PackagingPartItem } from './BoxCard'
 import ShipmentProgress from './ShipmentProgress'
 
 // Engine advice response type
@@ -98,6 +99,20 @@ interface EngineAdvice {
   tags_written: string[]
   weight_exceeded?: boolean
   cost_data_available?: boolean
+}
+
+// Product group for rendering (composition groups + single products)
+type ProductGroup =
+  | { type: 'group'; parentName: string; parentProductCode: string; parentIdProduct: number; items: ProductCardItem[] }
+  | { type: 'single'; item: ProductCardItem }
+
+// Composition info for child products (maps child idproduct → parent info)
+interface CompositionInfo {
+  parentOrderProductId: number
+  parentName: string
+  parentProductCode: string
+  parentIdProduct: number
+  parentIsPackaging: boolean
 }
 
 function formatCost(value: number | undefined): string {
@@ -271,6 +286,48 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
   const [order, setOrder] = useState<PicqerOrder | null>(null)
   const [orderLoading, setOrderLoading] = useState(false)
 
+  // Composition map: maps child idproduct → parent info (from order products)
+  // Used to group products by set and filter packaging parts
+  const compositionMap = useMemo(() => {
+    const map = new Map<number, CompositionInfo>()
+    if (!order?.products) return map
+
+    // Find all parents (has_parts: true)
+    const parents = new Map<number, typeof order.products[0]>()
+    for (const p of order.products) {
+      if (p.has_parts) {
+        parents.set(p.idorder_product, p)
+      }
+    }
+
+    // Map children to their parent
+    for (const p of order.products) {
+      if (p.partof_idorder_product) {
+        const parent = parents.get(p.partof_idorder_product)
+        if (parent) {
+          map.set(p.idproduct, {
+            parentOrderProductId: parent.idorder_product,
+            parentName: parent.name,
+            parentProductCode: parent.productcode,
+            parentIdProduct: parent.idproduct,
+            parentIsPackaging: packagingBarcodeMap.has(parent.productcode),
+          })
+        }
+      }
+    }
+
+    return map
+  }, [order, packagingBarcodeMap])
+
+  // Set of parent idproducts (virtual sets that shouldn't appear as pickable products)
+  const compositionParentIds = useMemo(() => {
+    const ids = new Set<number>()
+    for (const info of compositionMap.values()) {
+      ids.add(info.parentIdProduct)
+    }
+    return ids
+  }, [compositionMap])
+
   // Packagings from Picqer
   const [packagings, setPackagings] = useState<PicqerPackaging[]>([])
   const [packagingsLoading, setPackagingsLoading] = useState(false)
@@ -322,6 +379,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
   const [activeProduct, setActiveProduct] = useState<ProductCardItem | null>(null)
   const [showAddBoxModal, setShowAddBoxModal] = useState(false)
   const [showShipmentModal, setShowShipmentModal] = useState(false)
+  const [shipmentModalBoxId, setShipmentModalBoxId] = useState<string | null>(null)
   const [showStationPicker, setShowStationPicker] = useState(false)
   const [quantityPickerState, setQuantityPickerState] = useState<{
     productItemId: string
@@ -594,8 +652,17 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
   const productItems: ProductCardItem[] = useMemo(() => {
     if (!picklist?.products) return []
 
-    // Filter out packaging products (boxes that appear as line items)
-    const realProducts = picklist.products.filter(pp => !packagingBarcodeMap.has(pp.productcode))
+    // Filter out:
+    // 1. Packaging products (boxes that appear as line items)
+    // 2. Composition parents (virtual sets - not physically pickable)
+    // 3. Packaging composition parts (belong to the box, not the product list)
+    const realProducts = picklist.products.filter(pp => {
+      if (packagingBarcodeMap.has(pp.productcode)) return false
+      if (compositionParentIds.has(pp.idproduct)) return false
+      const compInfo = compositionMap.get(pp.idproduct)
+      if (compInfo?.parentIsPackaging) return false
+      return true
+    })
 
     // Helper: collect box assignments for a product
     const getAssignments = (pp: PicqerPicklistProduct) => {
@@ -639,6 +706,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
       const firstSessionProductId = assignments.length > 0 ? assignments[0].sessionProductId : null
       const id = firstSessionProductId ?? `picklist-${idSuffix}-${pp.idproduct}`
 
+      const compInfo = compositionMap.get(pp.idproduct)
+
       return {
         id,
         productCode: pp.productcode,
@@ -655,6 +724,11 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         idpicklist_product: pp.idpicklist_product,
         idpicklist_product_location: idpicklist_product_location,
         idproduct: pp.idproduct,
+        compositionParent: compInfo && !compInfo.parentIsPackaging ? {
+          name: compInfo.parentName,
+          productCode: compInfo.parentProductCode,
+          idproduct: compInfo.parentIdProduct,
+        } : undefined,
       }
     }
 
@@ -695,7 +769,53 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     }
 
     return items
-  }, [picklist, session, productCustomFields, packagingBarcodeMap])
+  }, [picklist, session, productCustomFields, packagingBarcodeMap, compositionMap, compositionParentIds])
+
+  // Group products by composition parent for rendering
+  const productGroups: ProductGroup[] = useMemo(() => {
+    const groups: ProductGroup[] = []
+    const grouped = new Map<number, ProductCardItem[]>()
+    const singles: ProductCardItem[] = []
+
+    for (const item of productItems) {
+      if (item.compositionParent) {
+        const key = item.compositionParent.idproduct
+        if (!grouped.has(key)) grouped.set(key, [])
+        grouped.get(key)!.push(item)
+      } else {
+        singles.push(item)
+      }
+    }
+
+    // Add groups first, then singles
+    for (const [, items] of grouped) {
+      const parent = items[0].compositionParent!
+      groups.push({
+        type: 'group',
+        parentName: parent.name,
+        parentProductCode: parent.productCode,
+        parentIdProduct: parent.idproduct,
+        items,
+      })
+    }
+
+    for (const item of singles) {
+      groups.push({ type: 'single', item })
+    }
+
+    return groups
+  }, [productItems])
+
+  // Collapsed state for composition groups
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<number>>(new Set())
+  const toggleGroup = useCallback((parentIdProduct: number) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(parentIdProduct)) next.delete(parentIdProduct)
+      else next.add(parentIdProduct)
+      return next
+    })
+  }, [])
 
   // Build BoxRef array for the ProductCard dropdown
   const boxRefs: BoxRef[] = useMemo(() => {
@@ -712,44 +832,68 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
   // Build BoxCardItem array for BoxCard component
   const boxItems: BoxCardItem[] = useMemo(() => {
     if (!session) return []
-    return session.boxes.map((box) => ({
-      id: box.id,
-      packagingName: box.packagingName,
-      packagingImageUrl: (box.picqerPackagingId && packagingImageMap.get(box.picqerPackagingId)) || null,
-      picqerPackagingId: box.picqerPackagingId,
-      products: box.products.map((sp): BoxProductItem => {
-        // Calculate maxAmount: current amount in this box + unassigned for this product
-        const picklistProduct = picklist?.products.find(
-          (pp) => pp.idproduct === sp.picqerProductId && pp.productcode === sp.productcode
-        )
-        const totalOnPicklist = picklistProduct?.amount ?? sp.amount
-        // Sum what's assigned across ALL boxes for this product
-        const totalAssigned = session.boxes.reduce((sum, b) => {
-          return sum + b.products
-            .filter((p) => p.picqerProductId === sp.picqerProductId && p.productcode === sp.productcode)
-            .reduce((s, p) => s + p.amount, 0)
-        }, 0)
-        const unassigned = totalOnPicklist - totalAssigned
-        const maxAmount = sp.amount + unassigned
-
-        return {
-          id: sp.id,
-          productCode: sp.productcode,
-          name: sp.productName,
-          amount: sp.amount,
-          maxAmount,
-          weight: (sp.weightPerUnit ?? 0) * sp.amount,
-          imageUrl: picklistProduct?.image ?? null,
+    return session.boxes.map((box) => {
+      // Find packaging parts for this box (composition children of the packaging product)
+      let packagingParts: PackagingPartItem[] | undefined
+      if (box.packagingBarcode) {
+        const parts: PackagingPartItem[] = []
+        for (const [childIdProduct, info] of compositionMap) {
+          if (info.parentIsPackaging && info.parentProductCode === box.packagingBarcode) {
+            // Find this child in the picklist to get picked status
+            const picklistProd = picklist?.products.find(pp => pp.idproduct === childIdProduct)
+            if (picklistProd) {
+              parts.push({
+                productCode: picklistProd.productcode,
+                name: picklistProd.name,
+                amount: picklistProd.amount,
+                picked: picklistProd.amount_picked >= picklistProd.amount,
+              })
+            }
+          }
         }
-      }),
-      isClosed: closedBoxes.has(box.id) || box.status === 'closed',
-      shipmentCreated: box.status === 'shipped' || box.status === 'label_fetched',
-      trackingCode: box.trackingCode,
-      trackingUrl: box.trackingUrl,
-      labelUrl: box.labelUrl,
-      shippedAt: box.shippedAt,
-    }))
-  }, [session, closedBoxes, picklist, packagingImageMap])
+        if (parts.length > 0) packagingParts = parts
+      }
+
+      return {
+        id: box.id,
+        packagingName: box.packagingName,
+        packagingImageUrl: (box.picqerPackagingId && packagingImageMap.get(box.picqerPackagingId)) || null,
+        picqerPackagingId: box.picqerPackagingId,
+        products: box.products.map((sp): BoxProductItem => {
+          // Calculate maxAmount: current amount in this box + unassigned for this product
+          const picklistProduct = picklist?.products.find(
+            (pp) => pp.idproduct === sp.picqerProductId && pp.productcode === sp.productcode
+          )
+          const totalOnPicklist = picklistProduct?.amount ?? sp.amount
+          // Sum what's assigned across ALL boxes for this product
+          const totalAssigned = session.boxes.reduce((sum, b) => {
+            return sum + b.products
+              .filter((p) => p.picqerProductId === sp.picqerProductId && p.productcode === sp.productcode)
+              .reduce((s, p) => s + p.amount, 0)
+          }, 0)
+          const unassigned = totalOnPicklist - totalAssigned
+          const maxAmount = sp.amount + unassigned
+
+          return {
+            id: sp.id,
+            productCode: sp.productcode,
+            name: sp.productName,
+            amount: sp.amount,
+            maxAmount,
+            weight: (sp.weightPerUnit ?? 0) * sp.amount,
+            imageUrl: picklistProduct?.image ?? null,
+          }
+        }),
+        packagingParts,
+        isClosed: closedBoxes.has(box.id) || box.status === 'closed',
+        shipmentCreated: box.status === 'shipped' || box.status === 'label_fetched',
+        trackingCode: box.trackingCode,
+        trackingUrl: box.trackingUrl,
+        labelUrl: box.labelUrl,
+        shippedAt: box.shippedAt,
+      }
+    })
+  }, [session, closedBoxes, picklist, packagingImageMap, compositionMap])
 
   // Filtered packagings for the add box modal (Picqer + local-only)
   const activePackagings = useMemo(() => {
@@ -1154,7 +1298,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
       if (toAssign.length === 0) return
 
       for (const product of toAssign) {
-        await handleAssignProduct(product.id, boxId)
+        const remaining = product.amount - product.amountAssigned
+        await handleAssignProduct(product.id, boxId, remaining)
       }
     },
     [productItems, handleAssignProduct]
@@ -1219,7 +1364,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
       setIsBulkAssigning(true)
       setShowBulkAssignMenu(false)
       for (const product of toAssign) {
-        await handleAssignProduct(product.id, boxId)
+        const remaining = product.amount - product.amountAssigned
+        await handleAssignProduct(product.id, boxId, remaining)
       }
       setSelectedProducts(new Set())
       setIsBulkAssigning(false)
@@ -2071,31 +2217,66 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                       <span className="text-sm">{picklistError}</span>
                     </div>
                   ) : (
-                    productItems.map((product) => (
-                      <ProductCard
-                        key={product.id}
-                        product={product}
-                        onRemoveFromBox={(sessionProductId) => {
-                          if (sessionProductId) {
-                            handleRemoveProduct(sessionProductId)
-                          } else if (product.assignedBoxId && session) {
-                            // Fallback: remove first match
-                            const box = session.boxes.find((b) => b.id === product.assignedBoxId)
-                            const sessionProd = box?.products.find(
-                              (sp) => sp.productcode === product.productCode && sp.productName === product.name
-                            )
-                            if (sessionProd) {
-                              handleRemoveProduct(sessionProd.id)
+                    productGroups.map((group) => {
+                      const renderProductCard = (product: ProductCardItem) => (
+                        <ProductCard
+                          key={product.id}
+                          product={product}
+                          onRemoveFromBox={(sessionProductId) => {
+                            if (sessionProductId) {
+                              handleRemoveProduct(sessionProductId)
+                            } else if (product.assignedBoxId && session) {
+                              const box = session.boxes.find((b) => b.id === product.assignedBoxId)
+                              const sessionProd = box?.products.find(
+                                (sp) => sp.productcode === product.productCode && sp.productName === product.name
+                              )
+                              if (sessionProd) {
+                                handleRemoveProduct(sessionProd.id)
+                              }
                             }
-                          }
-                        }}
-                        boxes={boxRefs}
-                        onAssignToBox={(boxId, amount) => handleAssignProduct(product.id, boxId, amount)}
-                        isSelected={selectedProducts.has(product.id)}
-                        onSelectToggle={() => handleToggleSelect(product.id)}
-                        isHighlighted={highlightProductId === product.id}
-                      />
-                    ))
+                          }}
+                          boxes={boxRefs}
+                          onAssignToBox={(boxId, amount) => handleAssignProduct(product.id, boxId, amount)}
+                          isSelected={selectedProducts.has(product.id)}
+                          onSelectToggle={() => handleToggleSelect(product.id)}
+                          isHighlighted={highlightProductId === product.id}
+                        />
+                      )
+
+                      if (group.type === 'single') {
+                        return renderProductCard(group.item)
+                      }
+
+                      const isCollapsed = collapsedGroups.has(group.parentIdProduct)
+                      const allAssigned = group.items.every(p => p.amountAssigned >= p.amount)
+
+                      return (
+                        <div key={`group-${group.parentIdProduct}`} className="space-y-1">
+                          <button
+                            onClick={() => toggleGroup(group.parentIdProduct)}
+                            className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                              allAssigned
+                                ? 'bg-green-50 text-green-700 border border-green-200'
+                                : 'bg-amber-50 text-amber-800 border border-amber-200'
+                            }`}
+                          >
+                            <Puzzle className="w-4 h-4 flex-shrink-0" />
+                            <span className="flex-1 text-left truncate">{group.parentName}</span>
+                            {allAssigned && <Check className="w-4 h-4 flex-shrink-0" />}
+                            {isCollapsed ? (
+                              <ChevronRight className="w-4 h-4 flex-shrink-0" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4 flex-shrink-0" />
+                            )}
+                          </button>
+                          {!isCollapsed && (
+                            <div className="pl-3 border-l-2 border-amber-200 space-y-2 ml-2">
+                              {group.items.map(renderProductCard)}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })
                   )}
                 </div>
               </div>
@@ -2125,7 +2306,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                         onCloseBox={() => handleCloseBox(box.id)}
                         onReopenBox={() => handleReopenBox(box.id)}
                         onRemoveBox={() => handleRemoveBox(box.id)}
-                        onCreateShipment={() => setShowShipmentModal(true)}
+                        onCreateShipment={() => { setShipmentModalBoxId(box.id); setShowShipmentModal(true) }}
                         onCancelShipment={() => handleCancelShipment(box.id)}
                         onAssignAllProducts={() => handleAssignAllToBox(box.id)}
                         unassignedProductCount={unassignedUnitCount}
@@ -2736,7 +2917,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         boxes={session.boxes.filter((b) => b.status === 'closed' || b.status === 'shipped')}
         shipProgress={shipProgress}
         isOpen={showShipmentModal}
-        onClose={() => setShowShipmentModal(false)}
+        onClose={() => { setShowShipmentModal(false); setShipmentModalBoxId(null) }}
         onShipAll={handleShipAll}
         onRetryBox={handleRetryBox}
         picklistId={session.picklistId}
@@ -2747,6 +2928,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         picqerPackagings={packagings.map(p => ({ idpackaging: p.idpackaging, name: p.name }))}
         defaultWeight={picklist?.weight ?? undefined}
         hasPackingStation={!!packingStationId}
+        activeBoxId={shipmentModalBoxId}
       />
 
       {/* Quantity picker modal */}
