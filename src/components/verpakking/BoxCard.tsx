@@ -139,14 +139,14 @@ export default function BoxCard({
               <ExternalLink className="w-3 h-3" />
             </a>
           )}
-          {onCancelShipment && cancelTimeLeft !== null && cancelTimeLeft > 0 && (
+          {onCancelShipment && (
             <button
               onClick={async () => { setIsCancelling(true); try { await onCancelShipment() } finally { setIsCancelling(false) } }}
               disabled={isCancelling}
               className="inline-flex items-center gap-1 px-2 py-1 border border-red-200 text-red-600 rounded text-xs hover:bg-red-50 transition-colors disabled:opacity-50"
             >
               {isCancelling ? <Clock className="w-3 h-3 animate-spin" /> : <XCircle className="w-3 h-3" />}
-              <span className="tabular-nums">{Math.floor(cancelTimeLeft / 60000)}:{String(Math.floor((cancelTimeLeft % 60000) / 1000)).padStart(2, '0')}</span>
+              Annuleer
             </button>
           )}
         </div>
