@@ -109,12 +109,14 @@ function ProductDetailSheet({
   onPrev,
   onNext,
   onToggleCheck,
+  onOpenScanner,
 }: {
   item: EnrichedItem
   onClose: () => void
   onPrev: (() => void) | null
   onNext: (() => void) | null
   onToggleCheck: () => void
+  onOpenScanner: () => void
 }) {
   const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
@@ -137,6 +139,9 @@ function ProductDetailSheet({
             <p className="font-bold text-lg leading-tight">{item.productcode}</p>
             <p className="text-sm text-muted-foreground mt-0.5">{item.product_name}</p>
           </div>
+          <button onClick={onOpenScanner} className="p-1.5 hover:bg-muted rounded-md transition-colors flex-shrink-0">
+            <ScanBarcode className="w-5 h-5" />
+          </button>
           <button onClick={onClose} className="p-1.5 hover:bg-muted rounded-md transition-colors flex-shrink-0">
             <X className="w-5 h-5" />
           </button>
@@ -531,6 +536,7 @@ export default function KamerplantenClient() {
           onPrev={handlePrev}
           onNext={handleNext}
           onToggleCheck={() => toggleCheck(getItemKey(selectedItem))}
+          onOpenScanner={() => { setSelectedItemKey(null); setShowCamera(true) }}
         />
       )}
 
