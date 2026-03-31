@@ -292,31 +292,37 @@ export async function DELETE(
       )
     }
 
-    // Step 2: Check 5-minute time window
-    if (box.shipped_at) {
-      const elapsed = Date.now() - new Date(box.shipped_at).getTime()
-      const fiveMinutes = 5 * 60 * 1000
-      if (elapsed > fiveMinutes) {
-        return NextResponse.json(
-          { error: 'Annuleerperiode verlopen (max 5 minuten na aanmaken zending)' },
-          { status: 422 }
-        )
-      }
-    }
-
-    // Get session for picklist_id (needed for Picqer cancel endpoint)
+    // Get session for picklist_id
     const session = await getPackingSession(sessionId)
 
-    // Step 3: Cancel shipment in Picqer
-    const cancelResult = await cancelShipment(session.picklist_id, box.shipment_id)
-    if (!cancelResult.success) {
-      return NextResponse.json(
-        { success: false, error: cancelResult.error || 'Failed to cancel shipment in Picqer' },
-        { status: 500 }
-      )
+    // Step 3: Try to cancel shipment in Picqer (best-effort)
+    // Picqer does not expose shipment cancel via REST API, so this may fail.
+    // The worker should cancel in Picqer UI separately if needed.
+    try {
+      const cancelResult = await cancelShipment(session.picklist_id, box.shipment_id)
+      if (!cancelResult.success) {
+        console.warn(`[verpakking] Picqer cancel not available via API — cancel in Picqer UI if needed: ${cancelResult.error}`)
+      }
+    } catch (e) {
+      console.warn('[verpakking] Picqer cancel call failed (non-blocking):', e)
     }
 
-    // Step 4: Reset box in Supabase
+    // Step 4: Log cancellation to database
+    await supabase
+      .schema('batchmaker')
+      .from('shipment_cancellations')
+      .insert({
+        session_id: sessionId,
+        box_id: boxId,
+        picklist_id: session.picklist_id,
+        shipment_id: box.shipment_id,
+        tracking_code: box.tracking_code,
+        packaging_name: box.packaging_name,
+        cancelled_by: body.cancelledBy || null,
+        reason: body.reason || null,
+      })
+
+    // Step 5: Reset box in Supabase (always proceed regardless of Picqer result)
     await updateBox(boxId, {
       shipment_id: null,
       tracking_code: null,
