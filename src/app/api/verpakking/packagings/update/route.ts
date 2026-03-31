@@ -63,8 +63,13 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ packaging: updated })
   } catch (error) {
     console.error('[verpakking] Error updating packaging:', error)
+    const message = error instanceof Error
+      ? error.message
+      : (error && typeof error === 'object' && 'message' in error)
+        ? String((error as { message: unknown }).message)
+        : 'Unknown error'
     return NextResponse.json(
-      { error: 'Failed to update packaging', details: error instanceof Error ? error.message : 'Unknown error' },
+      { error: 'Failed to update packaging', details: message },
       { status: 500 }
     )
   }

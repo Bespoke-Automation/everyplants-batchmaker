@@ -183,7 +183,7 @@ export async function deleteLocalPackaging(idpackaging: number): Promise<void> {
  */
 export async function updateLocalPackaging(
   idpackaging: number,
-  updates: Partial<Pick<LocalPackagingRow, 'idpackaging' | 'name' | 'barcode' | 'length' | 'width' | 'height' | 'max_weight' | 'box_category' | 'specificity_score' | 'handling_cost' | 'material_cost' | 'use_in_auto_advice' | 'image_url' | 'facturatie_box_sku' | 'picqer_tag_name' | 'picqer_tag_id'>>
+  updates: Partial<Pick<LocalPackagingRow, 'idpackaging' | 'name' | 'barcode' | 'length' | 'width' | 'height' | 'max_weight' | 'box_category' | 'specificity_score' | 'handling_cost' | 'material_cost' | 'use_in_auto_advice' | 'image_url' | 'facturatie_box_sku' | 'picqer_tag_name' | 'picqer_tag_id' | 'num_shipping_labels' | 'strapped_variant_id'>>
 ): Promise<void> {
   // Keep SKU in sync with barcode
   const payload: Record<string, unknown> = { ...updates }

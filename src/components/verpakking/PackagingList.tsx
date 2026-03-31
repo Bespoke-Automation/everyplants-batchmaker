@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   RefreshCw,
   Loader2,
@@ -91,6 +91,37 @@ export default function PackagingList() {
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [isUploadingImage, setIsUploadingImage] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Picqer packagings for dropdown
+  const [picqerPackagings, setPicqerPackagings] = useState<Array<{ idpackaging: number; name: string }>>([])
+  const [isLoadingPicqerPkg, setIsLoadingPicqerPkg] = useState(false)
+
+  const fetchPicqerPackagings = useCallback(async () => {
+    if (picqerPackagings.length > 0) return // already loaded
+    setIsLoadingPicqerPkg(true)
+    try {
+      const res = await fetch('/api/picqer/packagings')
+      if (res.ok) {
+        const data = await res.json()
+        setPicqerPackagings(
+          (data.packagings || [])
+            .map((p: { idpackaging: number; name: string }) => ({ idpackaging: p.idpackaging, name: p.name }))
+            .sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name))
+        )
+      }
+    } catch {
+      // silently fail, user can still type manually
+    } finally {
+      setIsLoadingPicqerPkg(false)
+    }
+  }, [picqerPackagings.length])
+
+  // Load Picqer packagings when form opens
+  useEffect(() => {
+    if (showForm || editingId) {
+      fetchPicqerPackagings()
+    }
+  }, [showForm, editingId, fetchPicqerPackagings])
 
   const handleSync = async () => {
     setSyncResult(null)
@@ -569,16 +600,28 @@ export default function PackagingList() {
           {editingId && (
             <div className="mb-5">
               <div>
-                <label className="block text-sm font-medium mb-1">Picqer Packaging ID</label>
-                <input
-                  type="number"
-                  value={formData.manualIdpackaging}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, manualIdpackaging: e.target.value }))}
-                  placeholder="Bijv. 2100"
-                  className="w-48 px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
-                />
+                <label className="block text-sm font-medium mb-1">Picqer Packaging</label>
+                {isLoadingPicqerPkg ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Picqer verpakkingen laden...
+                  </div>
+                ) : (
+                  <select
+                    value={formData.manualIdpackaging}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, manualIdpackaging: e.target.value }))}
+                    className="w-full max-w-md px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                  >
+                    <option value="">Geen koppeling</option>
+                    {picqerPackagings.map((p) => (
+                      <option key={p.idpackaging} value={p.idpackaging.toString()}>
+                        {p.name} (#{p.idpackaging})
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <p className="text-xs text-muted-foreground mt-1">
-                  Het Picqer packaging ID. Wijzig alleen als je de koppeling wil aanpassen.
+                  Selecteer de Picqer verpakking om aan te koppelen.
                 </p>
               </div>
             </div>
@@ -780,14 +823,26 @@ export default function PackagingList() {
 
               {formData.skipPicqer && (
                 <div className="mt-3 ml-12">
-                  <label className="block text-sm font-medium mb-1">Picqer Packaging ID</label>
-                  <input
-                    type="number"
-                    value={formData.manualIdpackaging}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, manualIdpackaging: e.target.value }))}
-                    placeholder="Bijv. 2100"
-                    className="w-48 px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
-                  />
+                  <label className="block text-sm font-medium mb-1">Picqer Packaging</label>
+                  {isLoadingPicqerPkg ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Picqer verpakkingen laden...
+                    </div>
+                  ) : (
+                    <select
+                      value={formData.manualIdpackaging}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, manualIdpackaging: e.target.value }))}
+                      className="w-full max-w-md px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                    >
+                      <option value="">Geen koppeling (optioneel)</option>
+                      {picqerPackagings.map((p) => (
+                        <option key={p.idpackaging} value={p.idpackaging.toString()}>
+                          {p.name} (#{p.idpackaging})
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               )}
             </div>
