@@ -1063,31 +1063,42 @@ export async function assignPicklist(picklistId: number, userId: number): Promis
  * Pick a specific product on a picklist.
  * Uses idpicklist_product (the line-item ID on the picklist), not the global product ID.
  */
-export async function pickProduct(picklistId: number, idpicklistProduct: number, amount: number): Promise<PicqerPicklistWithProducts> {
+export async function pickProduct(picklistId: number, idpicklistProduct: number, amount: number, retries = 3): Promise<PicqerPicklistWithProducts> {
   console.log(`Picking picklist product ${idpicklistProduct} (amount: ${amount}) on picklist ${picklistId}...`)
 
-  const response = await rateLimitedFetch(
-    `${PICQER_BASE_URL}/picklists/${picklistId}/pick`,
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
-        'User-Agent': 'EveryPlants-Batchmaker/2.0',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ idpicklist_product: idpicklistProduct, amount }),
-    }
-  )
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    const response = await rateLimitedFetch(
+      `${PICQER_BASE_URL}/picklists/${picklistId}/pick`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+          'User-Agent': 'EveryPlants-Batchmaker/2.0',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ idpicklist_product: idpicklistProduct, amount }),
+      }
+    )
 
-  if (!response.ok) {
-    const errorText = await response.text()
-    console.error(`Picqer API error picking product on picklist ${picklistId}:`, response.status, errorText)
-    throw new Error(`Failed to pick product: ${response.status} - ${errorText}`)
+    if (!response.ok) {
+      const errorText = await response.text()
+      // Retry on "locked" errors (concurrent operations on same picklist)
+      if (response.status === 400 && errorText.includes('is locked') && attempt < retries) {
+        const delay = attempt * 500
+        console.warn(`Picklist ${picklistId} is locked, retrying in ${delay}ms (attempt ${attempt}/${retries})`)
+        await new Promise(resolve => setTimeout(resolve, delay))
+        continue
+      }
+      console.error(`Picqer API error picking product on picklist ${picklistId}:`, response.status, errorText)
+      throw new Error(`Failed to pick product: ${response.status} - ${errorText}`)
+    }
+
+    const result = await response.json()
+    console.log(`Picklist product ${idpicklistProduct} picked on picklist ${picklistId} successfully`)
+    return result
   }
 
-  const result = await response.json()
-  console.log(`Picklist product ${idpicklistProduct} picked on picklist ${picklistId} successfully`)
-  return result
+  throw new Error(`Failed to pick product after ${retries} retries (picklist locked)`)
 }
 
 // ── Picklist Batch operations ──────────────────────────────────────────────
