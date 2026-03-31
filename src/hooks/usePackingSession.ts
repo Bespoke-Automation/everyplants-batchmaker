@@ -797,18 +797,6 @@ export function usePackingSession(sessionId: string | null) {
           }
         }
 
-        // Store multicollo info in first box's progress
-        if (data.multicollo && boxResults.length > 0) {
-          setShipProgress((prev) => {
-            const next = new Map(prev)
-            const first = next.get(boxResults[0].boxId)
-            if (first) {
-              next.set(first.boxId, { ...first, multicollo: true } as BoxShipmentStatus & { multicollo?: boolean })
-            }
-            return next
-          })
-        }
-
         if (data.warning) {
           setWarnings((prev) => [...prev, data.warning])
         }

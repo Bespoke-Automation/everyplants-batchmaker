@@ -7,11 +7,9 @@ import {
 } from '@/lib/supabase/packingSessions'
 import {
   createShipment,
-  createMulticolloShipment,
   getShipmentLabel,
 } from '@/lib/picqer/client'
 import { supabase } from '@/lib/supabase/client'
-import type { PicqerShipmentParcel } from '@/lib/picqer/types'
 import { tryAutoPrint } from '@/lib/printnode/autoPrint'
 import { tryCompleteSession } from '@/lib/verpakking/tryCompleteSession'
 
@@ -63,7 +61,7 @@ interface BoxResult {
 
 /**
  * POST /api/verpakking/sessions/[id]/ship-all
- * Ships ALL closed boxes. Auto-detects multicollo eligibility.
+ * Ships ALL closed boxes — each box gets its own individual shipment.
  */
 export async function POST(
   request: NextRequest,
@@ -94,171 +92,41 @@ export async function POST(
       )
     }
 
-    // Step 2: Detect multicollo eligibility
-    // All boxes must have the same picqer_packaging_id and same weight
     const weights = boxWeights as Record<string, number> | undefined
-    let isMulticollo = false
-
-    if (closedBoxes.length >= 2) {
-      const firstBox = closedBoxes[0]
-      const firstPackagingId = firstBox.picqer_packaging_id
-      const firstWeight = weights?.[firstBox.id] ?? null
-
-      if (firstPackagingId && firstWeight) {
-        isMulticollo = closedBoxes.every(box => {
-          const boxWeight = weights?.[box.id] ?? null
-          return box.picqer_packaging_id === firstPackagingId && boxWeight === firstWeight
-        })
-      }
-    }
-
     const results: BoxResult[] = []
     let sessionCompleted = false
     let closeWarning: string | undefined
 
-    if (isMulticollo) {
-      // === MULTICOLLO PATH ===
-      console.log(`[ship-all] Multicollo detected: ${closedBoxes.length} boxes with same packaging and weight`)
+    // Ship each box individually — 1 box = 1 shipment = 1 label
+    console.log(`[ship-all] Individual shipping: ${closedBoxes.length} boxes`)
 
-      // Claim all boxes first
-      const claimResults = await Promise.all(
-        closedBoxes.map(async (box) => ({
+    for (const box of closedBoxes) {
+      // Skip boxes that already have a shipment
+      if (box.shipment_id) {
+        results.push({
           boxId: box.id,
-          claimed: await claimBoxForShipping(box.id),
-        }))
+          success: true,
+          trackingCode: box.tracking_code,
+          labelUrl: box.label_url,
+        })
+        continue
+      }
+
+      const claimed = await claimBoxForShipping(box.id)
+      if (!claimed) {
+        results.push({ boxId: box.id, success: false, error: 'Box is al geclaimd door een ander proces' })
+        continue
+      }
+
+      const result = await shipSingleBox(
+        sessionId, session.picklist_id, box.id,
+        shippingProviderId, sanitizePackagingId(box.picqer_packaging_id),
+        weights?.[box.id], packingStationId
       )
-
-      const failedClaims = claimResults.filter(r => !r.claimed)
-      if (failedClaims.length > 0) {
-        // Some boxes couldn't be claimed — fall through to individual
-        console.warn(`[ship-all] ${failedClaims.length} boxes couldn't be claimed, falling back to individual`)
-        for (const fc of failedClaims) {
-          results.push({ boxId: fc.boxId, success: false, error: 'Box is al geclaimd door een ander proces' })
-        }
-      }
-
-      const claimedBoxes = closedBoxes.filter(box =>
-        claimResults.find(r => r.boxId === box.id)?.claimed
-      )
-
-      if (claimedBoxes.length >= 2) {
-        // Build parcels array
-        const parcels = claimedBoxes.map(box => ({
-          idpackaging: sanitizePackagingId(box.picqer_packaging_id) ?? 0,
-          weight: weights?.[box.id] ?? 0,
-        }))
-
-        const shipmentResult = await createMulticolloShipment(
-          session.picklist_id,
-          shippingProviderId,
-          parcels
-        )
-
-        if (shipmentResult.success && shipmentResult.shipment) {
-          const shipment = shipmentResult.shipment
-          const shipmentParcels = shipment.parcels ?? []
-
-          // Map each parcel to its box
-          for (let i = 0; i < claimedBoxes.length; i++) {
-            const box = claimedBoxes[i]
-            const parcel: PicqerShipmentParcel | undefined = shipmentParcels[i]
-
-            const trackingCode = parcel?.trackingcode ?? shipment.trackingcode ?? null
-            const trackingUrl = shipment.trackingurl ?? shipment.tracktraceurl ?? undefined
-            const labelPdfUrl = parcel?.labelurl_pdf ?? parcel?.labelurl ?? shipment.labelurl_pdf ?? shipment.labelurl ?? undefined
-
-            // Fetch and upload label
-            let labelUrl: string | undefined
-            if (parcel?.idshipment_parcel) {
-              const labelResult = await getShipmentLabel(shipment.idshipment, labelPdfUrl)
-              if (labelResult.success && labelResult.labelData) {
-                try {
-                  labelUrl = await uploadLabelToStorage(sessionId, box.id, labelResult.labelData)
-                } catch {
-                  labelUrl = labelPdfUrl
-                }
-                // Auto-print via PrintNode (non-blocking)
-                tryAutoPrint(packingStationId, labelResult.labelData, shipment.idshipment, box.id).catch((err) => {
-                  console.error('[verpakking] Auto-print failed (non-blocking):', err)
-                })
-              } else {
-                labelUrl = labelPdfUrl
-              }
-            } else {
-              labelUrl = labelPdfUrl
-            }
-
-            // Update box in Supabase
-            await updateBox(box.id, {
-              shipment_id: shipment.idshipment,
-              tracking_code: trackingCode,
-              tracking_url: trackingUrl || null,
-              label_url: labelUrl || null,
-              shipped_at: new Date().toISOString(),
-              status: 'label_fetched',
-            })
-
-            results.push({
-              boxId: box.id,
-              success: true,
-              trackingCode,
-              trackingUrl: trackingUrl || null,
-              labelUrl: labelUrl || null,
-            })
-          }
-        } else {
-          // Multicollo failed — mark all claimed boxes as error
-          for (const box of claimedBoxes) {
-            await updateBox(box.id, { status: 'error' })
-            results.push({
-              boxId: box.id,
-              success: false,
-              error: shipmentResult.error || 'Multicollo zending mislukt',
-            })
-          }
-        }
-      } else if (claimedBoxes.length === 1) {
-        // Only 1 box claimed — ship individually
-        const box = claimedBoxes[0]
-        const result = await shipSingleBox(
-          sessionId, session.picklist_id, box.id,
-          shippingProviderId, sanitizePackagingId(box.picqer_packaging_id),
-          weights?.[box.id], packingStationId
-        )
-        results.push(result)
-      }
-    } else {
-      // === INDIVIDUAL PATH ===
-      console.log(`[ship-all] Individual shipping: ${closedBoxes.length} boxes`)
-
-      for (const box of closedBoxes) {
-        // Skip boxes that already have a shipment
-        if (box.shipment_id) {
-          results.push({
-            boxId: box.id,
-            success: true,
-            trackingCode: box.tracking_code,
-            labelUrl: box.label_url,
-          })
-          continue
-        }
-
-        const claimed = await claimBoxForShipping(box.id)
-        if (!claimed) {
-          results.push({ boxId: box.id, success: false, error: 'Box is al geclaimd door een ander proces' })
-          continue
-        }
-
-        const result = await shipSingleBox(
-          sessionId, session.picklist_id, box.id,
-          shippingProviderId, sanitizePackagingId(box.picqer_packaging_id),
-          weights?.[box.id], packingStationId
-        )
-        results.push(result)
-      }
+      results.push(result)
     }
 
-    // Step 3: Try to complete session (only if all products are packed)
+    // Step 2: Try to complete session (only if all products are packed)
     try {
       const completionResult = await tryCompleteSession(sessionId, session.picklist_id)
       sessionCompleted = completionResult.sessionCompleted
@@ -268,7 +136,6 @@ export async function POST(
 
       return NextResponse.json({
         boxes: results,
-        multicollo: isMulticollo,
         sessionCompleted,
         ...(closeWarning && { warning: closeWarning }),
         ...(completionResult.outcome && { outcome: completionResult.outcome, deviationType: completionResult.deviationType }),
@@ -279,7 +146,6 @@ export async function POST(
 
     return NextResponse.json({
       boxes: results,
-      multicollo: isMulticollo,
       sessionCompleted,
       ...(closeWarning && { warning: closeWarning }),
     })
@@ -295,7 +161,7 @@ export async function POST(
 }
 
 /**
- * Ship a single box — same logic as the existing /ship POST endpoint
+ * Ship a single box — creates individual shipment in Picqer and fetches label
  */
 async function shipSingleBox(
   sessionId: string,
