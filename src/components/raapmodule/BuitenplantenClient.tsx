@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Download, Save, Loader2, ArrowLeft, RefreshCw } from 'lucide-react'
 import Link from 'next/link'
 
@@ -19,24 +19,31 @@ interface PickedItem {
   location: string
 }
 
+interface Adjustment {
+  voorraad_bb: number
+  single_orders: number
+}
+
 export default function BuitenplantenClient() {
   const [items, setItems] = useState<PickItem[]>([])
   const [pickedItems, setPickedItems] = useState<PickedItem[]>([])
   const [checked, setChecked] = useState<Set<string>>(new Set())
+  const [adjustments, setAdjustments] = useState<Record<string, Adjustment>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
-
   const [error, setError] = useState<string | null>(null)
+  const saveTimers = useRef<Record<string, NodeJS.Timeout>>({})
 
   const load = useCallback(async () => {
     setIsLoading(true)
     setError(null)
     try {
-      const [pickRes, pickedRes] = await Promise.all([
+      const [pickRes, pickedRes, adjRes] = await Promise.all([
         fetch('/api/raapmodule/products/buitenplanten'),
         fetch('/api/raapmodule/picked-items'),
+        fetch('/api/raapmodule/buitenplanten-adjustments'),
       ])
       if (!pickRes.ok) {
         const errData = await pickRes.json().catch(() => ({}))
@@ -44,8 +51,20 @@ export default function BuitenplantenClient() {
       }
       const { items: pickItems } = await pickRes.json()
       const { items: picked } = await pickedRes.json()
+      const { adjustments: adjData } = await adjRes.json()
+
       setItems(pickItems || [])
       setPickedItems(picked || [])
+
+      // Build adjustments map keyed by product_id::location
+      const adjMap: Record<string, Adjustment> = {}
+      for (const adj of adjData || []) {
+        adjMap[`${adj.product_id}::${adj.location}`] = {
+          voorraad_bb: adj.voorraad_bb,
+          single_orders: adj.single_orders,
+        }
+      }
+      setAdjustments(adjMap)
     } catch (err) {
       console.error('Buitenplanten load error:', err)
       setError(err instanceof Error ? err.message : 'Er is een fout opgetreden')
@@ -55,6 +74,59 @@ export default function BuitenplantenClient() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(saveTimers.current).forEach(clearTimeout)
+    }
+  }, [])
+
+  const getAdjustment = (key: string): Adjustment => {
+    return adjustments[key] || { voorraad_bb: 0, single_orders: 0 }
+  }
+
+  const getAdjustedQty = (item: PickItem): number => {
+    const adj = getAdjustment(`${item.product_id}::${item.location}`)
+    return Math.max(0, item.qty_needed - adj.voorraad_bb + adj.single_orders)
+  }
+
+  const saveAdjustment = (key: string, product_id: number, location: string, adj: Adjustment) => {
+    // Clear existing timer for this key
+    if (saveTimers.current[key]) {
+      clearTimeout(saveTimers.current[key])
+    }
+    // Debounce: save after 300ms of no changes
+    saveTimers.current[key] = setTimeout(async () => {
+      try {
+        await fetch('/api/raapmodule/buitenplanten-adjustments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            product_id,
+            location,
+            voorraad_bb: adj.voorraad_bb,
+            single_orders: adj.single_orders,
+          }),
+        })
+      } catch (err) {
+        console.error('Failed to save adjustment:', err)
+      }
+    }, 300)
+  }
+
+  const handleAdjustmentChange = (
+    product_id: number,
+    location: string,
+    field: 'voorraad_bb' | 'single_orders',
+    value: number
+  ) => {
+    const key = `${product_id}::${location}`
+    const current = getAdjustment(key)
+    const updated = { ...current, [field]: value }
+    setAdjustments(prev => ({ ...prev, [key]: updated }))
+    saveAdjustment(key, product_id, location, updated)
+  }
 
   const toggleCheck = (productId: number, location: string) => {
     const key = `${productId}::${location}`
@@ -79,7 +151,7 @@ export default function BuitenplantenClient() {
           productcode: item.productcode,
           product_name: item.product_name,
           location: item.location,
-          qty_picked: item.qty_needed,
+          qty_picked: getAdjustedQty(item),
         }))
 
       const res = await fetch('/api/raapmodule/picked-items', {
@@ -143,7 +215,7 @@ export default function BuitenplantenClient() {
 
   return (
     <div className="flex-1 p-6">
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-5xl mx-auto">
         <div className="flex items-center gap-3 mb-6">
           <Link href="/raapmodule" className="p-1.5 hover:bg-muted rounded-md transition-colors">
             <ArrowLeft className="w-4 h-4" />
@@ -180,6 +252,8 @@ export default function BuitenplantenClient() {
                 <th className="w-10 px-4 py-3"></th>
                 <th className="text-left px-4 py-3 font-medium">Product</th>
                 <th className="text-left px-4 py-3 font-medium">Locatie</th>
+                <th className="text-right px-4 py-3 font-medium">Voorraad BB</th>
+                <th className="text-right px-4 py-3 font-medium">Single Orders</th>
                 <th className="text-right px-4 py-3 font-medium">Aantal</th>
                 <th className="text-left px-4 py-3 font-medium text-xs">Batches</th>
               </tr>
@@ -187,7 +261,7 @@ export default function BuitenplantenClient() {
             <tbody>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                  <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
                     Geen buitenplanten te rapen
                   </td>
                 </tr>
@@ -196,6 +270,8 @@ export default function BuitenplantenClient() {
                   const key = `${item.product_id}::${item.location}`
                   const isChecked = checked.has(key)
                   const isPicked = pickedKeys.has(key)
+                  const adj = getAdjustment(key)
+                  const adjustedQty = getAdjustedQty(item)
                   return (
                     <tr
                       key={key}
@@ -215,7 +291,41 @@ export default function BuitenplantenClient() {
                         <div className="text-xs text-muted-foreground">{item.productcode}</div>
                       </td>
                       <td className="px-4 py-2.5 font-mono text-xs">{item.location}</td>
-                      <td className="px-4 py-2.5 text-right font-semibold">{item.qty_needed}</td>
+                      <td className="px-4 py-2.5 text-right">
+                        <input
+                          type="number"
+                          min="0"
+                          inputMode="numeric"
+                          value={adj.voorraad_bb || ''}
+                          placeholder="0"
+                          onChange={(e) => handleAdjustmentChange(
+                            item.product_id,
+                            item.location,
+                            'voorraad_bb',
+                            Math.max(0, parseInt(e.target.value) || 0)
+                          )}
+                          disabled={isPicked}
+                          className="w-16 px-2 py-1 text-right text-sm border border-border rounded-md bg-background disabled:opacity-50"
+                        />
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        <input
+                          type="number"
+                          min="0"
+                          inputMode="numeric"
+                          value={adj.single_orders || ''}
+                          placeholder="0"
+                          onChange={(e) => handleAdjustmentChange(
+                            item.product_id,
+                            item.location,
+                            'single_orders',
+                            Math.max(0, parseInt(e.target.value) || 0)
+                          )}
+                          disabled={isPicked}
+                          className="w-16 px-2 py-1 text-right text-sm border border-border rounded-md bg-background disabled:opacity-50"
+                        />
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-semibold">{adjustedQty}</td>
                       <td className="px-4 py-2.5 text-xs text-muted-foreground">
                         {item.batch_ids.join(', ')}
                       </td>

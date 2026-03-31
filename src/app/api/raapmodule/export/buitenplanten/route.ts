@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
 import { buildPickList } from '@/lib/raapmodule/pickListBuilder'
 import { getPickedItems, cleanupClosedPicklistItems } from '@/lib/supabase/raapPickedItems'
+import { getAdjustments } from '@/lib/supabase/buitenplantenAdjustments'
 import { fetchPicklist } from '@/lib/picqer/client'
 
 export const dynamic = 'force-dynamic'
@@ -34,22 +35,34 @@ export async function GET() {
       activePickedItems.map(p => `${p.product_id}::${p.location}`)
     )
 
-    // 4. Build full buitenplanten pick list
-    const allItems = await buildPickList('buitenplanten')
+    // 4. Build full buitenplanten pick list + get adjustments
+    const [allItems, adjData] = await Promise.all([
+      buildPickList('buitenplanten'),
+      getAdjustments(),
+    ])
+
+    // Build adjustments lookup
+    const adjMap = new Map(
+      adjData.map(a => [`${a.product_id}::${a.location}`, a])
+    )
 
     // 5. Exclude already-picked items
     const exportItems = allItems.filter(
       item => !pickedKeys.has(`${item.product_id}::${item.location}`)
     )
 
-    // 6. Build XLSX
-    const rows = exportItems.map(item => ({
-      Productcode: item.productcode,
-      Productnaam: item.product_name,
-      Locatie: item.location,
-      Aantal: item.qty_needed,
-      'Batch refs': item.batch_ids.join(', '),
-    }))
+    // 6. Build XLSX with adjusted quantities
+    const rows = exportItems.map(item => {
+      const adj = adjMap.get(`${item.product_id}::${item.location}`)
+      const adjustedQty = Math.max(0, item.qty_needed - (adj?.voorraad_bb || 0) + (adj?.single_orders || 0))
+      return {
+        Productcode: item.productcode,
+        Productnaam: item.product_name,
+        Locatie: item.location,
+        Aantal: adjustedQty,
+        'Batch refs': item.batch_ids.join(', '),
+      }
+    })
 
     const ws = XLSX.utils.json_to_sheet(rows)
 
