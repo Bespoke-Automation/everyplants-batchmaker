@@ -735,9 +735,9 @@ export async function cancelShipment(picklistId: number, shipmentId: number): Pr
 
   try {
     const response = await rateLimitedFetch(
-      `${PICQER_BASE_URL}/picklists/${picklistId}/shipments/${shipmentId}`,
+      `${PICQER_BASE_URL}/picklists/shipments/${shipmentId}/cancel`,
       {
-        method: 'DELETE',
+        method: 'POST',
         headers: {
           'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
           'User-Agent': 'EveryPlants-Batchmaker/2.0',

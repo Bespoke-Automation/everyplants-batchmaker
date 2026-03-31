@@ -136,9 +136,9 @@ export default function ProductCard({
       style={style}
       className={`bg-card border rounded-lg p-3 transition-all ${
         isHighlighted
-          ? 'border-emerald-400 bg-emerald-50 ring-2 ring-emerald-300 animate-pulse'
+          ? 'border-green-400 bg-green-50 ring-2 ring-green-300 animate-pulse'
           : isFullyAssigned
-            ? 'border-green-300 bg-green-50/50'
+            ? 'border-green-300 bg-green-100/50'
             : isPartiallyAssigned
               ? 'border-amber-300 bg-amber-50/30'
               : isSelected
@@ -252,7 +252,7 @@ export default function ProductCard({
                   className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-700 rounded"
                 >
                   <Box className="w-2.5 h-2.5" />
-                  Doos {ab.boxIndex}: {ab.amount}x
+                  {ab.boxName}: {ab.amount}x
                   {!isFullyAssigned && (
                     <button
                       type="button"
@@ -260,10 +260,10 @@ export default function ProductCard({
                         e.stopPropagation()
                         onRemoveFromBox(ab.sessionProductId)
                       }}
-                      className="ml-0.5 hover:text-red-600 transition-colors"
+                      className="ml-1 p-0.5 rounded border border-red-200 hover:bg-red-100 hover:text-red-600 transition-colors"
                       title="Verwijder uit doos"
                     >
-                      <X className="w-2.5 h-2.5" />
+                      <X className="w-3 h-3" />
                     </button>
                   )}
                 </span>
@@ -281,15 +281,17 @@ export default function ProductCard({
         <div className="flex items-center gap-2 flex-shrink-0">
           {isFullyAssigned ? (
             <div className="flex items-center gap-2">
-              {/* Box badges for fully assigned */}
+              <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-green-500 text-white flex-shrink-0">
+                <Check className="w-4 h-4" />
+              </span>
               {product.assignedBoxes.length === 1 ? (
-                <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded flex items-center gap-1">
+                <span className="px-2.5 py-1 text-xs font-semibold bg-green-100 text-green-800 rounded flex items-center gap-1">
                   <Box className="w-3 h-3" />
-                  Doos {product.assignedBoxes[0].boxIndex}
+                  {product.assignedBoxes[0].boxName}
                   {product.amount > 1 && <span>({product.amount}x)</span>}
                 </span>
               ) : (
-                <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded flex items-center gap-1">
+                <span className="px-2.5 py-1 text-xs font-semibold bg-green-100 text-green-800 rounded flex items-center gap-1">
                   <Check className="w-3 h-3" />
                   {product.amount}x verdeeld
                 </span>
@@ -298,7 +300,7 @@ export default function ProductCard({
               {product.assignedBoxes.length === 1 && (
                 <button
                   onClick={() => onRemoveFromBox(product.assignedBoxes[0].sessionProductId)}
-                  className="p-2 rounded-lg hover:bg-red-100 text-red-500 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
+                  className="p-2 rounded-lg hover:bg-red-100 text-red-500 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center border border-border"
                   title="Verwijder uit doos"
                 >
                   <X className="w-4 h-4" />
@@ -309,8 +311,9 @@ export default function ProductCard({
             <>
               {/* Amount display */}
               <div className="flex items-center border border-border rounded-lg overflow-hidden">
-                <span className="px-3 py-1 text-sm min-w-[3rem] text-center">
-                  {product.amountAssigned} / {product.amount}
+                <span className="px-3 py-1 text-base min-w-[3.5rem] text-center">
+                  <span className="font-bold">{product.amountAssigned}</span>
+                  <span className="text-muted-foreground"> / {product.amount}</span>
                 </span>
               </div>
 

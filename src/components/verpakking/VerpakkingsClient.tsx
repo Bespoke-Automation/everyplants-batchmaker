@@ -54,7 +54,7 @@ import { getTagPackagingFilter } from '@/lib/verpakking/tag-packaging-filter'
 import BatchNavigationBar from './BatchNavigationBar'
 import BarcodeListener from './BarcodeListener'
 import ProductCard, { type ProductCardItem, type BoxRef, type ProductCustomFields } from './ProductCard'
-import BoxCard, { type BoxCardItem, type BoxProductItem, type PackagingPartItem } from './BoxCard'
+import BoxCard, { type BoxCardItem, type BoxProduct } from './BoxCard'
 import ShipmentProgress from './ShipmentProgress'
 
 // Engine advice response type
@@ -830,33 +830,12 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
   const boxItems: BoxCardItem[] = useMemo(() => {
     if (!session) return []
     return session.boxes.map((box) => {
-      // Find packaging parts for this box (composition children of the packaging product)
-      let packagingParts: PackagingPartItem[] | undefined
-      if (box.packagingBarcode) {
-        const parts: PackagingPartItem[] = []
-        for (const [childIdProduct, info] of compositionMap) {
-          if (info.parentIsPackaging && info.parentProductCode === box.packagingBarcode) {
-            // Find this child in the picklist to get picked status
-            const picklistProd = picklist?.products.find(pp => pp.idproduct === childIdProduct)
-            if (picklistProd) {
-              parts.push({
-                productCode: picklistProd.productcode,
-                name: picklistProd.name,
-                amount: picklistProd.amount,
-                picked: picklistProd.amount_picked >= picklistProd.amount,
-              })
-            }
-          }
-        }
-        if (parts.length > 0) packagingParts = parts
-      }
-
       return {
         id: box.id,
         packagingName: box.packagingName,
         packagingImageUrl: (box.picqerPackagingId && packagingImageMap.get(box.picqerPackagingId)) || null,
         picqerPackagingId: box.picqerPackagingId,
-        products: box.products.map((sp): BoxProductItem => {
+        products: box.products.map((sp): BoxProduct => {
           // Calculate maxAmount: current amount in this box + unassigned for this product
           const picklistProduct = picklist?.products.find(
             (pp) => pp.idproduct === sp.picqerProductId && pp.productcode === sp.productcode
@@ -881,7 +860,6 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
             imageUrl: picklistProduct?.image ?? null,
           }
         }),
-        packagingParts,
         isClosed: closedBoxes.has(box.id) || box.status === 'closed',
         shipmentCreated: box.status === 'shipped' || box.status === 'label_fetched',
         trackingCode: box.trackingCode,
@@ -1261,7 +1239,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
   }, [session])
 
   const handleShipAll = useCallback(
-    (providerId: number, weights?: Map<string, number>, _packagingId?: number | null) => {
+    (providerId: number, weights?: Map<string, number>) => {
       shipAllBoxes(providerId, weights, packingStationId)
     },
     [shipAllBoxes, packingStationId]
@@ -1520,6 +1498,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
             onNavigate={handleBatchNavigate}
             onBatchClick={onBack}
             isNavigating={isNavCreatingSession}
+            sessionCompleted={session.status === 'completed'}
           />
         )}
         {/* Header */}
@@ -1639,7 +1618,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                 <div
                   className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium animate-in fade-in duration-200 ${
                     scanFeedback.type === 'success'
-                      ? 'bg-emerald-100 text-emerald-800'
+                      ? 'bg-green-100 text-green-800'
                       : scanFeedback.type === 'warning'
                         ? 'bg-amber-100 text-amber-800'
                         : 'bg-red-100 text-red-800'
@@ -1668,7 +1647,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
               {session.boxes.length > 0 && (
                 <button
                   onClick={() => setShowShipmentModal(true)}
-                  className="flex items-center gap-2 px-3 py-2 lg:px-4 min-h-[44px] bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
+                  className="flex items-center gap-2 px-3 py-2 lg:px-4 min-h-[44px] bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors border border-primary"
                 >
                   <Send className="w-4 h-4" />
                   <span className="hidden sm:inline">Alles verzenden</span>
@@ -1729,14 +1708,14 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
               onClick={() => setAdviceDetailsExpanded(!adviceDetailsExpanded)}
               className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left transition-colors ${
                 engineAdvice.confidence === 'full_match'
-                  ? 'bg-emerald-50 border border-emerald-200 text-emerald-800 hover:bg-emerald-100'
+                  ? 'bg-green-50 border border-green-200 text-green-800 hover:bg-green-100'
                   : engineAdvice.confidence === 'partial_match'
                     ? 'bg-blue-50 border border-blue-200 text-blue-800 hover:bg-blue-100'
                     : 'bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100'
               }`}
             >
               <Sparkles className={`w-4 h-4 flex-shrink-0 ${
-                engineAdvice.confidence === 'full_match' ? 'text-emerald-600'
+                engineAdvice.confidence === 'full_match' ? 'text-green-600'
                   : engineAdvice.confidence === 'partial_match' ? 'text-blue-600'
                     : 'text-amber-600'
               }`} />
@@ -1776,7 +1755,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                 )}
               </span>
               <ChevronDown className={`w-4 h-4 flex-shrink-0 transition-transform ${adviceDetailsExpanded ? 'rotate-180' : ''} ${
-                engineAdvice.confidence === 'full_match' ? 'text-emerald-500'
+                engineAdvice.confidence === 'full_match' ? 'text-green-500'
                   : engineAdvice.confidence === 'partial_match' ? 'text-blue-500'
                     : 'text-amber-500'
               }`} />
@@ -1784,14 +1763,14 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
             {adviceDetailsExpanded && (
               <div className={`mt-1 rounded-lg text-xs overflow-hidden border ${
                 engineAdvice.confidence === 'full_match'
-                  ? 'border-emerald-200'
+                  ? 'border-green-200'
                   : engineAdvice.confidence === 'partial_match'
                     ? 'border-blue-200'
                     : 'border-amber-200'
               }`}>
                 {/* Context row */}
                 <div className={`px-3 py-2 flex flex-wrap gap-x-4 gap-y-1 ${
-                  engineAdvice.confidence === 'full_match' ? 'bg-emerald-50/50 text-emerald-700'
+                  engineAdvice.confidence === 'full_match' ? 'bg-green-50/50 text-green-700'
                     : engineAdvice.confidence === 'partial_match' ? 'bg-blue-50/50 text-blue-700'
                       : 'bg-amber-50/50 text-amber-700'
                 }`}>
@@ -1898,11 +1877,11 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                       </thead>
                       <tbody>
                         {engineAdvice.alternatives.map((alt) => (
-                          <tr key={alt.packaging_id} className={`border-t border-inherit ${alt.is_recommended ? 'bg-emerald-50/30' : ''}`}>
+                          <tr key={alt.packaging_id} className={`border-t border-inherit ${alt.is_recommended ? 'bg-green-50/30' : ''}`}>
                             <td className="py-1.5 px-3">
                               <span className={alt.is_recommended ? 'font-semibold' : ''}>{alt.name}</span>
                               {alt.is_recommended && (
-                                <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-100 text-emerald-700">Aanbevolen</span>
+                                <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-700">Aanbevolen</span>
                               )}
                               {alt.is_cheapest && !alt.is_recommended && (
                                 <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-700">Goedkoopst</span>
@@ -1958,12 +1937,12 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         {/* Auto-box creation notification */}
         {autoBoxMessage && (
           <div className="px-3 pt-2 lg:px-4">
-            <div className="flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-800">
-              <Tag className="w-4 h-4 flex-shrink-0 text-emerald-600" />
+            <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
+              <Tag className="w-4 h-4 flex-shrink-0 text-green-600" />
               <span className="flex-1">{autoBoxMessage}</span>
               <button
                 onClick={() => setAutoBoxMessage(null)}
-                className="p-1 -mr-1 rounded hover:bg-emerald-200/50 transition-colors flex-shrink-0"
+                className="p-1 -mr-1 rounded hover:bg-green-200/50 transition-colors flex-shrink-0"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1976,7 +1955,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
           <div className="px-3 pt-2 lg:px-4">
             <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm ${
               outcomeFeedback.outcome === 'followed'
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                ? 'bg-green-50 border-green-200 text-green-800'
                 : outcomeFeedback.outcome === 'modified'
                 ? 'bg-blue-50 border-blue-200 text-blue-800'
                 : outcomeFeedback.outcome === 'ignored'
@@ -2007,7 +1986,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                 onClick={() => setOutcomeFeedback(null)}
                 className={`p-1 -mr-1 rounded transition-colors flex-shrink-0 ${
                   outcomeFeedback.outcome === 'followed'
-                    ? 'hover:bg-emerald-200/50'
+                    ? 'hover:bg-green-200/50'
                     : outcomeFeedback.outcome === 'modified'
                     ? 'hover:bg-blue-200/50'
                     : outcomeFeedback.outcome === 'ignored'
@@ -2430,7 +2409,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                   <div>
                     <p className="text-xs text-muted-foreground">Order status</p>
                     <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium leading-none ${
-                      order.status === 'completed' ? 'bg-emerald-100 text-emerald-800' :
+                      order.status === 'completed' ? 'bg-green-100 text-green-800' :
                       order.status === 'processing' ? 'bg-blue-100 text-blue-800' :
                       order.status === 'cancelled' ? 'bg-red-100 text-red-800' :
                       order.status === 'paused' ? 'bg-amber-100 text-amber-800' :
@@ -2444,7 +2423,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                   <div>
                     <p className="text-xs text-muted-foreground">Picklist status</p>
                     <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium leading-none ${
-                      picklist.status === 'closed' ? 'bg-emerald-100 text-emerald-800' :
+                      picklist.status === 'closed' ? 'bg-green-100 text-green-800' :
                       picklist.status === 'new' ? 'bg-yellow-100 text-yellow-800' :
                       picklist.status === 'paused' ? 'bg-amber-100 text-amber-800' :
                       picklist.status === 'cancelled' ? 'bg-red-100 text-red-800' :
@@ -2528,7 +2507,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                 <div className="space-y-2">
                   {session.boxes.map((box, i) => {
                     const statusBadge = box.status === 'shipped'
-                      ? 'bg-emerald-100 text-emerald-700'
+                      ? 'bg-green-100 text-green-700'
                       : box.status === 'error'
                         ? 'bg-red-100 text-red-700'
                         : 'bg-muted text-muted-foreground'
@@ -2643,11 +2622,11 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
             {/* Engine-advised packagings */}
             {engineAdvice && engineAdvice.confidence !== 'no_match' && engineAdvice.advice_boxes.length > 0 && !boxSearchQuery.trim() && (
               <div className="mb-6">
-                <h4 className="text-xs font-medium text-emerald-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <h4 className="text-xs font-medium text-green-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5" />
                   Engine advies
                   {engineAdvice.advice_boxes.length > 1 && (
-                    <span className="text-emerald-600 normal-case">— {engineAdvice.advice_boxes.length} dozen aanbevolen</span>
+                    <span className="text-green-600 normal-case">— {engineAdvice.advice_boxes.length} dozen aanbevolen</span>
                   )}
                 </h4>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
@@ -2658,12 +2637,12 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                       <button
                         key={`engine-${adviceBox.idpackaging}-${idx}`}
                         onClick={() => handleAddBox(pkg)}
-                        className="flex flex-col items-center p-3 rounded-lg border-2 border-emerald-300 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 transition-colors text-center min-h-[140px]"
+                        className="flex flex-col items-center p-3 rounded-lg border-2 border-green-300 bg-green-50 hover:bg-green-100 active:bg-green-200 transition-colors text-center min-h-[140px]"
                       >
                         {engineAdvice.advice_boxes.length > 1 && (
-                          <span className="text-[10px] font-medium text-emerald-600 mb-1">Doos {idx + 1} van {engineAdvice.advice_boxes.length}</span>
+                          <span className="text-[10px] font-medium text-green-600 mb-1">Doos {idx + 1} van {engineAdvice.advice_boxes.length}</span>
                         )}
-                        <div className="w-16 h-16 bg-emerald-100 rounded-lg flex items-center justify-center mb-2">
+                        <div className="w-16 h-16 bg-green-100 rounded-lg flex items-center justify-center mb-2">
                           {packagingImageMap.get(adviceBox.idpackaging) ? (
                             <img
                               src={packagingImageMap.get(adviceBox.idpackaging)}
@@ -2671,7 +2650,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                               className="w-16 h-16 rounded-lg object-cover"
                             />
                           ) : (
-                            <Sparkles className="w-7 h-7 text-emerald-600" />
+                            <Sparkles className="w-7 h-7 text-green-600" />
                           )}
                         </div>
                         <p className="font-medium text-sm leading-tight line-clamp-2">{adviceBox.packaging_name}</p>
@@ -2679,7 +2658,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                           {adviceBox.products.map((p) => `${p.quantity}x ${p.shipping_unit_name}`).join(', ')}
                         </p>
                         {adviceBox.total_cost !== undefined && (
-                          <p className="text-xs text-emerald-700 font-medium mt-1">
+                          <p className="text-xs text-green-700 font-medium mt-1">
                             {formatCost(adviceBox.total_cost)}
                           </p>
                         )}
@@ -2932,7 +2911,6 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         boxWeights={boxWeights}
         onNextPicklist={nextPicklistInBatch ? () => handleBatchNavigate(nextPicklistInBatch) : undefined}
         hasNextPicklist={!!nextPicklistInBatch}
-        picqerPackagings={packagings.map(p => ({ idpackaging: p.idpackaging, name: p.name }))}
         defaultWeight={picklist?.weight ?? undefined}
         hasPackingStation={!!packingStationId}
         activeBoxId={shipmentModalBoxId}

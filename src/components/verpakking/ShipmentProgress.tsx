@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { Check, Loader2, AlertCircle, AlertTriangle, Clock, Download, ExternalLink, RefreshCw, CheckCircle2, ChevronDown, Truck, Search, Boxes, ChevronRight, Printer } from 'lucide-react'
+import { Check, Loader2, AlertCircle, AlertTriangle, Clock, Download, RefreshCw, CheckCircle2, Truck, Search, ChevronRight, Printer } from 'lucide-react'
 import Dialog from '@/components/ui/Dialog'
 import type { BoxShipmentStatus } from '@/types/verpakking'
 import type { ShippingMethod } from '@/lib/picqer/types'
@@ -23,24 +23,18 @@ interface SessionBox {
 
 type DialogPhase = 'loading' | 'configure' | 'select_method' | 'shipping' | 'error'
 
-interface PicqerPackagingOption {
-  idpackaging: number
-  name: string
-}
-
 interface ShipmentProgressProps {
   boxes: SessionBox[]
   shipProgress: Map<string, BoxShipmentStatus>
   isOpen: boolean
   onClose: () => void
-  onShipAll: (shippingProviderId: number, boxWeights?: Map<string, number>, packagingId?: number | null) => void
+  onShipAll: (shippingProviderId: number, boxWeights?: Map<string, number>) => void
   onRetryBox: (boxId: string, shippingProviderId: number) => void
   picklistId: number | null
   defaultShippingProviderId: number | null
   boxWeights?: Map<string, number>
   onNextPicklist?: () => void
   hasNextPicklist?: boolean
-  picqerPackagings?: PicqerPackagingOption[]
   defaultWeight?: number
   hasPackingStation?: boolean
   activeBoxId?: string | null
@@ -90,7 +84,6 @@ export default function ShipmentProgress({
   boxWeights,
   onNextPicklist,
   hasNextPicklist,
-  picqerPackagings,
   defaultWeight,
   hasPackingStation,
   activeBoxId,
@@ -99,14 +92,12 @@ export default function ShipmentProgress({
   const [methods, setMethods] = useState<ShippingMethod[]>([])
   const [selectedProviderId, setSelectedProviderId] = useState<number | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [showMethodDropdown, setShowMethodDropdown] = useState(false)
   const [methodSearch, setMethodSearch] = useState('')
   const autoStartedRef = useRef(false)
   const openedLabelsRef = useRef<Set<string>>(new Set())
 
-  // Configure phase state
-  const [selectedPackagingId, setSelectedPackagingId] = useState<number | null>(null)
-  const [weightInput, setWeightInput] = useState<string>('')
+  // Per-box weight inputs (boxId → weight string)
+  const [perBoxWeights, setPerBoxWeights] = useState<Record<string, string>>({})
 
   // Resolved provider: what we'll use for shipping
   const resolvedProviderId = selectedProviderId ?? defaultShippingProviderId
@@ -117,12 +108,24 @@ export default function ShipmentProgress({
       // Reset on close
       autoStartedRef.current = false
       openedLabelsRef.current = new Set()
-      setShowMethodDropdown(false)
       setMethodSearch('')
-      setSelectedPackagingId(null)
-      setWeightInput('')
+      setPerBoxWeights({})
       return
     }
+
+    // Initialize per-box weights from defaults
+    const initialWeights: Record<string, string> = {}
+    for (const box of boxes) {
+      const precomputed = boxWeights?.get(box.id)
+      if (precomputed) {
+        initialWeights[box.id] = String(precomputed)
+      } else if (defaultWeight) {
+        initialWeights[box.id] = String(defaultWeight)
+      } else {
+        initialWeights[box.id] = ''
+      }
+    }
+    setPerBoxWeights(initialWeights)
 
     // If progress exists, check if there are still unshipped boxes
     if (shipProgress.size > 0) {
@@ -142,24 +145,16 @@ export default function ShipmentProgress({
       })
 
       if (allProcessed) {
-        // All done or errored — show progress view
         setPhase('shipping')
         return
       }
 
-      // There are still unprocessed boxes — show configure with existing settings
-      // Keep methods and selectedProviderId from previous session (don't reset)
-      setWeightInput(defaultWeight ? String(defaultWeight) : '')
-      const unshippedBox = boxes.find((box) => !shipProgress.get(box.id))
-      setSelectedPackagingId(unshippedBox?.picqerPackagingId ?? boxes[0]?.picqerPackagingId ?? null)
+      // There are still unprocessed boxes — show configure
       autoStartedRef.current = false
-
-      // If we already have methods cached, go straight to configure
       if (methods.length > 0) {
         setPhase('configure')
         return
       }
-      // Otherwise fall through to fetch methods below
     }
 
     // No boxes to ship
@@ -169,19 +164,11 @@ export default function ShipmentProgress({
       return
     }
 
-    // Initialize weight from default
-    setWeightInput(defaultWeight ? String(defaultWeight) : '')
-
-    // Pre-select packaging from the active box (clicked "Maak zending"), or first box
-    const activeBox = activeBoxId ? boxes.find(b => b.id === activeBoxId) : null
-    const initialPackagingId = activeBox?.picqerPackagingId ?? boxes[0]?.picqerPackagingId ?? null
-
     // Start flow: fetch shipping methods, then show configure screen
     setPhase('loading')
     setLoadError(null)
     setMethods([])
     setSelectedProviderId(null)
-    setSelectedPackagingId(initialPackagingId)
     autoStartedRef.current = false
 
     if (!picklistId) {
@@ -276,17 +263,18 @@ export default function ShipmentProgress({
 
   const handleStartShipping = useCallback(() => {
     if (!resolvedProviderId) return
-    // Build weight map from the weight input
-    const weight = weightInput ? parseInt(weightInput, 10) : undefined
-    const weightMap = weight ? new Map(boxes.map(b => [b.id, weight])) : boxWeights
+    // Build per-box weight map from individual inputs
+    const weightMap = new Map<string, number>()
+    for (const box of boxes) {
+      const w = perBoxWeights[box.id] ? parseInt(perBoxWeights[box.id], 10) : undefined
+      if (w && w > 0) {
+        weightMap.set(box.id, w)
+      }
+    }
     setPhase('shipping')
     autoStartedRef.current = true
-    onShipAll(resolvedProviderId, weightMap, selectedPackagingId)
-  }, [resolvedProviderId, onShipAll, boxWeights, boxes, weightInput, selectedPackagingId])
-
-  const handleStartWithSelectedMethod = useCallback(() => {
-    handleStartShipping()
-  }, [handleStartShipping])
+    onShipAll(resolvedProviderId, weightMap.size > 0 ? weightMap : boxWeights)
+  }, [resolvedProviderId, onShipAll, boxWeights, boxes, perBoxWeights])
 
   const handleRetryBox = useCallback((boxId: string) => {
     if (!resolvedProviderId) return
@@ -316,12 +304,6 @@ export default function ShipmentProgress({
   const sessionCompleted = boxes.some((box) => {
     const progress = shipProgress.get(box.id)
     return progress?.sessionCompleted === true
-  })
-
-  // Detect if multicollo was used (stored as extra prop on first box's progress)
-  const isMulticollo = boxes.some((box) => {
-    const progress = shipProgress.get(box.id) as (BoxShipmentStatus & { multicollo?: boolean }) | undefined
-    return progress?.multicollo === true
   })
 
   const labelUrls = boxes
@@ -406,7 +388,7 @@ export default function ShipmentProgress({
           </div>
         )}
 
-        {/* Phase: Configure shipment (like Picqer's modal) */}
+        {/* Phase: Configure shipment — per-box weights */}
         {phase === 'configure' && (
           <div className="space-y-6">
             {/* Verzendprofiel */}
@@ -427,45 +409,39 @@ export default function ShipmentProgress({
               </div>
             </div>
 
-            {/* Verpakking */}
-            {picqerPackagings && picqerPackagings.length > 0 && (
-              <div className="flex items-center justify-between gap-4 min-h-[56px]">
-                <label htmlFor="shipment-packaging" className="text-lg text-muted-foreground flex-shrink-0">Verpakking</label>
-                <select
-                  id="shipment-packaging"
-                  value={selectedPackagingId ?? ''}
-                  onChange={(e) => setSelectedPackagingId(e.target.value ? Number(e.target.value) : null)}
-                  className="flex-1 min-w-0 px-4 py-3.5 text-lg border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary min-h-[56px]"
-                >
-                  <option value="">Geen</option>
-                  {picqerPackagings.map((p) => (
-                    <option key={p.idpackaging} value={p.idpackaging}>{p.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* Gewicht */}
-            <div className="flex items-center justify-between min-h-[56px]">
-              <label htmlFor="shipment-weight" className="text-lg text-muted-foreground">Gewicht</label>
-              <div className="flex items-center gap-2">
-                <input
-                  id="shipment-weight"
-                  type="number"
-                  inputMode="numeric"
-                  value={weightInput}
-                  onChange={(e) => setWeightInput(e.target.value)}
-                  placeholder="0"
-                  className="w-32 px-4 py-3.5 text-lg text-right border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary min-h-[56px]"
-                />
-                <span className="text-lg text-muted-foreground">gram</span>
-              </div>
+            {/* Per-box configuration */}
+            <div className="space-y-3">
+              {boxes.filter(b => b.status === 'closed').map((box, i) => (
+                <div key={box.id} className="border border-border rounded-lg p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-base">
+                        Doos {i + 1}
+                      </p>
+                      <p className="text-sm text-muted-foreground truncate">
+                        {box.packagingName}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        value={perBoxWeights[box.id] ?? ''}
+                        onChange={(e) => setPerBoxWeights(prev => ({ ...prev, [box.id]: e.target.value }))}
+                        placeholder="0"
+                        className="w-24 px-3 py-2.5 text-base text-right border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary min-h-[48px]"
+                      />
+                      <span className="text-sm text-muted-foreground">gram</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
 
             {/* Aantal pakketten */}
-            <div className="flex items-center justify-between min-h-[56px]">
+            <div className="flex items-center justify-between min-h-[48px]">
               <span className="text-lg text-muted-foreground">Aantal pakketten</span>
-              <span className="text-lg font-medium">{boxes.length}</span>
+              <span className="text-lg font-medium">{boxes.filter(b => b.status === 'closed').length}</span>
             </div>
 
             {/* No packing station warning */}
@@ -489,7 +465,7 @@ export default function ShipmentProgress({
                 disabled={!resolvedProviderId}
                 className="flex-1 max-w-[280px] py-4 min-h-[56px] bg-primary text-primary-foreground rounded-lg text-lg font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
               >
-                Zending maken
+                {boxes.filter(b => b.status === 'closed').length === 1 ? 'Zending maken' : 'Zendingen maken'}
               </button>
             </div>
           </div>
@@ -636,56 +612,6 @@ export default function ShipmentProgress({
                 <Truck className="w-4 h-4 text-muted-foreground" />
                 <span className="text-muted-foreground">Verzendmethode:</span>
                 <span className="font-medium">{selectedMethodName}</span>
-                {methods.length > 1 && !isShipping && !allDone && (
-                  <div className="relative ml-auto">
-                    <button
-                      onClick={() => setShowMethodDropdown(!showMethodDropdown)}
-                      className="text-xs text-primary hover:underline flex items-center gap-0.5"
-                    >
-                      Wijzig
-                      <ChevronDown className="w-3 h-3" />
-                    </button>
-                    {showMethodDropdown && (
-                      <>
-                        <div className="fixed inset-0 z-10" onClick={() => setShowMethodDropdown(false)} />
-                        <div className="absolute right-0 top-full mt-1 bg-card border border-border rounded-lg shadow-lg z-20 min-w-[200px]">
-                          <div className="p-1">
-                            {methods.map((method) => (
-                              <button
-                                key={method.idshippingprovider_profile}
-                                onClick={() => {
-                                  setSelectedProviderId(method.idshippingprovider_profile)
-                                  setShowMethodDropdown(false)
-                                }}
-                                className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors text-left ${
-                                  method.idshippingprovider_profile === resolvedProviderId
-                                    ? 'bg-primary/10 text-primary font-medium'
-                                    : 'hover:bg-muted'
-                                }`}
-                              >
-                                {method.name}
-                                {method.idshippingprovider_profile === defaultShippingProviderId && (
-                                  <span className="text-[10px] px-1 py-0.5 bg-green-100 text-green-700 rounded ml-auto">
-                                    Standaard
-                                  </span>
-                                )}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Multicollo badge */}
-            {isMulticollo && (
-              <div className="flex items-center gap-2 mb-3 px-3 py-2 bg-purple-50 border border-purple-200 rounded-lg text-sm text-purple-800">
-                <Boxes className="w-4 h-4 flex-shrink-0" />
-                <span className="font-medium">Multicollo zending</span>
-                <span className="text-xs text-purple-600">({totalBoxes} pakketten in één zending)</span>
               </div>
             )}
 
