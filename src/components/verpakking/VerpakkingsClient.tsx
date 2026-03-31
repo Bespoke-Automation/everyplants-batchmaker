@@ -45,7 +45,6 @@ import Dialog from '@/components/ui/Dialog'
 import { usePackingSession } from '@/hooks/usePackingSession'
 import { usePackingStation } from '@/hooks/usePackingStation'
 import { useLocalPackagings } from '@/hooks/useLocalPackagings'
-import { useTagMappings } from '@/hooks/useTagMappings'
 import { usePicqerUsers } from '@/hooks/usePicqerUsers'
 import { usePicklistComments, type PicklistComment } from '@/hooks/usePicklistComments'
 import MentionTextarea from '@/components/verpakking/MentionTextarea'
@@ -344,8 +343,6 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
   const engineCalledRef = useRef(false)
   const [adviceDetailsExpanded, setAdviceDetailsExpanded] = useState(false)
 
-  // Tag-to-packaging mappings for suggestions
-  const { getMappingsForTags, isLoading: mappingsLoading } = useTagMappings()
 
   // Picklist comments
   const picklistIdForComments = picklist?.idpicklist ?? null
@@ -940,25 +937,32 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     )
   }, [boxSearchQuery, tagFilteredPackagings])
 
-  // Suggested packagings based on picklist tags
+  // Suggested packagings based on picklist tags matched via packagings.picqer_tag_name
   const suggestedPackagings = useMemo(() => {
     if (!picklist?.tags || picklist.tags.length === 0) return []
-    const tagTitles = picklist.tags.map((t) => t.title)
-    const tagMappings = getMappingsForTags(tagTitles)
-    if (tagMappings.length === 0) return []
+    const tagTitles = new Set(picklist.tags.map((t) => t.title.toLowerCase()))
+
+    // Build a map of tag name → packaging idpackaging from localPackagings
+    const tagToPackagingId = new Map<string, number>()
+    for (const lp of localPackagings) {
+      if (lp.picqerTagName) {
+        tagToPackagingId.set(lp.picqerTagName.toLowerCase(), lp.idpackaging)
+      }
+    }
 
     const suggested: PicqerPackaging[] = []
     const seenIds = new Set<number>()
-    for (const mapping of tagMappings) {
-      if (seenIds.has(mapping.picqerPackagingId)) continue
-      const pkg = tagFilteredPackagings.find((p) => p.idpackaging === mapping.picqerPackagingId)
+    for (const tagTitle of tagTitles) {
+      const idpackaging = tagToPackagingId.get(tagTitle)
+      if (!idpackaging || seenIds.has(idpackaging)) continue
+      const pkg = tagFilteredPackagings.find((p) => p.idpackaging === idpackaging)
       if (pkg) {
         suggested.push(pkg)
-        seenIds.add(mapping.picqerPackagingId)
+        seenIds.add(idpackaging)
       }
     }
     return suggested
-  }, [picklist, getMappingsForTags, tagFilteredPackagings])
+  }, [picklist, localPackagings, tagFilteredPackagings])
 
   // IDs of suggested packagings (for filtering them from the full list)
   const suggestedPackagingIds = useMemo(
@@ -984,7 +988,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     if (autoBoxCreatedRef.current) return
     if (!session || !picklist) return
     if (session.boxes.length > 0) return
-    if (packagingsLoading || mappingsLoading) return
+    if (packagingsLoading) return
     // Wait for engine to finish before deciding
     if (engineLoading) return
 
@@ -1059,7 +1063,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
       }
       createBoxes()
     }
-  }, [session, picklist, suggestedPackagings, packagingsLoading, mappingsLoading, engineAdvice, engineLoading, activePackagings, addBox, assignProduct])
+  }, [session, picklist, suggestedPackagings, packagingsLoading, engineAdvice, engineLoading, activePackagings, addBox, assignProduct])
 
   // Auto-dismiss auto-box message
   useEffect(() => {
@@ -1550,13 +1554,16 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                 </div>
               ) : (
                 <>
-                  <button
-                    onClick={() => setShowLeaveConfirm(true)}
-                    className="p-2 -ml-1 rounded-lg hover:bg-muted transition-colors flex-shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center"
-                    title="Terug naar wachtrij"
-                  >
-                    <ArrowLeft className="w-5 h-5" />
-                  </button>
+                  {/* Hide back button when BatchNavigationBar provides one */}
+                  {!(batchContext && batchContext.picklists.length > 1) && (
+                    <button
+                      onClick={() => setShowLeaveConfirm(true)}
+                      className="p-2 -ml-1 rounded-lg hover:bg-muted transition-colors flex-shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center border border-border"
+                      title="Terug naar wachtrij"
+                    >
+                      <ArrowLeft className="w-5 h-5" />
+                    </button>
+                  )}
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-base lg:text-lg font-semibold truncate">

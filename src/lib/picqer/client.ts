@@ -496,13 +496,9 @@ export async function createShipment(
     const picklist = await fetchPicklist(picklistId)
     console.log(`Picklist ${picklistId}: status=${picklist.status}, idshippingprovider_profile=${picklist.idshippingprovider_profile}, weight=${picklist.weight}`)
 
-    // Verify picklist is in 'new' status (ready for shipment)
+    // Log warning if picklist is not 'new', but proceed — Picqer allows shipments on closed picklists
     if (picklist.status !== 'new') {
-      console.error(`Picklist ${picklistId} is not in 'new' status (current: ${picklist.status})`)
-      return {
-        success: false,
-        error: `Picklist status is '${picklist.status}', must be 'new' to create shipment`,
-      }
+      console.warn(`Picklist ${picklistId} status is '${picklist.status}' (not 'new'), proceeding with shipment creation anyway`)
     }
 
     // Use provided shipping provider, or fall back to picklist's provider

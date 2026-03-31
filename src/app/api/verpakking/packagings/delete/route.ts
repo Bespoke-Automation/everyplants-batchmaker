@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { deleteTag, deactivatePackaging } from '@/lib/picqer/client'
 import { deleteLocalPackaging } from '@/lib/supabase/localPackagings'
 import { deleteLocalTag } from '@/lib/supabase/localTags'
-import { getTagMappingByPackagingId, deleteTagMappingByPackagingId } from '@/lib/supabase/tagMappings'
 import { getLocalTags } from '@/lib/supabase/localTags'
+import { supabase } from '@/lib/supabase/client'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,15 +25,19 @@ export async function POST(request: NextRequest) {
 
     const errors: string[] = []
 
-    // 1. Find tag mapping for this packaging
-    const mapping = await getTagMappingByPackagingId(idpackaging)
+    // 1. Find the tag linked to this packaging via picqer_tag_name
+    const { data: packaging } = await supabase
+      .schema('batchmaker')
+      .from('packagings')
+      .select('picqer_tag_name, picqer_tag_id')
+      .eq('idpackaging', idpackaging)
+      .single()
 
-    // 2. If mapping exists, find and delete the tag from Picqer
+    // 2. If tag exists, delete it from Picqer + local
     let deletedTagTitle: string | null = null
-    if (mapping) {
-      // Find the local tag by title to get the idtag
+    if (packaging?.picqer_tag_name) {
       const allTags = await getLocalTags()
-      const localTag = allTags.find((t) => t.title === mapping.tag_title)
+      const localTag = allTags.find((t) => t.title === packaging.picqer_tag_name)
 
       if (localTag) {
         try {
@@ -51,13 +55,6 @@ export async function POST(request: NextRequest) {
         } catch (err) {
           console.warn('[verpakking] Failed to delete local tag:', err)
         }
-      }
-
-      // Delete mapping
-      try {
-        await deleteTagMappingByPackagingId(idpackaging)
-      } catch (err) {
-        console.warn('[verpakking] Failed to delete tag mapping:', err)
       }
     }
 

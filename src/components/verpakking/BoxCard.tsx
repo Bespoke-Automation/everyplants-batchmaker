@@ -19,6 +19,7 @@ import {
   XCircle,
   Clock,
   AlertTriangle,
+  ZoomIn,
 } from 'lucide-react'
 
 // Lightweight product type for display within a box
@@ -90,6 +91,7 @@ export default function BoxCard({
 
   const [editingProductId, setEditingProductId] = useState<string | null>(null)
   const [cancelTimeLeft, setCancelTimeLeft] = useState<number | null>(null)
+  const [lightboxImage, setLightboxImage] = useState<{ url: string; alt: string } | null>(null)
   const [isCancelling, setIsCancelling] = useState(false)
   const stepperRef = useRef<HTMLDivElement>(null)
 
@@ -144,13 +146,22 @@ export default function BoxCard({
       <div className="flex items-center gap-3 p-3 border-b border-border bg-muted/30">
         {/* Box icon / image */}
         {box.packagingImageUrl ? (
-          <img
-            src={box.packagingImageUrl}
-            alt={box.packagingName}
-            className="w-20 h-20 rounded-lg object-cover flex-shrink-0"
-          />
+          <button
+            type="button"
+            onClick={() => setLightboxImage({ url: box.packagingImageUrl!, alt: box.packagingName })}
+            className="relative group flex-shrink-0"
+          >
+            <img
+              src={box.packagingImageUrl}
+              alt={box.packagingName}
+              className="w-[104px] h-[104px] rounded-lg object-cover"
+            />
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-lg transition-colors flex items-center justify-center">
+              <ZoomIn className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+            </div>
+          </button>
         ) : (
-          <div className="w-20 h-20 bg-muted rounded-lg flex items-center justify-center flex-shrink-0">
+          <div className="w-[104px] h-[104px] bg-muted rounded-lg flex items-center justify-center flex-shrink-0">
             <Box className="w-8 h-8 text-muted-foreground" />
           </div>
         )}
@@ -244,14 +255,23 @@ export default function BoxCard({
                   className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg"
                 >
                   {product.imageUrl ? (
-                    <img
-                      src={product.imageUrl}
-                      alt={product.name}
-                      className="w-11 h-11 rounded object-cover flex-shrink-0"
-                    />
+                    <button
+                      type="button"
+                      onClick={() => setLightboxImage({ url: product.imageUrl!, alt: product.name })}
+                      className="relative group flex-shrink-0"
+                    >
+                      <img
+                        src={product.imageUrl}
+                        alt={product.name}
+                        className="w-[104px] h-[104px] rounded-lg object-cover"
+                      />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-lg transition-colors flex items-center justify-center">
+                        <ZoomIn className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </div>
+                    </button>
                   ) : (
-                    <div className="w-11 h-11 bg-muted rounded flex items-center justify-center flex-shrink-0">
-                      <Package className="w-5 h-5 text-muted-foreground" />
+                    <div className="w-[104px] h-[104px] bg-muted rounded-lg flex items-center justify-center flex-shrink-0">
+                      <Package className="w-8 h-8 text-muted-foreground" />
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
@@ -461,6 +481,27 @@ export default function BoxCard({
           </button>
         )}
       </div>
+      {/* Image lightbox modal */}
+      {lightboxImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
+          onClick={() => setLightboxImage(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setLightboxImage(null)}
+            className="absolute top-4 right-4 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors"
+          >
+            <X className="w-6 h-6" />
+          </button>
+          <img
+            src={lightboxImage.url}
+            alt={lightboxImage.alt}
+            className="max-w-[90vw] max-h-[85vh] rounded-lg object-contain shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   )
 }

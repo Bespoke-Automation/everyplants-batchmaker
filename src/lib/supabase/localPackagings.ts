@@ -22,6 +22,7 @@ export interface LocalPackagingRow {
   created_at: string
   updated_at: string
   picqer_tag_name: string | null
+  picqer_tag_id: number | null
   num_shipping_labels: number
   facturatie_box_sku: string | null
   strapped_variant_id: string | null
@@ -142,6 +143,7 @@ export async function insertLocalPackaging(packaging: {
       idpackaging: packaging.idpackaging,
       name: packaging.name,
       barcode: packaging.barcode ?? null,
+      sku: packaging.barcode ?? null,
       length: packaging.length ?? null,
       width: packaging.width ?? null,
       height: packaging.height ?? null,
@@ -181,12 +183,17 @@ export async function deleteLocalPackaging(idpackaging: number): Promise<void> {
  */
 export async function updateLocalPackaging(
   idpackaging: number,
-  updates: Partial<Pick<LocalPackagingRow, 'idpackaging' | 'name' | 'barcode' | 'length' | 'width' | 'height' | 'max_weight' | 'box_category' | 'specificity_score' | 'handling_cost' | 'material_cost' | 'use_in_auto_advice' | 'image_url' | 'facturatie_box_sku'>>
+  updates: Partial<Pick<LocalPackagingRow, 'idpackaging' | 'name' | 'barcode' | 'length' | 'width' | 'height' | 'max_weight' | 'box_category' | 'specificity_score' | 'handling_cost' | 'material_cost' | 'use_in_auto_advice' | 'image_url' | 'facturatie_box_sku' | 'picqer_tag_name' | 'picqer_tag_id'>>
 ): Promise<void> {
+  // Keep SKU in sync with barcode
+  const payload: Record<string, unknown> = { ...updates }
+  if ('barcode' in updates) {
+    payload.sku = updates.barcode ?? null
+  }
   const { error } = await supabase
     .schema('batchmaker')
     .from('packagings')
-    .update(updates)
+    .update(payload)
     .eq('idpackaging', idpackaging)
 
   if (error) {

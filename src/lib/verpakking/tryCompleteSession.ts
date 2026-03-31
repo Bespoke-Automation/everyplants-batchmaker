@@ -7,7 +7,9 @@ import {
   pickAllProducts,
   closePicklist,
   fetchPicklist,
+  fetchOrder,
 } from '@/lib/picqer/client'
+import { getLocalPackagings } from '@/lib/supabase/localPackagings'
 import { recordSessionOutcome } from '@/lib/engine/feedbackTracking'
 
 export interface SessionCompletionResult {
@@ -16,6 +18,55 @@ export interface SessionCompletionResult {
   warning?: string
   outcome?: string
   deviationType?: string
+}
+
+/**
+ * Count only "real" pickable products — excludes packaging products,
+ * composition parents (virtual sets), and packaging composition parts (inlays, boxes).
+ * This mirrors the filtering logic in VerpakkingsClient.tsx (lines 656-662).
+ */
+function countRealPicklistProducts(
+  picklistProducts: { idproduct: number; productcode: string; amount: number }[],
+  orderProducts: { idorder_product: number; idproduct: number; productcode: string; has_parts: boolean; partof_idorder_product: number | null }[],
+  packagingBarcodes: Set<string>,
+): number {
+  // Build composition map from order products (same logic as VerpakkingsClient)
+  const parents = new Map<number, typeof orderProducts[0]>()
+  for (const p of orderProducts) {
+    if (p.has_parts) parents.set(p.idorder_product, p)
+  }
+
+  // Map child idproduct → parent info
+  const compositionMap = new Map<number, { parentIdProduct: number; parentIsPackaging: boolean }>()
+  const compositionParentIds = new Set<number>()
+  for (const p of orderProducts) {
+    if (p.partof_idorder_product) {
+      const parent = parents.get(p.partof_idorder_product)
+      if (parent) {
+        compositionParentIds.add(parent.idproduct)
+        compositionMap.set(p.idproduct, {
+          parentIdProduct: parent.idproduct,
+          parentIsPackaging: packagingBarcodes.has(parent.productcode),
+        })
+      }
+    }
+  }
+
+  // Count only real products (same filter as UI)
+  let total = 0
+  for (const pp of picklistProducts) {
+    // Skip packaging products (boxes appearing as line items)
+    if (packagingBarcodes.has(pp.productcode)) continue
+    // Skip composition parents (virtual sets)
+    if (compositionParentIds.has(pp.idproduct)) continue
+    // Skip packaging composition parts (inlays etc.)
+    const compInfo = compositionMap.get(pp.idproduct)
+    if (compInfo?.parentIsPackaging) continue
+
+    total += pp.amount
+  }
+
+  return total
 }
 
 /**
@@ -41,12 +92,33 @@ export async function tryCompleteSession(
   let totalPackedProducts = 0
   try {
     const picklist = await fetchPicklist(picklistId)
-    totalPicklistProducts = picklist.products.reduce((sum, p) => sum + p.amount, 0)
+
+    // Build packaging barcodes set from local packagings
+    const localPackagings = await getLocalPackagings()
+    const packagingBarcodes = new Set<string>()
+    for (const lp of localPackagings) {
+      if (lp.barcode && lp.active) packagingBarcodes.add(lp.barcode)
+    }
+
+    // Fetch order to get composition info (has_parts, partof_idorder_product)
+    let orderProducts: { idorder_product: number; idproduct: number; productcode: string; has_parts: boolean; partof_idorder_product: number | null }[] = []
+    try {
+      const order = await fetchOrder(picklist.idorder)
+      orderProducts = order.products || []
+    } catch (e) {
+      console.warn('[tryCompleteSession] Could not fetch order for composition filtering, counting all products:', e)
+    }
+
+    // Count only real pickable products (excluding packaging + composition parts)
+    totalPicklistProducts = countRealPicklistProducts(picklist.products, orderProducts, packagingBarcodes)
+
     const sessionWithProducts = await getPackingSession(sessionId)
     totalPackedProducts = sessionWithProducts.packing_session_boxes.reduce(
       (sum, box) => sum + box.packing_session_products.reduce((s, p) => s + p.amount, 0),
       0
     )
+
+    console.log(`[tryCompleteSession] Product count: ${totalPackedProducts} packed / ${totalPicklistProducts} real products (picklist total: ${picklist.products.reduce((s, p) => s + p.amount, 0)})`)
   } catch (e) {
     console.error('[tryCompleteSession] Error checking product completeness:', e)
     // If we can't verify, don't close — safer to keep open

@@ -2,7 +2,7 @@
 
 import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { Package, GripVertical, Check, X, ChevronDown, Box, Minus, Plus } from 'lucide-react'
+import { Package, GripVertical, Check, X, ChevronDown, Box, Minus, Plus, ZoomIn } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 
 // Box assignment for split tracking
@@ -78,6 +78,7 @@ export default function ProductCard({
 }: ProductCardProps) {
   const [showBoxMenu, setShowBoxMenu] = useState(false)
   const [pendingBoxId, setPendingBoxId] = useState<string | null>(null)
+  const [showImageModal, setShowImageModal] = useState(false)
   const remaining = product.amount - product.amountAssigned
   const [splitAmount, setSplitAmount] = useState(remaining)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -181,14 +182,23 @@ export default function ProductCard({
 
         {/* Product image */}
         {product.imageUrl ? (
-          <img
-            src={product.imageUrl}
-            alt={product.name}
-            className="w-12 h-12 rounded object-cover flex-shrink-0"
-          />
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setShowImageModal(true) }}
+            className="relative group flex-shrink-0"
+          >
+            <img
+              src={product.imageUrl}
+              alt={product.name}
+              className="w-[104px] h-[104px] rounded-lg object-cover"
+            />
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 rounded-lg transition-colors flex items-center justify-center">
+              <ZoomIn className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+            </div>
+          </button>
         ) : (
-          <div className="w-12 h-12 bg-muted rounded flex items-center justify-center flex-shrink-0">
-            <Package className="w-6 h-6 text-muted-foreground" />
+          <div className="w-[104px] h-[104px] bg-muted rounded-lg flex items-center justify-center flex-shrink-0">
+            <Package className="w-8 h-8 text-muted-foreground" />
           </div>
         )}
 
@@ -420,6 +430,28 @@ export default function ProductCard({
           )}
         </div>
       </div>
+
+      {/* Image lightbox modal */}
+      {showImageModal && product.imageUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
+          onClick={() => setShowImageModal(false)}
+        >
+          <button
+            type="button"
+            onClick={() => setShowImageModal(false)}
+            className="absolute top-4 right-4 p-2 rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors"
+          >
+            <X className="w-6 h-6" />
+          </button>
+          <img
+            src={product.imageUrl}
+            alt={product.name}
+            className="max-w-[90vw] max-h-[85vh] rounded-lg object-contain shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   )
 }

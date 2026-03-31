@@ -237,6 +237,10 @@ export default function PackagingList() {
       setFormError('Naam is verplicht')
       return
     }
+    if (!formData.barcode.trim()) {
+      setFormError('Barcode / SKU is verplicht')
+      return
+    }
 
     setIsSaving(true)
     setFormError(null)
@@ -456,11 +460,12 @@ export default function PackagingList() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1">Barcode</label>
+                <label className="block text-sm font-medium mb-1">Barcode / SKU <span className="text-red-500">*</span></label>
                 <input
                   type="text"
                   value={formData.barcode}
                   onChange={(e) => setFormData((prev) => ({ ...prev, barcode: e.target.value }))}
+                  required
                   className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
                 />
               </div>
@@ -865,17 +870,15 @@ export default function PackagingList() {
                       )}
                       <div>
                         {pkg.name}
-                        {pkg.facturatieBoxSku ? (
-                          pkg.facturatieBoxSku !== pkg.barcode ? (
-                            <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700">
-                              SKU: {pkg.facturatieBoxSku}
-                            </span>
-                          ) : null
-                        ) : pkg.barcode ? (
+                        {pkg.barcode ? (
+                          <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-700">
+                            SKU: {pkg.barcode}
+                          </span>
+                        ) : (
                           <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-500">
                             Geen SKU
                           </span>
-                        ) : null}
+                        )}
                       </div>
                     </div>
                   </td>

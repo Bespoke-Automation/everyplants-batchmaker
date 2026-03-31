@@ -10,7 +10,6 @@ const TabLoading = () => (
   </div>
 )
 
-const TagMappingSettings = dynamic(() => import('@/components/verpakking/TagMappingSettings'), { loading: TabLoading })
 const TagList = dynamic(() => import('@/components/verpakking/TagList'), { loading: TabLoading })
 const PackagingList = dynamic(() => import('@/components/verpakking/PackagingList'), { loading: TabLoading })
 const CompartmentRules = dynamic(() => import('@/components/verpakking/CompartmentRules'), { loading: TabLoading })
@@ -20,9 +19,8 @@ const DefaultPackagingList = dynamic(() => import('@/components/verpakking/Defau
 const PackingStationSettings = dynamic(() => import('@/components/verpakking/PackingStationSettings'), { loading: TabLoading })
 
 const TABS = [
-  { id: 'koppelingen', label: 'Koppelingen' },
-  { id: 'tags', label: 'Tags' },
   { id: 'verpakkingen', label: 'Verpakkingen' },
+  { id: 'tags', label: 'Tags' },
   { id: 'compartimenten', label: 'Compartimenten' },
   { id: 'producten', label: 'Producten' },
   { id: 'verzendeenheden', label: 'Verzendeenheden' },
@@ -46,7 +44,7 @@ function useHash(): string {
 
 export default function InstellingenPage() {
   const hash = useHash()
-  const [activeTab, setActiveTab] = useState<TabId>('koppelingen')
+  const [activeTab, setActiveTab] = useState<TabId>('verpakkingen')
 
   // Sync hash → tab on mount and hash changes
   useEffect(() => {
@@ -81,9 +79,8 @@ export default function InstellingenPage() {
       </div>
 
       {/* Tab content */}
-      {activeTab === 'koppelingen' && <TagMappingSettings />}
-      {activeTab === 'tags' && <TagList />}
       {activeTab === 'verpakkingen' && <PackagingList />}
+      {activeTab === 'tags' && <TagList />}
       {activeTab === 'compartimenten' && <CompartmentRules />}
       {activeTab === 'producten' && <ProductStatus />}
       {activeTab === 'verzendeenheden' && <ShippingUnitList />}

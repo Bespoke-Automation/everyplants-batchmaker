@@ -1,7 +1,6 @@
 'use client'
 
-import { useState } from 'react'
-import { ChevronLeft, ChevronRight, Layers, Loader2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Layers, Loader2, ArrowLeft } from 'lucide-react'
 import type { BatchPicklistItem } from '@/types/verpakking'
 
 interface BatchNavigationBarProps {
@@ -35,48 +34,57 @@ export default function BatchNavigationBar({
   const displayName = current.alias || current.deliveryname || current.picklistid
 
   return (
-    <div className="bg-muted/30 border-b border-border px-3 py-1.5 flex items-center justify-between gap-2 text-sm">
-      {/* Left: batch info */}
-      <button
-        onClick={onBatchClick}
-        className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors min-w-0 flex-shrink-0"
-        title="Terug naar batch overzicht"
-      >
-        <Layers className="w-3.5 h-3.5 flex-shrink-0" />
-        <span className="font-medium">Batch {batchDisplayId}</span>
-        <span className="hidden sm:inline text-xs">· {completedCount} van {picklists.length} afgerond</span>
-      </button>
+    <div className="bg-muted/40 border-b border-border px-3 py-2.5 flex items-center justify-between gap-3">
+      {/* Left: back to batch + current picklist info */}
+      <div className="flex items-center gap-3 min-w-0">
+        <button
+          onClick={onBatchClick}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-border bg-background hover:bg-muted transition-colors flex-shrink-0 min-h-[36px]"
+          title="Terug naar batch overzicht"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Terug</span>
+        </button>
+
+        <div className="flex items-center gap-2 min-w-0">
+          <Layers className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+          {isNavigating ? (
+            <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+          ) : (
+            <>
+              <span className="text-sm font-medium truncate max-w-[250px]" title={displayName}>
+                {displayName}
+              </span>
+              <span className="text-xs text-muted-foreground flex-shrink-0 bg-muted border border-border px-1.5 py-0.5 rounded-full">
+                {currentIndex + 1} / {picklists.length}
+              </span>
+              <span className="text-xs text-muted-foreground flex-shrink-0">
+                ({completedCount} afgerond)
+              </span>
+            </>
+          )}
+        </div>
+      </div>
 
       {/* Right: picklist navigation */}
-      <div className="flex items-center gap-1 min-w-0 flex-shrink-0">
+      <div className="flex items-center gap-2 flex-shrink-0">
         <button
           onClick={() => prevPicklist && onNavigate(prevPicklist)}
           disabled={!prevPicklist || isNavigating}
-          className="p-1 rounded hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed min-w-[28px] min-h-[28px] flex items-center justify-center"
+          className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-md border border-border bg-background hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed min-h-[36px]"
           title={prevPicklist ? (prevPicklist.alias || prevPicklist.deliveryname || prevPicklist.picklistid) : undefined}
         >
           <ChevronLeft className="w-4 h-4" />
+          <span className="hidden sm:inline">Vorige</span>
         </button>
-
-        {isNavigating ? (
-          <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground mx-1" />
-        ) : (
-          <>
-            <span className="text-xs font-medium truncate max-w-[200px]" title={displayName}>
-              {displayName}
-            </span>
-            <span className="text-xs text-muted-foreground flex-shrink-0">
-              ({currentIndex + 1}/{picklists.length})
-            </span>
-          </>
-        )}
 
         <button
           onClick={() => nextPicklist && onNavigate(nextPicklist)}
           disabled={!nextPicklist || isNavigating}
-          className="p-1 rounded hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed min-w-[28px] min-h-[28px] flex items-center justify-center"
+          className="inline-flex items-center gap-1 px-4 py-1.5 text-sm font-medium rounded-md border border-primary bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-30 disabled:cursor-not-allowed min-h-[36px]"
           title={nextPicklist ? (nextPicklist.alias || nextPicklist.deliveryname || nextPicklist.picklistid) : undefined}
         >
+          <span>Volgende</span>
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>

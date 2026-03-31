@@ -59,10 +59,29 @@ export default function PicklistPage({ params }: { params: Promise<{ sessionId: 
   const batchIdParam = searchParams.get('batchId')
   const { workers, selectedWorker, isLoading: isLoadingWorker, error: workerError, selectWorker } = useWorker()
   const { stations, selectedStation, selectStation, clearStation } = usePackingStation()
-  const [batchContext, setBatchContext] = useState<BatchContext | null>(null)
+  // Restore batchContext from sessionStorage on mount (persists across picklist navigation)
+  const [batchContext, setBatchContext] = useState<BatchContext | null>(() => {
+    if (typeof window === 'undefined') return null
+    try {
+      const cached = sessionStorage.getItem('verpakking_batch_context')
+      return cached ? JSON.parse(cached) : null
+    } catch { return null }
+  })
+
+  // Persist batchContext to sessionStorage whenever it changes
+  useEffect(() => {
+    if (batchContext) {
+      sessionStorage.setItem('verpakking_batch_context', JSON.stringify(batchContext))
+    }
+  }, [batchContext])
 
   // Fetch batch context with rich picklist data (alias, deliveryname, etc.)
   useEffect(() => {
+    // Skip re-fetch if we already have batch context AND the current session is found in it
+    if (batchContext && batchContext.picklists.some((pl) => pl.sessionId === sessionId)) {
+      return
+    }
+
     let cancelled = false
 
     async function fetchBatchContext() {
@@ -78,8 +97,21 @@ export default function PicklistPage({ params }: { params: Promise<{ sessionId: 
           // Normal flow: fetch via Supabase batch session
           await fetchViaBatchSession(batchSessionId, cancelled)
         } else if (batchIdParam) {
-          // Dev mode fallback: fetch directly from Picqer using batchId query param
+          // Fallback: fetch directly from Picqer using batchId query param
           await fetchDirectFromPicqer(parseInt(batchIdParam, 10), cancelled)
+        } else {
+          // No batch_session_id and no batchId param — check Picqer if picklist belongs to a batch
+          const picklistId = raw.picklist_id
+          if (picklistId) {
+            const plRes = await fetch(`/api/picqer/picklists/${picklistId}`)
+            if (plRes.ok) {
+              const plData = await plRes.json()
+              const picqerBatchId = plData.picklist?.idpicklist_batch ?? plData.idpicklist_batch
+              if (picqerBatchId) {
+                await fetchDirectFromPicqer(picqerBatchId, cancelled)
+              }
+            }
+          }
         }
       } catch {
         // Silent fail — batch nav bar just won't show
@@ -147,13 +179,38 @@ export default function PicklistPage({ params }: { params: Promise<{ sessionId: 
       if (!picqerRes.ok || isCancelled) return
 
       const picqerData = await picqerRes.json()
-      const emptyMap = new Map<number, { id: string; status: string }>()
-      const picklists = mapPicqerPicklists(picqerData.picklists ?? [], emptyMap)
 
-      // In dev mode, mark the current picklist's sessionId so navigation bar can highlight it
+      // Fetch all packing sessions to map picklist_id → session info
+      const sessionMap = new Map<number, { id: string; status: string }>()
+      try {
+        const sessionsRes = await fetch('/api/verpakking/sessions')
+        if (sessionsRes.ok) {
+          const sessionsData = await sessionsRes.json()
+          const allSessions = sessionsData.sessions ?? sessionsData ?? []
+          // Collect picklist IDs in this batch
+          const batchPicklistIds = new Set((picqerData.picklists ?? []).map((pl: { idpicklist: number }) => pl.idpicklist))
+          for (const s of allSessions) {
+            if (batchPicklistIds.has(s.picklist_id) && s.status !== 'completed') {
+              sessionMap.set(s.picklist_id, { id: s.id, status: s.status })
+            }
+          }
+          // Also include completed sessions as fallback (if no active one)
+          for (const s of allSessions) {
+            if (batchPicklistIds.has(s.picklist_id) && !sessionMap.has(s.picklist_id)) {
+              sessionMap.set(s.picklist_id, { id: s.id, status: s.status })
+            }
+          }
+        }
+      } catch {
+        // Fallback: at least map the current session
+      }
+
+      const picklists = mapPicqerPicklists(picqerData.picklists ?? [], sessionMap)
+
+      // Ensure current session is mapped (fallback if sessions API didn't return it)
       const currentPicklistId = (await fetch(`/api/verpakking/sessions/${sessionId}`).then(r => r.json()).then(d => (d.session ?? d).picklist_id).catch(() => null))
       for (const pl of picklists) {
-        if (pl.idpicklist === currentPicklistId) {
+        if (pl.idpicklist === currentPicklistId && !pl.sessionId) {
           pl.sessionId = sessionId
         }
       }

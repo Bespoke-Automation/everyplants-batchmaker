@@ -143,15 +143,6 @@ export interface LocalPackaging {
   strappedVariantId: string | null
 }
 
-// Tag to packaging mapping
-export interface TagPackagingMapping {
-  id: string
-  tagTitle: string
-  picqerPackagingId: number
-  packagingName: string
-  isActive: boolean
-}
-
 // Queue item (picklist in the queue view)
 export interface QueuePicklist {
   idpicklist: number

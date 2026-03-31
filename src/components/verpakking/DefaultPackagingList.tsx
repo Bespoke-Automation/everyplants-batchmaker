@@ -530,20 +530,20 @@ export default function DefaultPackagingList() {
 
       {/* Table */}
       <div className="bg-card border border-border rounded-lg overflow-x-auto">
-          <table className="w-full table-fixed min-w-[1100px]">
+          <table className="w-full table-fixed min-w-[1200px]">
             <thead>
               <tr className="bg-muted/20 border-b border-border text-left">
-                <th className="w-[18%] px-3 py-2 text-xs font-medium text-muted-foreground">Product</th>
-                <th className="w-[8%] px-3 py-2 text-xs font-medium text-muted-foreground">Eenheid</th>
-                <th className="w-[5%] px-3 py-2 text-xs font-medium text-muted-foreground">Maat</th>
-                <th className="w-[16%] px-3 py-2 text-xs font-medium text-muted-foreground">Default verpakking</th>
-                <th className="w-[9%] px-3 py-2 text-xs font-medium text-muted-foreground">
+                <th className="w-[16%] px-3 py-2 text-xs font-medium text-muted-foreground">Product</th>
+                <th className="w-[7%] px-3 py-2 text-xs font-medium text-muted-foreground">Eenheid</th>
+                <th className="w-[4%] px-3 py-2 text-xs font-medium text-muted-foreground">Maat</th>
+                <th className="w-[15%] px-3 py-2 text-xs font-medium text-muted-foreground">Default verpakking</th>
+                <th className="w-[10%] px-3 py-2 text-xs font-medium text-muted-foreground">
                   <span className="inline-flex items-center gap-1"><Tag className="w-3 h-3" /> Tag</span>
                 </th>
-                <th className="w-[5%] px-3 py-2 text-xs font-medium text-muted-foreground">
-                  <span className="inline-flex items-center gap-1"><Box className="w-3 h-3" /> Pkg</span>
+                <th className="w-[7%] px-3 py-2 text-xs font-medium text-muted-foreground">
+                  <span className="inline-flex items-center gap-1"><Box className="w-3 h-3" /> idpackaging</span>
                 </th>
-                <th className="w-[7%] px-3 py-2 text-xs font-medium text-muted-foreground">Barcode</th>
+                <th className="w-[8%] px-3 py-2 text-xs font-medium text-muted-foreground">Barcode</th>
                 {COST_COUNTRIES_PRIMARY.map(c => (
                   <th key={c} className="w-[7%] px-3 py-2 text-xs font-medium text-muted-foreground text-right">{c}</th>
                 ))}

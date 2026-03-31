@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createPackaging as picqerCreatePackaging, createTag } from '@/lib/picqer/client'
-import { insertLocalPackaging } from '@/lib/supabase/localPackagings'
+import { insertLocalPackaging, updateLocalPackaging } from '@/lib/supabase/localPackagings'
 import { getLocalTags, upsertTagsFromPicqer, updateTagType } from '@/lib/supabase/localTags'
-import { createTagMapping } from '@/lib/supabase/tagMappings'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * POST /api/verpakking/packagings/create
- * Create packaging in Picqer + local DB + auto-tag + auto-mapping
+ * Create packaging in Picqer + local DB + auto-tag
  * If skipPicqer=true, only create in local DB (requires idpackaging)
  */
 export async function POST(request: NextRequest) {
@@ -44,7 +43,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         packaging: localPackaging,
         tag: null,
-        mapping: null,
         skippedPicqer: true,
       })
     }
@@ -76,7 +74,7 @@ export async function POST(request: NextRequest) {
     const tagTitle = `${nextNum}. ${name.trim()}`
     const picqerTag = await createTag(tagTitle, '#0000f0', false)
 
-    // 4. Save both to local DB
+    // 4. Save packaging to local DB with tag info
     const localPackaging = await insertLocalPackaging({
       idpackaging: picqerPackaging.idpackaging,
       name: picqerPackaging.name,
@@ -88,6 +86,13 @@ export async function POST(request: NextRequest) {
       active: picqerPackaging.active,
     })
 
+    // 5. Store tag name + id directly on the packaging
+    await updateLocalPackaging(picqerPackaging.idpackaging, {
+      picqer_tag_name: picqerTag.title,
+      picqer_tag_id: picqerTag.idtag,
+    } as Parameters<typeof updateLocalPackaging>[1])
+
+    // 6. Save tag to local tags DB
     await upsertTagsFromPicqer([{
       idtag: picqerTag.idtag,
       title: picqerTag.title,
@@ -99,14 +104,6 @@ export async function POST(request: NextRequest) {
     // Set the new tag as packaging type
     await updateTagType(picqerTag.idtag, 'packaging')
 
-    // 5. Create mapping
-    const mapping = await createTagMapping({
-      tag_title: picqerTag.title,
-      picqer_packaging_id: picqerPackaging.idpackaging,
-      packaging_name: picqerPackaging.name,
-      is_active: true,
-    })
-
     return NextResponse.json({
       packaging: localPackaging,
       tag: {
@@ -114,7 +111,6 @@ export async function POST(request: NextRequest) {
         title: picqerTag.title,
         color: picqerTag.color,
       },
-      mapping,
     })
   } catch (error) {
     console.error('[verpakking] Error creating packaging:', error)
