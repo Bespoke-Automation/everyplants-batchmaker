@@ -6,7 +6,7 @@
 @tailwind utilities;
 
 html {
-  font-size: 12px; /* Reduced from default 16px for a more compact UI */
+  font-size: 15px; /* Increased from 12px for better readability on iPad/tablet */
 }
 
 body {
