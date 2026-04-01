@@ -3,7 +3,7 @@ import { supabase } from './client'
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type PackingSessionStatus = 'claimed' | 'assigned' | 'packing' | 'shipping' | 'completed' | 'failed'
-export type BoxShipmentStatus = 'pending' | 'open' | 'closed' | 'shipment_created' | 'label_fetched' | 'shipping' | 'shipped' | 'error'
+export type BoxShipmentStatus = 'pending' | 'open' | 'closed' | 'shipment_created' | 'label_fetched' | 'shipping' | 'shipped' | 'cancelled' | 'error'
 
 export interface PackingSession {
   id: string

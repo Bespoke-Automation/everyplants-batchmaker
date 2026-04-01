@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getPackingSession, updatePackingSession } from '@/lib/supabase/packingSessions'
-import { fetchPicklist } from '@/lib/picqer/client'
+import { getPackingSession, updatePackingSession, updateBox } from '@/lib/supabase/packingSessions'
+import { fetchPicklist, getShipment } from '@/lib/picqer/client'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * GET /api/verpakking/sessions/[id]
- * Returns full session with boxes and products
+ * Returns full session with boxes and products.
+ * Syncs shipment status from Picqer to detect external cancellations.
  */
 export async function GET(
   _request: NextRequest,
@@ -15,6 +16,27 @@ export async function GET(
   try {
     const { id } = await params
     const session = await getPackingSession(id)
+
+    // Sync shipment status from Picqer for shipped boxes
+    const shippedBoxes = session.packing_session_boxes.filter(
+      b => b.shipment_id && (b.status === 'shipped' || b.status === 'label_fetched')
+    )
+
+    if (shippedBoxes.length > 0) {
+      await Promise.allSettled(
+        shippedBoxes.map(async (box) => {
+          try {
+            const picqerShipment = await getShipment(box.shipment_id!)
+            if (picqerShipment.cancelled) {
+              await updateBox(box.id, { status: 'cancelled' })
+              box.status = 'cancelled'
+            }
+          } catch (err) {
+            console.warn(`[verpakking] Failed to check shipment ${box.shipment_id} status:`, err)
+          }
+        })
+      )
+    }
 
     return NextResponse.json(session)
   } catch (error) {
