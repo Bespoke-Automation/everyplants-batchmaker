@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { updatePackaging as picqerUpdatePackaging } from '@/lib/picqer/client'
-import { updateLocalPackaging } from '@/lib/supabase/localPackagings'
+import { updateLocalPackaging, deleteLocalPackaging } from '@/lib/supabase/localPackagings'
+import { supabase } from '@/lib/supabase/client'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,7 +39,34 @@ export async function PUT(request: NextRequest) {
       if (body[field] !== undefined) engineUpdates[field] = body[field]
     }
 
-    // If new_idpackaging is provided, include it in local updates
+    // Handle Picqer ID change: if new_idpackaging already exists, merge rows
+    if (new_idpackaging !== undefined && typeof new_idpackaging === 'number' && new_idpackaging !== idpackaging) {
+      const { data: existingRow } = await supabase
+        .schema('batchmaker')
+        .from('packagings')
+        .select('id')
+        .eq('idpackaging', new_idpackaging)
+        .maybeSingle()
+
+      if (existingRow) {
+        // Target ID already exists — delete the old row, then update the existing one with engine fields
+        const allUpdates = { ...picqerUpdates, ...engineUpdates }
+        await deleteLocalPackaging(idpackaging)
+        if (Object.keys(allUpdates).length > 0) {
+          await updateLocalPackaging(new_idpackaging, allUpdates as Record<string, string | number | boolean | null>)
+        }
+
+        // Sync Picqer fields if needed
+        let updated = null
+        if (Object.keys(picqerUpdates).length > 0 && new_idpackaging > 0) {
+          updated = await picqerUpdatePackaging(new_idpackaging, picqerUpdates as Record<string, string | number | null>)
+        }
+
+        return NextResponse.json({ packaging: updated, merged: true })
+      }
+    }
+
+    // Standard update path
     const allLocalUpdates: Record<string, unknown> = { ...picqerUpdates, ...engineUpdates }
     if (new_idpackaging !== undefined && typeof new_idpackaging === 'number') {
       allLocalUpdates.idpackaging = new_idpackaging
