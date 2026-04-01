@@ -245,17 +245,17 @@ export default function BuitenplantenClient() {
           </div>
         )}
 
-        <div className="border border-border rounded-lg overflow-hidden mb-4">
-          <table className="w-full text-sm">
+        <div className="border border-border rounded-lg overflow-x-auto mb-4">
+          <table className="w-full text-sm min-w-[640px]">
             <thead>
               <tr className="bg-muted/50 text-muted-foreground">
-                <th className="w-10 px-4 py-3"></th>
-                <th className="text-left px-4 py-3 font-medium">Product</th>
-                <th className="text-left px-4 py-3 font-medium">Locatie</th>
-                <th className="text-right px-4 py-3 font-medium">Voorraad BB</th>
-                <th className="text-right px-4 py-3 font-medium">Single Orders</th>
-                <th className="text-right px-4 py-3 font-medium">Aantal</th>
-                <th className="text-left px-4 py-3 font-medium text-xs">Batches</th>
+                <th className="w-10 px-3 py-3"></th>
+                <th className="text-left px-3 py-3 font-medium">Product</th>
+                <th className="text-left px-3 py-3 font-medium whitespace-nowrap">Locatie</th>
+                <th className="text-right px-3 py-3 font-medium whitespace-nowrap">Voorraad BB</th>
+                <th className="text-right px-3 py-3 font-medium whitespace-nowrap">Single Orders</th>
+                <th className="text-right px-3 py-3 font-medium">Aantal</th>
+                <th className="text-left px-3 py-3 font-medium text-xs">Batches</th>
               </tr>
             </thead>
             <tbody>
@@ -277,7 +277,7 @@ export default function BuitenplantenClient() {
                       key={key}
                       className={`border-t border-border ${isPicked ? 'opacity-40' : ''} ${isChecked ? 'bg-emerald-50' : ''}`}
                     >
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3">
                         <input
                           type="checkbox"
                           checked={isChecked}
@@ -286,12 +286,12 @@ export default function BuitenplantenClient() {
                           className="w-4 h-4 rounded"
                         />
                       </td>
-                      <td className="px-4 py-2.5">
+                      <td className="px-3 py-2.5">
                         <div className="font-medium">{item.product_name}</div>
                         <div className="text-xs text-muted-foreground">{item.productcode}</div>
                       </td>
-                      <td className="px-4 py-2.5 font-mono text-xs">{item.location}</td>
-                      <td className="px-4 py-2.5 text-right">
+                      <td className="px-3 py-2.5 font-mono text-xs whitespace-nowrap">{item.location}</td>
+                      <td className="px-3 py-2.5 text-right">
                         <input
                           type="number"
                           min="0"
@@ -305,10 +305,10 @@ export default function BuitenplantenClient() {
                             Math.max(0, parseInt(e.target.value) || 0)
                           )}
                           disabled={isPicked}
-                          className="w-16 px-2 py-1 text-right text-sm border border-border rounded-md bg-background disabled:opacity-50"
+                          className="w-14 px-1.5 py-1 text-right text-sm border border-border rounded-md bg-background disabled:opacity-50"
                         />
                       </td>
-                      <td className="px-4 py-2.5 text-right">
+                      <td className="px-3 py-2.5 text-right">
                         <input
                           type="number"
                           min="0"
@@ -322,11 +322,11 @@ export default function BuitenplantenClient() {
                             Math.max(0, parseInt(e.target.value) || 0)
                           )}
                           disabled={isPicked}
-                          className="w-16 px-2 py-1 text-right text-sm border border-border rounded-md bg-background disabled:opacity-50"
+                          className="w-14 px-1.5 py-1 text-right text-sm border border-border rounded-md bg-background disabled:opacity-50"
                         />
                       </td>
-                      <td className="px-4 py-2.5 text-right font-semibold">{adjustedQty}</td>
-                      <td className="px-4 py-2.5 text-xs text-muted-foreground">
+                      <td className="px-3 py-2.5 text-right font-semibold">{adjustedQty}</td>
+                      <td className="px-3 py-2.5 text-xs text-muted-foreground">
                         {item.batch_ids.join(', ')}
                       </td>
                     </tr>

@@ -51,18 +51,19 @@ export async function GET() {
       item => !pickedKeys.has(`${item.product_id}::${item.location}`)
     )
 
-    // 6. Build XLSX with adjusted quantities
-    const rows = exportItems.map(item => {
-      const adj = adjMap.get(`${item.product_id}::${item.location}`)
-      const adjustedQty = Math.max(0, item.qty_needed - (adj?.voorraad_bb || 0) + (adj?.single_orders || 0))
-      return {
-        Productcode: item.productcode,
-        Productnaam: item.product_name,
-        Locatie: item.location,
-        Aantal: adjustedQty,
-        'Batch refs': item.batch_ids.join(', '),
-      }
-    })
+    // 6. Build XLSX with adjusted quantities, exclude items with 0 quantity
+    const rows = exportItems
+      .map(item => {
+        const adj = adjMap.get(`${item.product_id}::${item.location}`)
+        const adjustedQty = Math.max(0, item.qty_needed - (adj?.voorraad_bb || 0) + (adj?.single_orders || 0))
+        return {
+          Productcode: item.productcode,
+          Productnaam: item.product_name,
+          Locatie: item.location,
+          Aantal: adjustedQty,
+        }
+      })
+      .filter(row => row.Aantal > 0)
 
     const ws = XLSX.utils.json_to_sheet(rows)
 
@@ -72,7 +73,6 @@ export async function GET() {
       { wch: 40 }, // Productnaam
       { wch: 12 }, // Locatie
       { wch: 8 },  // Aantal
-      { wch: 20 }, // Batch refs
     ]
 
     const wb = XLSX.utils.book_new()
