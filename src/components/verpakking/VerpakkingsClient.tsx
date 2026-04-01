@@ -2625,77 +2625,6 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                   Laden...
                 </div>
               ) : order ? (
-                editingAddress ? (
-                  <div className="space-y-2">
-                    <div>
-                      <label className="text-[10px] text-muted-foreground">Naam</label>
-                      <input
-                        className="w-full px-2 py-1 text-sm border border-border rounded bg-background"
-                        value={addressForm.deliveryname}
-                        onChange={(e) => setAddressForm((f) => ({ ...f, deliveryname: e.target.value }))}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-muted-foreground">Contactpersoon</label>
-                      <input
-                        className="w-full px-2 py-1 text-sm border border-border rounded bg-background"
-                        value={addressForm.deliverycontactname}
-                        onChange={(e) => setAddressForm((f) => ({ ...f, deliverycontactname: e.target.value }))}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-muted-foreground">Adres</label>
-                      <input
-                        className="w-full px-2 py-1 text-sm border border-border rounded bg-background"
-                        value={addressForm.deliveryaddress}
-                        onChange={(e) => setAddressForm((f) => ({ ...f, deliveryaddress: e.target.value }))}
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <div className="w-1/3">
-                        <label className="text-[10px] text-muted-foreground">Postcode</label>
-                        <input
-                          className="w-full px-2 py-1 text-sm border border-border rounded bg-background"
-                          value={addressForm.deliveryzipcode}
-                          onChange={(e) => setAddressForm((f) => ({ ...f, deliveryzipcode: e.target.value }))}
-                        />
-                      </div>
-                      <div className="flex-1">
-                        <label className="text-[10px] text-muted-foreground">Stad</label>
-                        <input
-                          className="w-full px-2 py-1 text-sm border border-border rounded bg-background"
-                          value={addressForm.deliverycity}
-                          onChange={(e) => setAddressForm((f) => ({ ...f, deliverycity: e.target.value }))}
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-muted-foreground">Land</label>
-                      <input
-                        className="w-full px-2 py-1 text-sm border border-border rounded bg-background"
-                        value={addressForm.deliverycountry}
-                        onChange={(e) => setAddressForm((f) => ({ ...f, deliverycountry: e.target.value }))}
-                      />
-                    </div>
-                    <div className="flex gap-2 pt-1">
-                      <button
-                        onClick={saveAddress}
-                        disabled={addressSaving}
-                        className="flex-1 inline-flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors disabled:opacity-50"
-                      >
-                        {addressSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-                        Opslaan
-                      </button>
-                      <button
-                        onClick={() => setEditingAddress(false)}
-                        disabled={addressSaving}
-                        className="px-2 py-1.5 text-xs font-medium border border-border rounded hover:bg-muted transition-colors"
-                      >
-                        Annuleren
-                      </button>
-                    </div>
-                  </div>
-                ) : (
                   <div className="space-y-1.5 text-sm">
                     {order.deliveryname && (
                       <p className="font-medium">{order.deliveryname}</p>
@@ -2728,7 +2657,6 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                       </div>
                     )}
                   </div>
-                )
               ) : (
                 <p className="text-xs text-muted-foreground">Geen bezorggegevens beschikbaar</p>
               )}
@@ -3257,6 +3185,51 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         </div>
       </Dialog>
 
+      {/* Address edit modal */}
+      {editingAddress && order && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setEditingAddress(false)}>
+          <div className="bg-card rounded-xl shadow-xl p-6 mx-4 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-4">Afleveradres bewerken</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-muted-foreground">Naam</label>
+                <input className="w-full px-3 py-2 min-h-[44px] text-sm border border-border rounded-lg bg-background" value={addressForm.deliveryname} onChange={(e) => setAddressForm((f) => ({ ...f, deliveryname: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Contactpersoon</label>
+                <input className="w-full px-3 py-2 min-h-[44px] text-sm border border-border rounded-lg bg-background" value={addressForm.deliverycontactname} onChange={(e) => setAddressForm((f) => ({ ...f, deliverycontactname: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Adres</label>
+                <input className="w-full px-3 py-2 min-h-[44px] text-sm border border-border rounded-lg bg-background" value={addressForm.deliveryaddress} onChange={(e) => setAddressForm((f) => ({ ...f, deliveryaddress: e.target.value }))} />
+              </div>
+              <div className="flex gap-3">
+                <div className="w-1/3">
+                  <label className="text-xs text-muted-foreground">Postcode</label>
+                  <input className="w-full px-3 py-2 min-h-[44px] text-sm border border-border rounded-lg bg-background" value={addressForm.deliveryzipcode} onChange={(e) => setAddressForm((f) => ({ ...f, deliveryzipcode: e.target.value }))} />
+                </div>
+                <div className="flex-1">
+                  <label className="text-xs text-muted-foreground">Stad</label>
+                  <input className="w-full px-3 py-2 min-h-[44px] text-sm border border-border rounded-lg bg-background" value={addressForm.deliverycity} onChange={(e) => setAddressForm((f) => ({ ...f, deliverycity: e.target.value }))} />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Land</label>
+                <input className="w-full px-3 py-2 min-h-[44px] text-sm border border-border rounded-lg bg-background" value={addressForm.deliverycountry} onChange={(e) => setAddressForm((f) => ({ ...f, deliverycountry: e.target.value }))} />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-border">
+              <button onClick={() => setEditingAddress(false)} disabled={addressSaving} className="px-4 py-2 min-h-[44px] text-sm rounded-lg hover:bg-muted transition-colors">
+                Annuleren
+              </button>
+              <button onClick={saveAddress} disabled={addressSaving} className="px-4 py-2 min-h-[44px] bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50">
+                {addressSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Opslaan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Close picklist confirmation */}
       {showClosePicklistConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowClosePicklistConfirm(false)}>
@@ -3293,6 +3266,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         onShipAll={handleShipAll}
         onRetryBox={handleRetryBox}
         picklistId={session.picklistId}
+        sessionId={sessionId}
         defaultShippingProviderId={shippingProviderId}
         boxWeights={boxWeights}
         onNextPicklist={nextPicklistInBatch ? () => handleBatchNavigate(nextPicklistInBatch) : undefined}
