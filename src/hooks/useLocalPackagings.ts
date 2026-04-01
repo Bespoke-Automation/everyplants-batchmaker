@@ -180,22 +180,24 @@ export function useLocalPackagings(activeOnly = false) {
     }
   }, [fetchPackagings])
 
-  const deletePackaging = useCallback(async (idpackaging: number) => {
+  const deletePackaging = useCallback(async (idpackaging: number, transferToIdpackaging?: number) => {
     setError(null)
 
     try {
       const response = await fetch('/api/verpakking/packagings/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idpackaging }),
+        body: JSON.stringify({ idpackaging, transferToIdpackaging }),
       })
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to delete packaging')
-      }
       const result = await response.json()
+      if (!response.ok) {
+        if (response.status === 409 && result.error === 'has_rules') {
+          return result as { error: 'has_rules'; ruleCount: number; message: string }
+        }
+        throw new Error(result.error || 'Failed to delete packaging')
+      }
       await fetchPackagings()
-      return result as { success: boolean; deletedTagTitle: string | null; warnings?: string[] }
+      return result as { success: boolean; deletedTagTitle: string | null; rulesTransferred?: number; warnings?: string[] }
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Unknown error')
       setError(error)

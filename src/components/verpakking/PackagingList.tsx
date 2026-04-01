@@ -92,6 +92,11 @@ export default function PackagingList() {
   const [isUploadingImage, setIsUploadingImage] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Transfer rules dialog state
+  const [transferPkg, setTransferPkg] = useState<LocalPackaging | null>(null)
+  const [transferRuleCount, setTransferRuleCount] = useState(0)
+  const [transferTargetId, setTransferTargetId] = useState<number | null>(null)
+
   // Picqer packagings for dropdown
   const [picqerPackagings, setPicqerPackagings] = useState<Array<{ idpackaging: number; name: string }>>([])
   const [isLoadingPicqerPkg, setIsLoadingPicqerPkg] = useState(false)
@@ -192,22 +197,38 @@ export default function PackagingList() {
     setImagePreview(null)
   }
 
-  const handleDelete = async () => {
-    if (!confirmDeletePkg) return
+  const handleDelete = async (transferToIdpackaging?: number) => {
+    const pkg = transferPkg || confirmDeletePkg
+    if (!pkg) return
 
-    setDeletingId(confirmDeletePkg.idpackaging)
+    setDeletingId(pkg.idpackaging)
     setDeleteResult(null)
 
     try {
-      const result = await deletePackaging(confirmDeletePkg.idpackaging)
-      const parts: string[] = [`Verpakking "${confirmDeletePkg.name}" verwijderd.`]
-      if (result.deletedTagTitle) {
+      const result = await deletePackaging(pkg.idpackaging, transferToIdpackaging)
+
+      if ('error' in result && result.error === 'has_rules') {
+        // Show transfer dialog
+        setConfirmDeletePkg(null)
+        setTransferPkg(pkg)
+        setTransferRuleCount(result.ruleCount)
+        setTransferTargetId(null)
+        setDeletingId(null)
+        return
+      }
+
+      const parts: string[] = [`Verpakking "${pkg.name}" verwijderd.`]
+      if ('deletedTagTitle' in result && result.deletedTagTitle) {
         parts.push(`Tag "${result.deletedTagTitle}" verwijderd uit Picqer.`)
       }
-      if (result.warnings?.length) {
+      if ('rulesTransferred' in result && result.rulesTransferred) {
+        parts.push(`${result.rulesTransferred} doosregel(s) overgezet.`)
+      }
+      if ('warnings' in result && result.warnings?.length) {
         parts.push(result.warnings.join(' '))
       }
       setDeleteResult(parts.join(' '))
+      setTransferPkg(null)
     } catch {
       // Error is set by the hook
     } finally {
@@ -454,6 +475,52 @@ export default function PackagingList() {
             </button>
             <button
               onClick={() => setConfirmDeletePkg(null)}
+              disabled={deletingId !== null}
+              className="px-3 py-2 text-sm rounded-lg border border-border hover:bg-muted transition-colors disabled:opacity-50"
+            >
+              Annuleren
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Transfer rules dialog */}
+      {transferPkg && (
+        <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+          <p className="text-sm font-medium mb-1">
+            Doosregels overzetten
+          </p>
+          <p className="text-xs text-muted-foreground mb-3">
+            Verpakking &quot;{transferPkg.name}&quot; heeft {transferRuleCount} doosregel(s).
+            Kies een verpakking om ze naar over te zetten, of verwijder ze samen met de verpakking.
+          </p>
+          <div className="mb-3">
+            <select
+              value={transferTargetId ?? ''}
+              onChange={(e) => setTransferTargetId(e.target.value ? Number(e.target.value) : null)}
+              className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background"
+            >
+              <option value="">Selecteer verpakking...</option>
+              {packagings
+                .filter((p) => p.idpackaging !== transferPkg.idpackaging && p.active)
+                .map((p) => (
+                  <option key={p.idpackaging} value={p.idpackaging}>
+                    {p.name}
+                  </option>
+                ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => transferTargetId && handleDelete(transferTargetId)}
+              disabled={!transferTargetId || deletingId !== null}
+              className="flex items-center gap-2 px-3 py-2 text-sm bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+            >
+              {deletingId ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              Overzetten en verwijderen
+            </button>
+            <button
+              onClick={() => setTransferPkg(null)}
               disabled={deletingId !== null}
               className="px-3 py-2 text-sm rounded-lg border border-border hover:bg-muted transition-colors disabled:opacity-50"
             >
