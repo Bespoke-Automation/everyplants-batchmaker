@@ -267,7 +267,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     const map = new Map<string, { id: string; name: string; idpackaging: number; barcode: string }>()
     for (const lp of localPackagings) {
       if (lp.barcode && lp.active) {
-        map.set(lp.barcode, { id: lp.id, name: lp.name, idpackaging: lp.idpackaging, barcode: lp.barcode })
+        const trimmed = lp.barcode.trim()
+        map.set(trimmed, { id: lp.id, name: lp.name, idpackaging: lp.idpackaging, barcode: trimmed })
       }
     }
     return map
