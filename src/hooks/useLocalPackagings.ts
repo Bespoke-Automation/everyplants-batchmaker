@@ -197,7 +197,7 @@ export function useLocalPackagings(activeOnly = false) {
         throw new Error(result.error || 'Failed to delete packaging')
       }
       await fetchPackagings()
-      return result as { success: boolean; deletedTagTitle: string | null; rulesTransferred?: number; warnings?: string[] }
+      return result as { success: boolean; rulesTransferred?: number; warnings?: string[] }
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Unknown error')
       setError(error)

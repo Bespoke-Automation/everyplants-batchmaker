@@ -218,9 +218,6 @@ export default function PackagingList() {
       }
 
       const parts: string[] = [`Verpakking "${pkg.name}" verwijderd.`]
-      if ('deletedTagTitle' in result && result.deletedTagTitle) {
-        parts.push(`Tag "${result.deletedTagTitle}" verwijderd uit Picqer.`)
-      }
       if ('rulesTransferred' in result && result.rulesTransferred) {
         parts.push(`${result.rulesTransferred} doosregel(s) overgezet.`)
       }

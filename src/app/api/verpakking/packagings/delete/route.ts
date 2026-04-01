@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { deleteTag, deactivatePackaging } from '@/lib/picqer/client'
+import { deactivatePackaging } from '@/lib/picqer/client'
 import { deleteLocalPackaging } from '@/lib/supabase/localPackagings'
-import { deleteLocalTag } from '@/lib/supabase/localTags'
-import { getLocalTags } from '@/lib/supabase/localTags'
 import { supabase } from '@/lib/supabase/client'
 
 export const dynamic = 'force-dynamic'
@@ -95,32 +93,8 @@ export async function POST(request: NextRequest) {
         .eq('packaging_id', packaging.id)
     }
 
-    // 2. If tag exists, delete it from Picqer + local
-    let deletedTagTitle: string | null = null
-    if (packaging?.picqer_tag_name) {
-      const allTags = await getLocalTags()
-      const localTag = allTags.find((t) => t.title === packaging.picqer_tag_name)
-
-      if (localTag) {
-        try {
-          await deleteTag(localTag.idtag)
-          deletedTagTitle = localTag.title
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : 'Unknown error'
-          console.warn(`[verpakking] Failed to delete tag from Picqer: ${msg}`)
-          errors.push(`Tag kon niet uit Picqer verwijderd worden: ${msg}`)
-        }
-
-        // Delete local tag
-        try {
-          await deleteLocalTag(localTag.idtag)
-        } catch (err) {
-          console.warn('[verpakking] Failed to delete local tag:', err)
-        }
-      }
-    }
-
-    // 3. Deactivate packaging in Picqer (skip for local-only packagings with negative IDs)
+    // 2. Deactivate packaging in Picqer (skip for local-only packagings with negative IDs)
+    // Note: tags are intentionally kept in Picqer — never delete them
     if (idpackaging > 0) {
       try {
         await deactivatePackaging(idpackaging)
@@ -136,7 +110,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      deletedTagTitle,
       deactivatedPackaging: idpackaging,
       rulesTransferred: ruleCount > 0 ? ruleCount : undefined,
       warnings: errors.length > 0 ? errors : undefined,
