@@ -207,7 +207,7 @@ export default function ProductCard({
           <span className="text-primary text-sm font-medium">
             {product.productCode}
           </span>
-          <p className="text-sm truncate">{product.name}</p>
+          <p className="text-sm">{product.name}</p>
           {product.location && (
             <span className="inline-block px-2 py-0.5 text-[10px] bg-muted rounded mt-1">
               {product.location}
