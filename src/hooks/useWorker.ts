@@ -83,11 +83,13 @@ export function useWorker() {
   const selectWorker = useCallback((worker: Worker) => {
     setSelectedWorker(worker)
     localStorage.setItem(STORAGE_KEY, JSON.stringify(worker))
+    window.dispatchEvent(new CustomEvent('worker-changed', { detail: worker }))
   }, [])
 
   const clearWorker = useCallback(() => {
     setSelectedWorker(null)
     localStorage.removeItem(STORAGE_KEY)
+    window.dispatchEvent(new CustomEvent('worker-changed', { detail: null }))
   }, [])
 
   return {

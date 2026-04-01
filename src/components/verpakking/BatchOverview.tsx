@@ -405,7 +405,7 @@ export default function BatchOverview({
                 ) : (
                   <CheckCircle2 className="w-4 h-4" />
                 )}
-                Claim batch
+                Batch claimen
               </button>
             </div>
             {claimError && (
@@ -414,11 +414,11 @@ export default function BatchOverview({
           </div>
         )}
 
-        {/* Green summary banner */}
+        {/* Claimed banner */}
         {!isPreview && (
           <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2.5">
             <p className="text-sm text-emerald-800 font-medium">
-              Batch aangemaakt met {totalProductAmount} producten en {batchSession.totalPicklists} picklijst{batchSession.totalPicklists !== 1 ? 'en' : ''}
+              Batch geclaimd met {totalProductAmount} producten en {batchSession.totalPicklists} picklijst{batchSession.totalPicklists !== 1 ? 'en' : ''}
             </p>
           </div>
         )}

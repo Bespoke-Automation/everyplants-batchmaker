@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
 import { Search, Bell, User, LogOut, Package } from 'lucide-react'
 import { useAuth } from '@/components/providers/AuthProvider'
 
@@ -11,7 +12,37 @@ export default function Header() {
   const pathname = usePathname()
   const router = useRouter()
   const { profile, signOut } = useAuth()
+  const [workerName, setWorkerName] = useState<string | null>(null)
   const activeTab: Tab = pathname === '/batchmaker/single-orders' ? 'single-orders' : pathname === '/batchmaker/settings' ? 'settings' : 'batches'
+
+  useEffect(() => {
+    const readWorker = () => {
+      try {
+        const stored = localStorage.getItem('verpakking_worker')
+        if (stored) {
+          const parsed = JSON.parse(stored)
+          setWorkerName(parsed.fullName || null)
+        } else {
+          setWorkerName(null)
+        }
+      } catch {
+        setWorkerName(null)
+      }
+    }
+    readWorker()
+
+    const onWorkerChanged = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      setWorkerName(detail?.fullName || null)
+    }
+
+    window.addEventListener('storage', readWorker)
+    window.addEventListener('worker-changed', onWorkerChanged)
+    return () => {
+      window.removeEventListener('storage', readWorker)
+      window.removeEventListener('worker-changed', onWorkerChanged)
+    }
+  }, [])
 
   const handleLogout = async () => {
     await signOut()
@@ -77,10 +108,10 @@ export default function Header() {
           <Bell className="w-5 h-5" />
           <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-destructive rounded-full"></span>
         </button>
-        {profile && (
+        {(workerName || profile) && (
           <span className="hidden lg:flex items-center gap-1.5 text-sm text-muted-foreground">
             <User className="w-4 h-4" />
-            {profile.display_name}
+            {workerName || profile?.display_name}
           </span>
         )}
         <button
