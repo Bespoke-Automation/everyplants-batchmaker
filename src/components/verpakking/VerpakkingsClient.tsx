@@ -60,6 +60,7 @@ import BarcodeListener from './BarcodeListener'
 import ProductCard, { type ProductCardItem, type BoxRef, type ProductCustomFields } from './ProductCard'
 import BoxCard, { type BoxCardItem, type BoxProduct } from './BoxCard'
 import ShipmentProgress from './ShipmentProgress'
+import { useTranslation } from '@/i18n/LanguageContext'
 
 // Engine advice response type
 interface EngineAdviceBox {
@@ -132,34 +133,32 @@ function getCountryName(code: string): string {
   return countries[code?.toUpperCase()] ?? code
 }
 
-// Shared status translation map (English -> Dutch)
-const STATUS_TRANSLATIONS: Record<string, string> = {
-  claimed: 'Geclaimd',
-  assigned: 'Toegewezen',
-  packing: 'Inpakken',
-  shipping: 'Verzenden',
-  completed: 'Voltooid',
-  failed: 'Mislukt',
-  pending: 'Wachtend',
-  open: 'Open',
-  closed: 'Afgesloten',
-  shipment_created: 'Zending aangemaakt',
-  label_fetched: 'Label opgehaald',
-  shipped: 'Verzonden',
-  error: 'Fout',
-  // Picqer picklist statuses
-  new: 'Nieuw',
-  paused: 'Gepauzeerd',
-  snoozed: 'Gesnoozed',
-  cancelled: 'Geannuleerd',
-  // Picqer order statuses
-  concept: 'Concept',
-  expected: 'Verwacht',
-  processing: 'In verwerking',
+// Map API status keys → dictionary keys in status section
+const STATUS_KEY_MAP: Record<string, string> = {
+  claimed: 'claimed',
+  assigned: 'assigned',
+  packing: 'packing',
+  shipping: 'shipping',
+  completed: 'completed',
+  failed: 'failed',
+  pending: 'pending',
+  open: 'open',
+  closed: 'closed',
+  shipment_created: 'shipmentCreated',
+  label_fetched: 'labelFetched',
+  shipped: 'shipped',
+  error: 'error',
+  new: 'new',
+  paused: 'paused',
+  cancelled: 'cancelled',
+  processing: 'processing',
 }
 
-function translateStatus(status: string): string {
-  return STATUS_TRANSLATIONS[status] ?? status
+function translateStatus(status: string, statusDict?: Record<string, string>): string {
+  if (!statusDict) return status
+  const key = STATUS_KEY_MAP[status]
+  if (key && statusDict[key]) return statusDict[key]
+  return status
 }
 
 interface BatchContextProps {
@@ -177,6 +176,7 @@ interface VerpakkingsClientProps {
 
 export default function VerpakkingsClient({ sessionId, onBack, workerName, batchContext }: VerpakkingsClientProps) {
   const router = useRouter()
+  const { t } = useTranslation()
 
   // Session hook
   const {
@@ -1761,12 +1761,12 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                         session.status === 'completed' ? 'bg-green-100 text-green-800' :
                         'bg-blue-100 text-blue-800'
                       }`}>
-                        {picklist?.status === 'cancelled' ? translateStatus('cancelled') : translateStatus(session.status)}
+                        {picklist?.status === 'cancelled' ? translateStatus('cancelled', t.status) : translateStatus(session.status, t.status)}
                       </span>
                       {isSaving && (
                         <span className="flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
                           <Loader2 className="w-3 h-3 animate-spin" />
-                          Opslaan...
+                          {t.common.saving}
                         </span>
                       )}
                     </div>
@@ -1784,7 +1784,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                           }`}
                         >
                           <Printer className="w-3 h-3" />
-                          {selectedStation ? selectedStation.name : 'Geen werkstation'}
+                          {selectedStation ? selectedStation.name : t.packing.noStation}
                         </button>
                       </div>
                     ) : (
@@ -1799,7 +1799,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                           }`}
                         >
                           <Printer className="w-3 h-3" />
-                          {selectedStation ? selectedStation.name : 'Geen werkstation'}
+                          {selectedStation ? selectedStation.name : t.packing.noStation}
                         </button>
                       </div>
                     )}
@@ -1844,14 +1844,14 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
               <div className="hidden lg:flex text-right text-sm text-muted-foreground">
                 <div className="flex items-center gap-1">
                   <Package className="w-4 h-4" />
-                  <span>{assignedProductsCount} / {totalProductsCount} producten toegewezen</span>
+                  <span>{assignedProductsCount} / {totalProductsCount} {t.packing.productsAssigned}</span>
                 </div>
               </div>
               {/* Session info toggle - only on small screens */}
               <button
                 onClick={() => setShowSessionInfo(!showSessionInfo)}
                 className="lg:hidden p-2 rounded-lg hover:bg-muted transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
-                title="Sessie info"
+                title={t.packing.sessionInfo}
               >
                 <Info className="w-5 h-5 text-muted-foreground" />
               </button>
@@ -1864,7 +1864,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                   title="Picklijst sluiten"
                 >
                   <Check className="w-4 h-4" />
-                  <span className="hidden sm:inline">Picklijst sluiten</span>
+                  <span className="hidden sm:inline">{t.packing.closePicklist}</span>
                 </button>
               )}
               {/* Ship All button */}
@@ -1874,7 +1874,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                   className="flex items-center gap-2 px-3 py-2 lg:px-4 min-h-[44px] bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors border border-primary"
                 >
                   <Send className="w-4 h-4" />
-                  <span className="hidden sm:inline">Alles verzenden</span>
+                  <span className="hidden sm:inline">{t.packing.shipAll}</span>
                 </button>
               )}
             </div>
@@ -1886,12 +1886,12 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
           <div className="lg:hidden bg-muted/20 border-b border-border px-4 py-3 space-y-3">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
               <div>
-                <p className="text-xs text-muted-foreground">Medewerker</p>
+                <p className="text-xs text-muted-foreground">{t.packing.workerLabel}</p>
                 <p className="font-medium">{workerName}</p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Status</p>
-                <p className="font-medium">{translateStatus(session.status)}</p>
+                <p className="font-medium">{translateStatus(session.status, t.status)}</p>
               </div>
               {picklist && (
                 <div>
@@ -1907,7 +1907,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
             {/* Delivery address (mobile) */}
             {order && (
               <div className="pt-2 border-t border-border">
-                <p className="text-xs text-muted-foreground mb-1">Bezorgadres</p>
+                <p className="text-xs text-muted-foreground mb-1">{t.packing.delivery}</p>
                 <p className="text-sm font-medium">{order.deliveryname}</p>
                 {order.deliveryaddress && (
                   <p className="text-xs text-muted-foreground">{order.deliveryaddress}</p>
@@ -2236,12 +2236,12 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                 {picklist?.status === 'cancelled' ? (
                   <>
                     <XCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
-                    <span className="text-sm font-semibold text-red-800">Geannuleerd — deze picklijst is geannuleerd in Picqer</span>
+                    <span className="text-sm font-semibold text-red-800">{t.packing.cancelledBanner}</span>
                   </>
                 ) : (
                   <>
                     <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
-                    <span className="text-sm font-semibold text-emerald-800">Verzonden — deze picklijst is al ingepakt en verzonden</span>
+                    <span className="text-sm font-semibold text-emerald-800">{t.packing.completedBanner}</span>
                   </>
                 )}
               </div>
@@ -2250,7 +2250,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                   onClick={() => handleBatchNavigate(nextPicklistInBatch)}
                   className="inline-flex items-center gap-1.5 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors min-h-[44px] flex-shrink-0"
                 >
-                  Volgende order
+                  {t.packing.nextOrder}
                   <ChevronRight className="w-4 h-4" />
                 </button>
               )}
@@ -2286,7 +2286,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                 <div className="px-4 py-3 border-b border-border bg-muted/30">
                   <h2 className="font-semibold flex items-center gap-2 text-muted-foreground">
                     <Package className="w-4 h-4" />
-                    Producten ({totalProductsCount})
+                    {t.packing.productsTab} ({totalProductsCount})
                   </h2>
                 </div>
                 <div className="flex-1 overflow-y-auto p-3 lg:p-4 space-y-2 opacity-75">
@@ -2316,7 +2316,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                 <div className="px-4 py-3 border-b border-border bg-muted/30">
                   <h2 className="font-semibold flex items-center gap-2 text-muted-foreground">
                     <Box className="w-4 h-4" />
-                    Dozen ({session.boxes.length})
+                    {t.packing.boxesTab} ({session.boxes.length})
                   </h2>
                 </div>
                 <div className="flex-1 overflow-y-auto p-3 lg:p-4 space-y-3">
@@ -2336,7 +2336,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                           'bg-muted text-muted-foreground'
                         }`}>
                           {isCancelled ? <XCircle className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
-                          {isCancelled ? 'Geannuleerd' : isShipped ? 'Verzonden' : box.status === 'closed' ? 'Afgesloten' : 'Open'}
+                          {isCancelled ? t.status.cancelled : isShipped ? t.status.shipped : box.status === 'closed' ? t.status.closed : t.status.open}
                         </span>
                         <span className="text-sm font-bold truncate">{box.packagingName}</span>
                         <span className="text-xs text-muted-foreground">{box.products.length} prod</span>
@@ -2356,7 +2356,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                             title="Zending annuleren"
                           >
                             <XCircle className="w-3 h-3" />
-                            Annuleren
+                            {t.packing.cancelShipmentBtn}
                           </button>
                         )}
                       </div>
@@ -2381,7 +2381,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
           <div className="w-64 xl:w-72 border-l border-border flex-shrink-0 bg-muted/20 overflow-y-auto hidden lg:block">
             {/* Panel 1: Bezorging */}
             <SidebarPanel
-              title="Bezorging"
+              title={t.packing.delivery}
               icon={<MapPin className="w-4 h-4" />}
               isExpanded={expandedPanels.has('delivery')}
               onToggle={() => togglePanel('delivery')}
@@ -2389,7 +2389,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
               {orderLoading ? (
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <Loader2 className="w-3 h-3 animate-spin" />
-                  Laden...
+                  {t.common.loading}
                 </div>
               ) : order ? (
                   <div className="space-y-1.5 text-sm">
@@ -2412,41 +2412,41 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                     )}
                     {picklist?.idshippingprovider_profile && (
                       <div className="mt-2 pt-2 border-t border-border">
-                        <p className="text-xs text-muted-foreground">Verzendprofiel</p>
+                        <p className="text-xs text-muted-foreground">{t.packing.shippingProfile}</p>
                         <p className="text-xs font-medium">{shippingProfileName ?? `#${picklist.idshippingprovider_profile}`}</p>
                       </div>
                     )}
                   </div>
               ) : (
-                <p className="text-xs text-muted-foreground">Geen bezorggegevens beschikbaar</p>
+                <p className="text-xs text-muted-foreground">{t.packing.noDeliveryInfo}</p>
               )}
             </SidebarPanel>
 
             {/* Panel 2: Details */}
             <SidebarPanel
-              title="Details"
+              title={t.packing.details}
               icon={<Tag className="w-4 h-4" />}
               isExpanded={expandedPanels.has('details')}
               onToggle={() => togglePanel('details')}
             >
               <div className="space-y-2 text-sm">
                 <div>
-                  <p className="text-xs text-muted-foreground">Medewerker</p>
+                  <p className="text-xs text-muted-foreground">{t.packing.workerLabel}</p>
                   <p className="font-medium">{workerName}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">Picklist</p>
+                  <p className="text-xs text-muted-foreground">{t.packing.picklistLabel}</p>
                   <p className="font-medium">{picklist?.picklistid ?? session.picklistId}</p>
                 </div>
                 {order && (
                   <>
                     <div>
-                      <p className="text-xs text-muted-foreground">Bestelling</p>
+                      <p className="text-xs text-muted-foreground">{t.packing.orderLabel}</p>
                       <p className="font-medium">{order.orderid}</p>
                     </div>
                     {order.reference && (
                       <div>
-                        <p className="text-xs text-muted-foreground">Referentie</p>
+                        <p className="text-xs text-muted-foreground">{t.packing.referenceLabel}</p>
                         <p className="font-medium">{order.reference}</p>
                       </div>
                     )}
@@ -2454,7 +2454,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                 )}
                 {order && (
                   <div>
-                    <p className="text-xs text-muted-foreground">Order status</p>
+                    <p className="text-xs text-muted-foreground">{t.packing.orderStatus}</p>
                     <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium leading-none ${
                       order.status === 'completed' ? 'bg-green-100 text-green-800' :
                       order.status === 'processing' ? 'bg-blue-100 text-blue-800' :
@@ -2462,20 +2462,20 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                       order.status === 'paused' ? 'bg-amber-100 text-amber-800' :
                       'bg-gray-100 text-gray-800'
                     }`}>
-                      {translateStatus(order.status)}
+                      {translateStatus(order.status, t.status)}
                     </span>
                   </div>
                 )}
                 {picklist && (
                   <div>
-                    <p className="text-xs text-muted-foreground">Picklist status</p>
+                    <p className="text-xs text-muted-foreground">{t.packing.picklistStatus}</p>
                     <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium leading-none ${
                       picklist.status === 'new' ? 'bg-yellow-100 text-yellow-800' :
                       picklist.status === 'paused' ? 'bg-amber-100 text-amber-800' :
                       picklist.status === 'cancelled' ? 'bg-red-100 text-red-800' :
                       'bg-gray-100 text-gray-800'
                     }`}>
-                      {translateStatus(picklist.status)}
+                      {translateStatus(picklist.status, t.status)}
                     </span>
                   </div>
                 )}
@@ -2483,7 +2483,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                   const leverdag = order.orderfields.find((f: PicqerOrderfield) => f.idorderfield === ORDERFIELD_IDS.LEVERDAG)
                   return leverdag?.value ? (
                     <div>
-                      <p className="text-xs text-muted-foreground">Leverdag</p>
+                      <p className="text-xs text-muted-foreground">{t.packing.deliveryDay}</p>
                       <p className="font-medium">{leverdag.value}</p>
                     </div>
                   ) : null
@@ -2492,14 +2492,14 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                   const retailer = order.orderfields.find((f: PicqerOrderfield) => f.idorderfield === ORDERFIELD_IDS.RETAILER_NAME)
                   return retailer?.value ? (
                     <div>
-                      <p className="text-xs text-muted-foreground">Retailer</p>
+                      <p className="text-xs text-muted-foreground">{t.packing.retailerLabel}</p>
                       <p className="font-medium">{retailer.value}</p>
                     </div>
                   ) : null
                 })()}
                 <div>
-                  <p className="text-xs text-muted-foreground">Sessie status</p>
-                  <p className="font-medium">{translateStatus(session.status)}</p>
+                  <p className="text-xs text-muted-foreground">{t.packing.sessionStatus}</p>
+                  <p className="font-medium">{translateStatus(session.status, t.status)}</p>
                 </div>
                 {picklist && (
                   <div>
@@ -2542,13 +2542,13 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
 
             {/* Panel 3: Zendingen */}
             <SidebarPanel
-              title="Zendingen"
+              title={t.packing.shipments}
               icon={<Truck className="w-4 h-4" />}
               isExpanded={expandedPanels.has('shipments')}
               onToggle={() => togglePanel('shipments')}
             >
               {session.boxes.length === 0 ? (
-                <p className="text-xs text-muted-foreground">Nog geen dozen aangemaakt</p>
+                <p className="text-xs text-muted-foreground">{t.shipment.noBoxes}</p>
               ) : (
                 <div className="space-y-2">
                   {session.boxes.map((box, i) => {
@@ -2562,7 +2562,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                         <div className="flex items-center gap-2">
                           <span className="font-medium">Doos {i + 1}</span>
                           <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium leading-none ${statusBadge}`}>
-                            {translateStatus(box.status)}
+                            {translateStatus(box.status, t.status)}
                           </span>
                         </div>
                         <p className="text-xs text-muted-foreground">
@@ -2591,7 +2591,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-0.5"
                           >
-                            Label openen
+                            {t.packing.labelOpen}
                             <ExternalLink className="w-3 h-3" />
                           </a>
                         )}
@@ -2622,7 +2622,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
               }`}
             >
               <Package className="w-4 h-4" />
-              <span>Producten ({totalProductsCount})</span>
+              <span>{t.packing.productsTab} ({totalProductsCount})</span>
               {assignedProductsCount > 0 && (
                 <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-green-100 text-green-800 rounded-full">
                   {assignedProductsCount}
@@ -2641,7 +2641,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
               }`}
             >
               <Box className="w-4 h-4" />
-              <span>Dozen ({session.boxes.length})</span>
+              <span>{t.packing.boxesTab} ({session.boxes.length})</span>
               {activeProduct && activeTab !== 'boxes' && (
                 <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-blue-100 text-blue-800 rounded-full animate-pulse">
                   Drop
@@ -2740,7 +2740,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                   <div className="flex items-center justify-between">
                     <h2 className="font-semibold flex items-center gap-2">
                       <Package className="w-4 h-4" />
-                      Producten ({totalProductsCount})
+                      {t.packing.productsTab} ({totalProductsCount})
                     </h2>
                     {unassignedProducts.length > 0 && (
                       <div className="flex items-center gap-2">
@@ -2888,7 +2888,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                 <div className="hidden lg:block px-4 py-3 border-b border-border bg-muted/30">
                   <h2 className="font-semibold flex items-center gap-2">
                     <Box className="w-4 h-4" />
-                    Dozen ({session.boxes.length})
+                    {t.packing.boxesTab} ({session.boxes.length})
                   </h2>
                 </div>
                 <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 lg:p-4 space-y-3">
@@ -2921,7 +2921,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                       <Plus className="w-5 h-5 lg:w-6 lg:h-6 text-muted-foreground group-hover:text-primary" />
                     </div>
                     <span className="font-medium text-muted-foreground group-hover:text-primary">
-                      Doos toevoegen
+                      {t.packing.addBox}
                     </span>
                   </button>
                 </div>
@@ -2946,7 +2946,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
           <div className="w-64 xl:w-72 border-l border-border flex-shrink-0 bg-muted/20 overflow-y-auto hidden lg:block">
             {/* Panel 1: Bezorging */}
             <SidebarPanel
-              title="Bezorging"
+              title={t.packing.delivery}
               icon={<MapPin className="w-4 h-4" />}
               isExpanded={expandedPanels.has('delivery')}
               onToggle={() => togglePanel('delivery')}
@@ -2954,7 +2954,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
               {orderLoading ? (
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <Loader2 className="w-3 h-3 animate-spin" />
-                  Laden...
+                  {t.common.loading}
                 </div>
               ) : order ? (
                   <div className="space-y-1.5 text-sm">
@@ -2980,45 +2980,45 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                       className="inline-flex items-center gap-1 mt-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground border border-border rounded hover:bg-muted transition-colors"
                     >
                       <Pencil className="w-3 h-3" />
-                      Adres wijzigen
+                      {t.packing.editAddress}
                     </button>
                     {picklist?.idshippingprovider_profile && (
                       <div className="mt-2 pt-2 border-t border-border">
-                        <p className="text-xs text-muted-foreground">Verzendprofiel</p>
+                        <p className="text-xs text-muted-foreground">{t.packing.shippingProfile}</p>
                         <p className="text-xs font-medium">{shippingProfileName ?? `#${picklist.idshippingprovider_profile}`}</p>
                       </div>
                     )}
                   </div>
               ) : (
-                <p className="text-xs text-muted-foreground">Geen bezorggegevens beschikbaar</p>
+                <p className="text-xs text-muted-foreground">{t.packing.noDeliveryInfo}</p>
               )}
             </SidebarPanel>
 
             {/* Panel 2: Details */}
             <SidebarPanel
-              title="Details"
+              title={t.packing.details}
               icon={<Tag className="w-4 h-4" />}
               isExpanded={expandedPanels.has('details')}
               onToggle={() => togglePanel('details')}
             >
               <div className="space-y-2 text-sm">
                 <div>
-                  <p className="text-xs text-muted-foreground">Medewerker</p>
+                  <p className="text-xs text-muted-foreground">{t.packing.workerLabel}</p>
                   <p className="font-medium">{workerName}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">Picklist</p>
+                  <p className="text-xs text-muted-foreground">{t.packing.picklistLabel}</p>
                   <p className="font-medium">{picklist?.picklistid ?? session.picklistId}</p>
                 </div>
                 {order && (
                   <>
                     <div>
-                      <p className="text-xs text-muted-foreground">Bestelling</p>
+                      <p className="text-xs text-muted-foreground">{t.packing.orderLabel}</p>
                       <p className="font-medium">{order.orderid}</p>
                     </div>
                     {order.reference && (
                       <div>
-                        <p className="text-xs text-muted-foreground">Referentie</p>
+                        <p className="text-xs text-muted-foreground">{t.packing.referenceLabel}</p>
                         <p className="font-medium">{order.reference}</p>
                       </div>
                     )}
@@ -3026,7 +3026,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                 )}
                 {order && (
                   <div>
-                    <p className="text-xs text-muted-foreground">Order status</p>
+                    <p className="text-xs text-muted-foreground">{t.packing.orderStatus}</p>
                     <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium leading-none ${
                       order.status === 'completed' ? 'bg-green-100 text-green-800' :
                       order.status === 'processing' ? 'bg-blue-100 text-blue-800' :
@@ -3034,20 +3034,20 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                       order.status === 'paused' ? 'bg-amber-100 text-amber-800' :
                       'bg-gray-100 text-gray-800'
                     }`}>
-                      {translateStatus(order.status)}
+                      {translateStatus(order.status, t.status)}
                     </span>
                   </div>
                 )}
                 {picklist && (
                   <div>
-                    <p className="text-xs text-muted-foreground">Picklist status</p>
+                    <p className="text-xs text-muted-foreground">{t.packing.picklistStatus}</p>
                     <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium leading-none ${
                       picklist.status === 'new' ? 'bg-yellow-100 text-yellow-800' :
                       picklist.status === 'paused' ? 'bg-amber-100 text-amber-800' :
                       picklist.status === 'cancelled' ? 'bg-red-100 text-red-800' :
                       'bg-gray-100 text-gray-800'
                     }`}>
-                      {translateStatus(picklist.status)}
+                      {translateStatus(picklist.status, t.status)}
                     </span>
                   </div>
                 )}
@@ -3055,7 +3055,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                   const leverdag = order.orderfields.find((f: PicqerOrderfield) => f.idorderfield === ORDERFIELD_IDS.LEVERDAG)
                   return leverdag?.value ? (
                     <div>
-                      <p className="text-xs text-muted-foreground">Leverdag</p>
+                      <p className="text-xs text-muted-foreground">{t.packing.deliveryDay}</p>
                       <p className="font-medium">{leverdag.value}</p>
                     </div>
                   ) : null
@@ -3064,14 +3064,14 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                   const retailer = order.orderfields.find((f: PicqerOrderfield) => f.idorderfield === ORDERFIELD_IDS.RETAILER_NAME)
                   return retailer?.value ? (
                     <div>
-                      <p className="text-xs text-muted-foreground">Retailer</p>
+                      <p className="text-xs text-muted-foreground">{t.packing.retailerLabel}</p>
                       <p className="font-medium">{retailer.value}</p>
                     </div>
                   ) : null
                 })()}
                 <div>
-                  <p className="text-xs text-muted-foreground">Sessie status</p>
-                  <p className="font-medium">{translateStatus(session.status)}</p>
+                  <p className="text-xs text-muted-foreground">{t.packing.sessionStatus}</p>
+                  <p className="font-medium">{translateStatus(session.status, t.status)}</p>
                 </div>
                 {picklist && (
                   <div>
@@ -3114,13 +3114,13 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
 
             {/* Panel 3: Zendingen */}
             <SidebarPanel
-              title="Zendingen"
+              title={t.packing.shipments}
               icon={<Truck className="w-4 h-4" />}
               isExpanded={expandedPanels.has('shipments')}
               onToggle={() => togglePanel('shipments')}
             >
               {session.boxes.length === 0 ? (
-                <p className="text-xs text-muted-foreground">Nog geen dozen aangemaakt</p>
+                <p className="text-xs text-muted-foreground">{t.shipment.noBoxes}</p>
               ) : (
                 <div className="space-y-2">
                   {session.boxes.map((box, i) => {
@@ -3134,7 +3134,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                         <div className="flex items-center gap-2">
                           <span className="font-medium">Doos {i + 1}</span>
                           <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium leading-none ${statusBadge}`}>
-                            {translateStatus(box.status)}
+                            {translateStatus(box.status, t.status)}
                           </span>
                         </div>
                         <p className="text-xs text-muted-foreground">
@@ -3163,7 +3163,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-0.5"
                           >
-                            Label openen
+                            {t.packing.labelOpen}
                             <ExternalLink className="w-3 h-3" />
                           </a>
                         )}
@@ -3210,7 +3210,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
           setBoxSearchQuery('')
           setShowAllPackagings(false)
         }}
-        title="Doos toevoegen"
+        title="{t.packing.addBox}"
         className="max-w-5xl max-h-[90vh] flex flex-col"
       >
         <div className="flex flex-col overflow-hidden">
@@ -3220,7 +3220,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <input
                 type="text"
-                placeholder="Zoek verpakking..."
+                placeholder={t.packing.searchPackaging}
                 value={boxSearchQuery}
                 onChange={(e) => {
                   setBoxSearchQuery(e.target.value)
@@ -3521,32 +3521,32 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
       {editingAddress && order && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setEditingAddress(false)}>
           <div className="bg-card rounded-xl shadow-xl p-6 mx-4 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold mb-4">Afleveradres bewerken</h3>
+            <h3 className="text-lg font-semibold mb-4">{t.packing.editAddressTitle}</h3>
             <div className="space-y-3">
               <div>
-                <label className="text-xs text-muted-foreground">Naam</label>
+                <label className="text-xs text-muted-foreground">{t.packing.name}</label>
                 <input className="w-full px-3 py-2 min-h-[44px] text-sm border border-border rounded-lg bg-background" value={addressForm.deliveryname} onChange={(e) => setAddressForm((f) => ({ ...f, deliveryname: e.target.value }))} />
               </div>
               <div>
-                <label className="text-xs text-muted-foreground">Contactpersoon</label>
+                <label className="text-xs text-muted-foreground">{t.packing.contactPerson}</label>
                 <input className="w-full px-3 py-2 min-h-[44px] text-sm border border-border rounded-lg bg-background" value={addressForm.deliverycontactname} onChange={(e) => setAddressForm((f) => ({ ...f, deliverycontactname: e.target.value }))} />
               </div>
               <div>
-                <label className="text-xs text-muted-foreground">Adres</label>
+                <label className="text-xs text-muted-foreground">{t.packing.address}</label>
                 <input className="w-full px-3 py-2 min-h-[44px] text-sm border border-border rounded-lg bg-background" value={addressForm.deliveryaddress} onChange={(e) => setAddressForm((f) => ({ ...f, deliveryaddress: e.target.value }))} />
               </div>
               <div className="flex gap-3">
                 <div className="w-1/3">
-                  <label className="text-xs text-muted-foreground">Postcode</label>
+                  <label className="text-xs text-muted-foreground">{t.packing.zipCode}</label>
                   <input className="w-full px-3 py-2 min-h-[44px] text-sm border border-border rounded-lg bg-background" value={addressForm.deliveryzipcode} onChange={(e) => setAddressForm((f) => ({ ...f, deliveryzipcode: e.target.value }))} />
                 </div>
                 <div className="flex-1">
-                  <label className="text-xs text-muted-foreground">Stad</label>
+                  <label className="text-xs text-muted-foreground">{t.packing.city}</label>
                   <input className="w-full px-3 py-2 min-h-[44px] text-sm border border-border rounded-lg bg-background" value={addressForm.deliverycity} onChange={(e) => setAddressForm((f) => ({ ...f, deliverycity: e.target.value }))} />
                 </div>
               </div>
               <div>
-                <label className="text-xs text-muted-foreground">Land</label>
+                <label className="text-xs text-muted-foreground">{t.packing.country}</label>
                 <input className="w-full px-3 py-2 min-h-[44px] text-sm border border-border rounded-lg bg-background" value={addressForm.deliverycountry} onChange={(e) => setAddressForm((f) => ({ ...f, deliverycountry: e.target.value }))} />
               </div>
             </div>
@@ -3555,7 +3555,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                 Annuleren
               </button>
               <button onClick={saveAddress} disabled={addressSaving} className="px-4 py-2 min-h-[44px] bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50">
-                {addressSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Opslaan'}
+                {addressSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : t.common.save}
               </button>
             </div>
           </div>
@@ -3566,9 +3566,9 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
       {showClosePicklistConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowClosePicklistConfirm(false)}>
           <div className="bg-card rounded-xl shadow-xl p-6 mx-4 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold mb-2">Picklijst sluiten?</h3>
+            <h3 className="text-lg font-semibold mb-2">{t.packing.closePicklistTitle}</h3>
             <p className="text-sm text-muted-foreground mb-4">
-              Weet je zeker dat je deze picklijst wilt sluiten? Dit kan niet ongedaan gemaakt worden.
+              {t.packing.closePicklistConfirm}
             </p>
             <div className="flex justify-end gap-3">
               <button

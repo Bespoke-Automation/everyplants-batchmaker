@@ -24,6 +24,7 @@ const nl = {
     gram: 'gram',
     kg: 'kg',
     noResults: 'Geen resultaten',
+    saving: 'Opslaan...',
   },
   layout: {
     queue: 'Wachtrij',
@@ -55,6 +56,26 @@ const nl = {
     allCompleted: 'Alle picklijsten afgerond',
     backToBatch: 'Terug naar batch',
   },
+  status: {
+    processing: 'In verwerking',
+    completed: 'Voltooid',
+    new: 'Nieuw',
+    picking: 'Aan het picken',
+    paused: 'Gepauzeerd',
+    cancelled: 'Geannuleerd',
+    shipped: 'Verzonden',
+    closed: 'Afgesloten',
+    open: 'Open',
+    pending: 'Wachtend',
+    packing: 'Inpakken',
+    shipping: 'Verzenden',
+    claimed: 'Geclaimd',
+    assigned: 'Toegewezen',
+    failed: 'Mislukt',
+    labelFetched: 'Label opgehaald',
+    shipmentCreated: 'Zending aangemaakt',
+    error: 'Fout',
+  },
   packing: {
     // Header
     productsAssigned: 'producten toegewezen',
@@ -62,6 +83,8 @@ const nl = {
     shipAll: 'Alles verzenden',
     closePicklist: 'Picklijst sluiten',
     closePicklistConfirm: 'Weet je zeker dat je deze picklijst wilt sluiten? Dit kan niet ongedaan gemaakt worden.',
+    closePicklistTitle: 'Picklijst sluiten?',
+    closePicklistDesc: 'De picklijst wordt gesloten in Picqer. Dit kan niet ongedaan worden gemaakt.',
 
     // Tabs
     productsTab: 'Producten',
@@ -91,6 +114,7 @@ const nl = {
     dragMore: '+ Sleep meer producten',
     noPicqerId: 'Geen Picqer ID — zending niet mogelijk',
     cancelShipment: 'Annuleer',
+    cancelShipmentBtn: 'Annuleren',
 
     // Add box modal
     addBox: 'Doos toevoegen',
@@ -102,6 +126,7 @@ const nl = {
 
     // Completed state
     completedBanner: 'Verzonden — deze picklijst is al ingepakt en verzonden',
+    cancelledBanner: 'Geannuleerd — deze picklijst is geannuleerd in Picqer',
     nextOrder: 'Volgende order',
     goToNext: 'Ga naar volgende openstaande',
 
@@ -120,14 +145,47 @@ const nl = {
     country: 'Land',
     shippingProfile: 'Verzendprofiel',
 
+    // Sidebar detail labels
+    workerLabel: 'Medewerker',
+    picklistLabel: 'Picklist',
+    orderLabel: 'Bestelling',
+    referenceLabel: 'Referentie',
+    orderStatus: 'Order status',
+    picklistStatus: 'Picklist status',
+    deliveryDay: 'Leverdag',
+    retailerLabel: 'Retailer',
+    sessionStatus: 'Sessie status',
+    productsLabel: 'Producten',
+    picked: 'gepickt',
+    tagsLabel: 'Tags',
+    createdAt: 'Aangemaakt',
+    boxesLabel: 'Dozen',
+    noStation: 'Geen werkstation',
+
     // Barcode
     scanFeedback: 'Scan feedback',
+    scanProductNotFound: 'Product niet gevonden',
+    scanProductAssigned: 'Toegewezen aan doos',
+    scanBoxAdded: 'Doos toegevoegd',
+    scanUnknownBarcode: 'Onbekende barcode',
+    shipmentCancelled: 'Zending geannuleerd',
+    cancelFailed: 'Annuleren mislukt',
 
     // Engine
     engineAdvice: 'Engine advies',
+    engineAdviceFollowed: 'Engine-advies volledig gevolgd',
     fullMatch: 'Advies',
     partialMatch: 'Gedeeltelijk advies',
     noMatch: 'Geen advies',
+    totalCost: 'totaal',
+
+    // Misc
+    boxNumber: 'Doos',
+    labelOpen: 'Label openen',
+    shippedAt: 'Verzonden',
+    prod: 'prod',
+    drop: 'Drop',
+    closePicklistFailed: 'Picklijst sluiten mislukt',
   },
   shipment: {
     title: 'Zendingen maken',
