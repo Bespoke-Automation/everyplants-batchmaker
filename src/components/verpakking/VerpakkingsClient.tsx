@@ -786,17 +786,48 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
       const locations = pp.pick_locations?.filter(l => l.amount > 0) ?? []
 
       if (locations.length > 1) {
-        // Split into separate lines per location
+        // Multi-location: distribute total assignments across location items
+        const totalAssignments = getAssignments(pp)
+        let totalAssigned = totalAssignments.reduce((sum, a) => sum + a.amount, 0)
+
         for (const loc of locations) {
-          items.push(buildItem(
-            pp,
-            index,
-            loc.amount,
-            loc.amount_picked,
-            loc.name,
-            `${pp.idpicklist_product ?? index}-loc-${loc.idlocation ?? loc.name}`,
-            loc.idpicklist_product_location,
-          ))
+          // This location item consumes up to loc.amount from the total assigned
+          const locAssigned = Math.min(totalAssigned, loc.amount)
+          totalAssigned -= locAssigned
+
+          const assignedBoxId = locAssigned >= loc.amount && totalAssignments.length >= 1
+            ? totalAssignments[0].boxId
+            : null
+          const firstSessionProductId = totalAssignments.length > 0 ? totalAssignments[0].sessionProductId : null
+          const idSuffix = `${pp.idpicklist_product ?? index}-loc-${loc.idlocation ?? loc.name}`
+          const id = firstSessionProductId && locAssigned > 0
+            ? `${firstSessionProductId}-loc-${loc.idlocation ?? loc.name}`
+            : `picklist-${idSuffix}-${pp.idproduct}`
+
+          const compInfo = compositionMap.get(pp.idproduct)
+
+          items.push({
+            id,
+            productCode: pp.productcode,
+            name: pp.name,
+            amount: loc.amount,
+            amountPicked: loc.amount_picked,
+            weight: 0,
+            imageUrl: pp.image ?? null,
+            location: loc.name,
+            assignedBoxId,
+            amountAssigned: locAssigned,
+            assignedBoxes: locAssigned > 0 ? totalAssignments : [],
+            customFields: productCustomFields.get(pp.idproduct),
+            idpicklist_product: pp.idpicklist_product,
+            idpicklist_product_location: loc.idpicklist_product_location,
+            idproduct: pp.idproduct,
+            compositionParent: compInfo && !compInfo.parentIsPackaging ? {
+              name: compInfo.parentName,
+              productCode: compInfo.parentProductCode,
+              idproduct: compInfo.parentIdProduct,
+            } : undefined,
+          })
         }
       } else {
         // Single location or no locations — one line
