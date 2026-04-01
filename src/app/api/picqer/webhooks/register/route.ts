@@ -3,8 +3,10 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { listWebhooks, createWebhook, deleteWebhook, reactivateWebhook } from '@/lib/picqer/client'
 import { PICQER_STOCK_WEBHOOK_EVENTS } from '@/lib/floriday/stock-sync-config'
+import { PICQER_ORDER_WEBHOOK_EVENTS } from '@/lib/verpakking/box-tag-config'
 
-const WEBHOOK_ADDRESS = 'https://everyplants-batchmaker.vercel.app/api/picqer/webhooks/stock'
+const STOCK_WEBHOOK_ADDRESS = 'https://everyplants-batchmaker.vercel.app/api/picqer/webhooks/stock'
+const ORDER_WEBHOOK_ADDRESS = 'https://everyplants-batchmaker.vercel.app/api/picqer/webhooks/orders'
 
 /**
  * GET: List all registered webhooks.
@@ -12,11 +14,19 @@ const WEBHOOK_ADDRESS = 'https://everyplants-batchmaker.vercel.app/api/picqer/we
 export async function GET() {
   try {
     const hooks = await listWebhooks()
-    const stockHooks = hooks.filter(h => h.address === WEBHOOK_ADDRESS)
+    const stockHooks = hooks.filter(h => h.address === STOCK_WEBHOOK_ADDRESS)
+    const orderHooks = hooks.filter(h => h.address === ORDER_WEBHOOK_ADDRESS)
 
     return NextResponse.json({
       total: hooks.length,
       stockHooks: stockHooks.map(h => ({
+        idhook: h.idhook,
+        event: h.event,
+        active: h.active,
+        name: h.name,
+        created: h.created,
+      })),
+      orderHooks: orderHooks.map(h => ({
         idhook: h.idhook,
         event: h.event,
         active: h.active,
@@ -51,15 +61,17 @@ export async function POST(request: Request) {
       }
 
       const existing = await listWebhooks()
-      const existingEvents = new Set(
-        existing.filter(h => h.address === WEBHOOK_ADDRESS).map(h => h.event)
-      )
 
       const created: string[] = []
       const skipped: string[] = []
 
+      // Register stock webhooks
+      const existingStockEvents = new Set(
+        existing.filter(h => h.address === STOCK_WEBHOOK_ADDRESS).map(h => h.event)
+      )
+
       for (const event of PICQER_STOCK_WEBHOOK_EVENTS) {
-        if (existingEvents.has(event)) {
+        if (existingStockEvents.has(event)) {
           skipped.push(event)
           continue
         }
@@ -67,7 +79,27 @@ export async function POST(request: Request) {
         await createWebhook(
           `Stock Sync: ${event}`,
           event,
-          WEBHOOK_ADDRESS,
+          STOCK_WEBHOOK_ADDRESS,
+          secret
+        )
+        created.push(event)
+      }
+
+      // Register order webhooks (for automatic box tag assignment)
+      const existingOrderEvents = new Set(
+        existing.filter(h => h.address === ORDER_WEBHOOK_ADDRESS).map(h => h.event)
+      )
+
+      for (const event of PICQER_ORDER_WEBHOOK_EVENTS) {
+        if (existingOrderEvents.has(event)) {
+          skipped.push(event)
+          continue
+        }
+
+        await createWebhook(
+          `Box Tags: ${event}`,
+          event,
+          ORDER_WEBHOOK_ADDRESS,
           secret
         )
         created.push(event)
@@ -83,10 +115,12 @@ export async function POST(request: Request) {
 
     if (action === 'deregister') {
       const existing = await listWebhooks()
-      const stockHooks = existing.filter(h => h.address === WEBHOOK_ADDRESS)
+      const allManagedHooks = existing.filter(h =>
+        h.address === STOCK_WEBHOOK_ADDRESS || h.address === ORDER_WEBHOOK_ADDRESS
+      )
 
       const deleted: number[] = []
-      for (const hook of stockHooks) {
+      for (const hook of allManagedHooks) {
         await deleteWebhook(hook.idhook)
         deleted.push(hook.idhook)
       }
@@ -101,7 +135,7 @@ export async function POST(request: Request) {
     if (action === 'reactivate') {
       const existing = await listWebhooks()
       const inactiveHooks = existing.filter(
-        h => h.address === WEBHOOK_ADDRESS && !h.active
+        h => (h.address === STOCK_WEBHOOK_ADDRESS || h.address === ORDER_WEBHOOK_ADDRESS) && !h.active
       )
 
       const reactivated: number[] = []
