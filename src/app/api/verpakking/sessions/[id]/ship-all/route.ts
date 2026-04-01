@@ -98,10 +98,12 @@ export async function POST(
     let closeWarning: string | undefined
 
     // Ship each box individually — 1 box = 1 shipment = 1 label
+    // Claims are serial (atomic lock), then shipments run in parallel
     console.log(`[ship-all] Individual shipping: ${closedBoxes.length} boxes`)
 
+    // Phase 1: Claim all boxes serially (atomic locks)
+    const boxesToShip: typeof closedBoxes = []
     for (const box of closedBoxes) {
-      // Skip boxes that already have a shipment
       if (box.shipment_id) {
         results.push({
           boxId: box.id,
@@ -117,13 +119,33 @@ export async function POST(
         results.push({ boxId: box.id, success: false, error: 'Box is al geclaimd door een ander proces' })
         continue
       }
+      boxesToShip.push(box)
+    }
 
-      const result = await shipSingleBox(
-        sessionId, session.picklist_id, box.id,
-        shippingProviderId, sanitizePackagingId(box.picqer_packaging_id),
-        weights?.[box.id], packingStationId
+    // Phase 2: Ship all claimed boxes in parallel
+    if (boxesToShip.length > 0) {
+      const shipResults = await Promise.allSettled(
+        boxesToShip.map(box =>
+          shipSingleBox(
+            sessionId, session.picklist_id, box.id,
+            shippingProviderId, sanitizePackagingId(box.picqer_packaging_id),
+            weights?.[box.id], packingStationId
+          )
+        )
       )
-      results.push(result)
+
+      for (let i = 0; i < shipResults.length; i++) {
+        const result = shipResults[i]
+        if (result.status === 'fulfilled') {
+          results.push(result.value)
+        } else {
+          results.push({
+            boxId: boxesToShip[i].id,
+            success: false,
+            error: result.reason instanceof Error ? result.reason.message : 'Unknown error',
+          })
+        }
+      }
     }
 
     // Step 2: Try to complete session (only if all products are packed)

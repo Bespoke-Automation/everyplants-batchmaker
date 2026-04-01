@@ -5,6 +5,7 @@ import { Check, Loader2, AlertCircle, AlertTriangle, Clock, Download, RefreshCw,
 import Dialog from '@/components/ui/Dialog'
 import type { BoxShipmentStatus } from '@/types/verpakking'
 import type { ShippingMethod } from '@/lib/picqer/types'
+import { useTranslation } from '@/i18n/LanguageContext'
 
 // Session box type (matches usePackingSession internal type)
 interface SessionBox {
@@ -31,6 +32,7 @@ interface ShipmentProgressProps {
   onShipAll: (shippingProviderId: number, boxWeights?: Map<string, number>) => void
   onRetryBox: (boxId: string, shippingProviderId: number) => void
   picklistId: number | null
+  sessionId: string | null
   defaultShippingProviderId: number | null
   boxWeights?: Map<string, number>
   onNextPicklist?: () => void
@@ -55,20 +57,20 @@ function getStatusIcon(status: BoxShipmentStatus['status'] | undefined) {
   }
 }
 
-function getStatusText(status: BoxShipmentStatus['status'] | undefined) {
+function getStatusText(status: BoxShipmentStatus['status'] | undefined, st: { shipped: string; labelCreated: string; creating: string; fetchingLabel: string; failed: string; waiting: string }) {
   switch (status) {
     case 'shipped':
-      return 'Verzonden'
+      return st.shipped
     case 'labeled':
-      return 'Label aangemaakt'
+      return st.labelCreated
     case 'shipping':
-      return 'Zending aanmaken...'
+      return st.creating
     case 'fetching_label':
-      return 'Label ophalen...'
+      return st.fetchingLabel
     case 'error':
-      return 'Fout'
+      return st.failed
     default:
-      return 'Wachten...'
+      return st.waiting
   }
 }
 
@@ -80,6 +82,7 @@ export default function ShipmentProgress({
   onShipAll,
   onRetryBox,
   picklistId,
+  sessionId,
   defaultShippingProviderId,
   boxWeights,
   onNextPicklist,
@@ -88,6 +91,7 @@ export default function ShipmentProgress({
   hasPackingStation,
   activeBoxId,
 }: ShipmentProgressProps) {
+  const { t } = useTranslation()
   const [phase, setPhase] = useState<DialogPhase>('loading')
   const [methods, setMethods] = useState<ShippingMethod[]>([])
   const [selectedProviderId, setSelectedProviderId] = useState<number | null>(null)
@@ -160,7 +164,7 @@ export default function ShipmentProgress({
     // No boxes to ship
     if (boxes.length === 0) {
       setPhase('error')
-      setLoadError('Geen afgesloten dozen om te verzenden')
+      setLoadError(t.shipment.noBoxes)
       return
     }
 
@@ -197,7 +201,7 @@ export default function ShipmentProgress({
 
         if (fetchedMethods.length === 0) {
           setPhase('error')
-          setLoadError('Geen verzendmethoden beschikbaar voor deze picklist. Controleer de instellingen in Picqer.')
+          setLoadError(t.shipment.noMethods)
           return
         }
 
@@ -292,8 +296,14 @@ export default function ShipmentProgress({
     .map((p) => p.labelUrl!)
 
   const handleDownloadAllLabels = () => {
-    for (const url of labelUrls) {
-      window.open(url, '_blank')
+    if (labelUrls.length === 1) {
+      window.open(labelUrls[0], '_blank')
+    } else if (sessionId) {
+      // Multiple labels — open combined PDF (avoids browser popup blocker)
+      window.open(`/api/verpakking/sessions/${sessionId}/labels/combined`, '_blank')
+    } else {
+      // Fallback: open first label only
+      window.open(labelUrls[0], '_blank')
     }
   }
 
@@ -338,7 +348,7 @@ export default function ShipmentProgress({
     <Dialog
       open={isOpen}
       onClose={onClose}
-      title="Zendingen maken"
+      title={t.shipment.title}
       className="max-w-2xl"
     >
       <div className="p-6 sm:p-8">
@@ -346,7 +356,7 @@ export default function ShipmentProgress({
         {phase === 'loading' && (
           <div className="flex flex-col items-center justify-center py-8 gap-3">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            <p className="text-sm text-muted-foreground">Verzendmethoden ophalen...</p>
+            <p className="text-sm text-muted-foreground">{t.shipment.fetchingMethods}</p>
           </div>
         )}
 
@@ -373,7 +383,7 @@ export default function ShipmentProgress({
           <div className="space-y-6">
             {/* Verzendprofiel */}
             <div className="flex items-center justify-between gap-4 min-h-[56px]">
-              <span className="text-lg text-muted-foreground flex-shrink-0">Verzendprofiel</span>
+              <span className="text-lg text-muted-foreground flex-shrink-0">{t.shipment.shippingProfile}</span>
               <div className="flex items-center gap-3 min-w-0">
                 <span className="text-lg font-medium truncate">
                   {methods.find(m => m.idshippingprovider_profile === resolvedProviderId)?.name || 'Onbekend'}
@@ -383,7 +393,7 @@ export default function ShipmentProgress({
                     onClick={() => setPhase('select_method')}
                     className="px-5 py-2.5 text-lg text-primary border border-primary/30 rounded-lg hover:bg-primary/5 transition-colors min-h-[52px]"
                   >
-                    Wijzig
+                    {t.shipment.change}
                   </button>
                 )}
               </div>
@@ -420,7 +430,7 @@ export default function ShipmentProgress({
 
             {/* Aantal pakketten */}
             <div className="flex items-center justify-between min-h-[48px]">
-              <span className="text-lg text-muted-foreground">Aantal pakketten</span>
+              <span className="text-lg text-muted-foreground">{t.shipment.packages}</span>
               <span className="text-lg font-medium">{boxes.filter(b => b.status === 'closed').length}</span>
             </div>
 
@@ -428,7 +438,7 @@ export default function ShipmentProgress({
             {!hasPackingStation && (
               <div className="flex items-start gap-3 px-4 py-3.5 bg-amber-50 border border-amber-200 rounded-lg text-base text-amber-800">
                 <AlertTriangle className="w-5 h-5 mt-0.5 flex-shrink-0" />
-                <span>Geen werkstation geselecteerd. Labels worden niet automatisch geprint.</span>
+                <span>{t.shipment.noStationWarning}</span>
               </div>
             )}
 
@@ -438,14 +448,14 @@ export default function ShipmentProgress({
                 onClick={onClose}
                 className="px-6 py-4 min-h-[56px] text-lg rounded-lg hover:bg-muted transition-colors"
               >
-                Annuleren
+                {t.common.cancel}
               </button>
               <button
                 onClick={handleStartShipping}
                 disabled={!resolvedProviderId}
                 className="flex-1 max-w-[280px] py-4 min-h-[56px] bg-primary text-primary-foreground rounded-lg text-lg font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
               >
-                {boxes.filter(b => b.status === 'closed').length === 1 ? 'Zending maken' : 'Zendingen maken'}
+                {boxes.filter(b => b.status === 'closed').length === 1 ? t.shipment.createSingle : t.shipment.createMultiple}
               </button>
             </div>
           </div>
@@ -570,14 +580,14 @@ export default function ShipmentProgress({
                 onClick={onClose}
                 className="px-4 py-2 min-h-[48px] text-sm rounded-lg hover:bg-muted transition-colors"
               >
-                Annuleren
+                {t.common.cancel}
               </button>
               <button
                 onClick={() => setPhase('configure')}
                 disabled={!resolvedProviderId}
                 className="px-6 py-2.5 min-h-[48px] bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
               >
-                Bevestigen
+                {t.common.confirm}
               </button>
             </div>
           </div>
@@ -599,7 +609,7 @@ export default function ShipmentProgress({
             <div className="mb-4">
               <div className="flex items-center justify-between text-sm mb-2">
                 <span className="text-muted-foreground">
-                  {allDone ? 'Alle dozen verzonden!' : `${shippedCount}/${totalBoxes} dozen verzonden`}
+                  {allDone ? t.shipment.allBoxesShipped : `${shippedCount}/${totalBoxes} ${t.shipment.shippedCount}`}
                 </span>
                 <span className="font-semibold text-lg">{progressPercentage}%</span>
               </div>
@@ -639,7 +649,7 @@ export default function ShipmentProgress({
                           Doos {i + 1}: {box.packagingName}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {getStatusText(status)}
+                          {getStatusText(status, t.shipment)}
                           {progress?.trackingCode && (
                             <span className="ml-1 font-mono">{progress.trackingCode}</span>
                           )}
@@ -660,7 +670,7 @@ export default function ShipmentProgress({
                           className="flex items-center gap-1.5 px-3 py-1.5 min-h-[44px] text-sm font-medium text-red-700 bg-red-100 hover:bg-red-200 rounded-lg transition-colors flex-shrink-0"
                         >
                           <RefreshCw className="w-4 h-4" />
-                          Opnieuw
+                          {t.common.retry}
                         </button>
                       )}
                       {progress?.labelUrl && (
@@ -685,9 +695,9 @@ export default function ShipmentProgress({
               <div className="mb-4 flex items-start gap-2 px-3 py-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
                 <CheckCircle2 className="w-5 h-5 mt-0.5 flex-shrink-0 text-green-600" />
                 <div className="flex-1">
-                  <p className="font-semibold">Alle zendingen aangemaakt</p>
+                  <p className="font-semibold">{t.shipment.allShipped}</p>
                   {sessionCompleted && (
-                    <p className="mt-0.5 text-green-700">Picklist is afgesloten in Picqer</p>
+                    <p className="mt-0.5 text-green-700">{t.shipment.picklistClosed}</p>
                   )}
                 </div>
               </div>
@@ -703,7 +713,7 @@ export default function ShipmentProgress({
                     className="flex items-center gap-2 px-3 py-2 min-h-[48px] text-sm text-primary hover:bg-primary/10 rounded-lg transition-colors"
                   >
                     <Printer className="w-4 h-4" />
-                    Labels printen
+                    {t.shipment.printLabels}
                   </button>
                 )}
                 {hasErrors && !isShipping && (
@@ -711,7 +721,7 @@ export default function ShipmentProgress({
                     onClick={() => setPhase('configure')}
                     className="flex items-center gap-1.5 px-3 py-2 min-h-[48px] text-sm text-muted-foreground hover:bg-muted rounded-lg transition-colors"
                   >
-                    Instellingen wijzigen
+                    {t.shipment.changeSettings}
                   </button>
                 )}
               </div>
@@ -730,7 +740,7 @@ export default function ShipmentProgress({
                       onClick={onNextPicklist}
                       className="flex items-center gap-2 px-5 py-2.5 min-h-[48px] bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors"
                     >
-                      Volgende order
+                      {t.shipment.nextOrder}
                       <ChevronRight className="w-4 h-4" />
                     </button>
                   </>
@@ -746,7 +756,7 @@ export default function ShipmentProgress({
                         : 'hover:bg-muted'
                     }`}
                   >
-                    {allDone ? 'Klaar' : 'Sluiten'}
+                    {allDone ? t.common.done : t.common.close}
                   </button>
                 )}
               </div>
