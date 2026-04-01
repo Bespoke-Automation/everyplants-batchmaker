@@ -21,6 +21,7 @@ import {
   AlertTriangle,
   ZoomIn,
 } from 'lucide-react'
+import { useTranslation } from '@/i18n/LanguageContext'
 
 // Lightweight product type for display within a box
 export interface BoxProduct {
@@ -74,6 +75,7 @@ export default function BoxCard({
   onAssignAllProducts,
   unassignedProductCount = 0,
 }: BoxCardProps) {
+  const { t } = useTranslation()
   const { setNodeRef, isOver } = useDroppable({
     id: box.id,
     disabled: box.isClosed,
@@ -120,7 +122,7 @@ export default function BoxCard({
         <div className="flex items-center gap-3 px-3 py-2.5">
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-green-500 text-white">
             <Check className="w-3.5 h-3.5" />
-            Verzonden
+            {t.packing.shipped}
           </span>
           <span className="text-sm font-bold truncate">{box.packagingName}</span>
           <span className="text-xs text-muted-foreground">{box.products.length} prod · {(totalWeight / 1000).toFixed(1)}kg</span>
@@ -146,7 +148,7 @@ export default function BoxCard({
               className="inline-flex items-center gap-1 px-2 py-1 border border-red-200 text-red-600 rounded text-xs hover:bg-red-50 transition-colors disabled:opacity-50"
             >
               {isCancelling ? <Clock className="w-3 h-3 animate-spin" /> : <XCircle className="w-3 h-3" />}
-              Annuleer
+              {t.packing.cancelShipment}
             </button>
           )}
         </div>
@@ -185,20 +187,20 @@ export default function BoxCard({
               <h3 className="text-base font-bold truncate">{box.packagingName}</h3>
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-500 text-white flex-shrink-0">
                 <Lock className="w-3.5 h-3.5" />
-                Afgesloten
+                {t.packing.closed}
               </span>
             </div>
-            <p className="text-xs text-muted-foreground">{box.products.length} producten · {(totalWeight / 1000).toFixed(2)} kg</p>
+            <p className="text-xs text-muted-foreground">{box.products.length} {t.common.products} · {(totalWeight / 1000).toFixed(2)} kg</p>
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0">
             <button onClick={onReopenBox} className="inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[44px] border border-border rounded-lg text-sm hover:bg-muted transition-colors">
               <Unlock className="w-4 h-4" />
-              Heropenen
+              {t.packing.reopenBox}
             </button>
             <button onClick={onCreateShipment} className="inline-flex items-center gap-1.5 px-4 py-1.5 min-h-[44px] bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors border border-primary">
               <Truck className="w-4 h-4" />
-              Maak zending
+              {t.packing.createShipment}
             </button>
           </div>
         </div>
@@ -244,7 +246,7 @@ export default function BoxCard({
           {!box.picqerPackagingId && (
             <p className="text-xs text-amber-600 flex items-center gap-1 mt-0.5">
               <AlertTriangle className="w-3 h-3" />
-              Geen Picqer ID — zending niet mogelijk
+              {t.packing.noPicqerId}
             </p>
           )}
         </div>
@@ -260,10 +262,10 @@ export default function BoxCard({
             }`}
           >
             <Lock className="w-4 h-4" />
-            Doos afsluiten
+            {t.packing.closeBox}
           </button>
           {box.products.length === 0 && (
-            <button onClick={onRemoveBox} className="p-2 text-muted-foreground hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center border border-border" title="Verwijder doos">
+            <button onClick={onRemoveBox} className="p-2 text-muted-foreground hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center border border-border" title={t.packing.removeBox}>
               <Trash2 className="w-4 h-4" />
             </button>
           )}
@@ -275,7 +277,7 @@ export default function BoxCard({
         <div className="flex items-center justify-between text-xs">
           <span className="flex items-center gap-1 text-muted-foreground">
             <Weight className="w-3 h-3" />
-            Gewicht
+            {t.packing.weight}
           </span>
           <span>{(totalWeight / 1000).toFixed(2)} kg</span>
         </div>
@@ -288,20 +290,20 @@ export default function BoxCard({
             {unassignedProductCount > 0 && onAssignAllProducts && (
               <button onClick={onAssignAllProducts} className="w-full flex items-center justify-center gap-2 py-3 min-h-[48px] bg-primary/10 text-primary border border-primary/30 rounded-lg text-sm font-medium hover:bg-primary/20 transition-colors">
                 <Package className="w-4 h-4" />
-                Alle producten toewijzen ({unassignedProductCount})
+                {t.packing.assignAll} ({unassignedProductCount})
               </button>
             )}
             <div className={`py-6 text-center border-2 border-dashed rounded-lg ${isOver ? 'border-primary bg-primary/10' : 'border-border'}`}>
               <Box className={`w-8 h-8 mx-auto mb-2 ${isOver ? 'text-primary' : 'text-muted-foreground'}`} />
               <p className={`text-sm ${isOver ? 'text-primary font-medium' : 'text-muted-foreground'}`}>
-                {isOver ? 'Laat los om toe te voegen' : 'Sleep producten hierheen'}
+                {isOver ? t.packing.dropToAdd : t.packing.dragProducts}
               </p>
             </div>
           </div>
         ) : (
           <div className="space-y-2">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Producten ({box.products.length})
+              {t.packing.productsTab} ({box.products.length})
             </p>
             {box.products.map((product) => {
               const isEditing = editingProductId === product.id
@@ -344,7 +346,7 @@ export default function BoxCard({
                         <button
                           onClick={() => setEditingProductId(product.id)}
                           className="inline-flex items-center justify-center min-w-[40px] min-h-[32px] px-2 py-1 rounded-md border border-primary/30 bg-primary/5 text-primary font-semibold text-sm hover:bg-primary/10 hover:border-primary/50 transition-colors flex-shrink-0"
-                          title="Aantal aanpassen"
+                          title={t.packing.assignToBox}
                         >
                           {product.amount}x
                         </button>
@@ -369,12 +371,12 @@ export default function BoxCard({
               {unassignedProductCount > 0 && onAssignAllProducts && (
                 <button onClick={onAssignAllProducts} className="w-full flex items-center justify-center gap-2 py-2.5 min-h-[44px] bg-primary/10 text-primary border border-primary/30 rounded-lg text-sm font-medium hover:bg-primary/20 transition-colors">
                   <Package className="w-4 h-4" />
-                  Alle resterende producten hierin ({unassignedProductCount})
+                  {t.packing.assignRemaining} ({unassignedProductCount})
                 </button>
               )}
               <div className={`py-3 text-center border-2 border-dashed rounded-lg transition-all ${isOver ? 'border-primary bg-primary/10' : 'border-transparent hover:border-border'}`}>
                 <p className={`text-xs ${isOver ? 'text-primary font-medium' : 'text-muted-foreground'}`}>
-                  {isOver ? 'Laat los om toe te voegen' : '+ Sleep meer producten'}
+                  {isOver ? t.packing.dropToAdd : t.packing.dragMore}
                 </p>
               </div>
             </div>

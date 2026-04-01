@@ -2,25 +2,36 @@
 
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
-import { Package, LogOut, ArrowLeft, User } from 'lucide-react'
+import { Package, LogOut, ArrowLeft, User, MessageSquare } from 'lucide-react'
 import { useAuth } from '@/components/providers/AuthProvider'
+import { LanguageProvider, useTranslation } from '@/i18n/LanguageContext'
 
-const NAV_LINKS = [
-  { href: '/verpakkingsmodule', label: 'Wachtrij' },
-  { href: '/verpakkingsmodule/geschiedenis', label: 'Geschiedenis' },
-  { href: '/verpakkingsmodule/engine-log', label: 'Engine Log' },
-  { href: '/verpakkingsmodule/dashboard', label: 'Dashboard' },
-  { href: '/verpakkingsmodule/instellingen', label: 'Instellingen' },
-] as const
+function LanguageSwitcher() {
+  const { language, setLanguage } = useTranslation()
+  return (
+    <button
+      onClick={() => setLanguage(language === 'nl' ? 'en' : 'nl')}
+      className="px-2 py-1 text-xs font-semibold border border-border rounded-md hover:bg-muted transition-colors text-muted-foreground"
+      title={language === 'nl' ? 'Switch to English' : 'Wissel naar Nederlands'}
+    >
+      {language === 'nl' ? 'EN' : 'NL'}
+    </button>
+  )
+}
 
-export default function VerpakkingsmoduleLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+function LayoutContent({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const { profile, signOut } = useAuth()
+  const { t } = useTranslation()
+
+  const NAV_LINKS = [
+    { href: '/verpakkingsmodule', label: t.layout.queue },
+    { href: '/verpakkingsmodule/geschiedenis', label: t.layout.history },
+    { href: '/verpakkingsmodule/engine-log', label: t.layout.engineLog },
+    { href: '/verpakkingsmodule/dashboard', label: t.layout.dashboard },
+    { href: '/verpakkingsmodule/instellingen', label: t.layout.settings },
+  ]
 
   const handleLogout = async () => {
     await signOut()
@@ -30,7 +41,6 @@ export default function VerpakkingsmoduleLayout({
 
   const isActive = (href: string) => {
     if (href === '/verpakkingsmodule') {
-      // Wachtrij tab is active for queue, batch, picklist, and engine preview routes
       return pathname === '/verpakkingsmodule'
         || pathname.startsWith('/verpakkingsmodule/batch/')
         || pathname.startsWith('/verpakkingsmodule/picklist/')
@@ -48,7 +58,7 @@ export default function VerpakkingsmoduleLayout({
             className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
-            Portal
+            {t.layout.portal}
           </Link>
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-primary rounded-md flex items-center justify-center">
@@ -73,6 +83,18 @@ export default function VerpakkingsmoduleLayout({
           </nav>
         </div>
         <div className="flex items-center gap-3">
+          <Link
+            href="/verpakkingsmodule/opmerkingen"
+            className={`p-2 rounded-lg transition-colors ${
+              pathname.startsWith('/verpakkingsmodule/opmerkingen')
+                ? 'bg-primary/10 text-primary'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+            }`}
+            title={t.layout.comments}
+          >
+            <MessageSquare className="w-5 h-5" />
+          </Link>
+          <LanguageSwitcher />
           {profile && (
             <span className="hidden sm:flex items-center gap-1.5 text-sm text-muted-foreground">
               <User className="w-4 h-4" />
@@ -82,14 +104,26 @@ export default function VerpakkingsmoduleLayout({
           <button
             onClick={handleLogout}
             className="flex items-center gap-2 hover:text-destructive transition-colors"
-            title="Uitloggen"
+            title={t.layout.logout}
           >
             <LogOut className="w-5 h-5" />
-            <span className="text-sm font-medium hidden sm:inline-block">Uitloggen</span>
+            <span className="text-sm font-medium hidden sm:inline-block">{t.layout.logout}</span>
           </button>
         </div>
       </header>
       {children}
     </div>
+  )
+}
+
+export default function VerpakkingsmoduleLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  return (
+    <LanguageProvider>
+      <LayoutContent>{children}</LayoutContent>
+    </LanguageProvider>
   )
 }
