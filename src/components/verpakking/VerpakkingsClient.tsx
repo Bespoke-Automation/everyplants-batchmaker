@@ -702,8 +702,51 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
 
   // Map picklist products to ProductCardItems (supports split assignments across boxes)
   // Products with multiple pick_locations are split into separate lines per location.
+  // Helper: is the picklist in a terminal state (no further actions possible)?
+  const isPicklistTerminal = picklist?.status === 'closed' || picklist?.status === 'cancelled'
+
   const productItems: ProductCardItem[] = useMemo(() => {
-    if (!picklist?.products) return []
+    if (!picklist?.products || picklist.products.length === 0) {
+      // Fallback: rebuild product list from session box products
+      // This happens when picklist is cancelled in Picqer but session data remains
+      if (session?.boxes) {
+        const productMap = new Map<string, { productCode: string; name: string; totalAmount: number; boxId: string; sessionProductId: string }>()
+        for (const box of session.boxes) {
+          for (const sp of box.products) {
+            const existing = productMap.get(sp.productcode)
+            if (existing) {
+              existing.totalAmount += sp.amount
+            } else {
+              productMap.set(sp.productcode, {
+                productCode: sp.productcode,
+                name: sp.productName,
+                totalAmount: sp.amount,
+                boxId: box.id,
+                sessionProductId: sp.id,
+              })
+            }
+          }
+        }
+        if (productMap.size > 0) {
+          return Array.from(productMap.values()).map((p): ProductCardItem => ({
+            id: p.sessionProductId,
+            productCode: p.productCode,
+            name: p.name,
+            amount: p.totalAmount,
+            amountPicked: p.totalAmount,
+            weight: 0,
+            imageUrl: null,
+            location: '',
+            assignedBoxId: p.boxId,
+            amountAssigned: p.totalAmount,
+            assignedBoxes: [{ boxId: p.boxId, boxName: '', boxIndex: 0, amount: p.totalAmount, sessionProductId: p.sessionProductId }],
+            idpicklist_product: 0,
+            idproduct: 0,
+          }))
+        }
+      }
+      return []
+    }
 
     // Filter out:
     // 1. Packaging products (boxes that appear as line items)
@@ -1159,7 +1202,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
   // Auto-open shipment modal when all products are in closed boxes
   const autoShipTriggeredRef = useRef(false)
   useEffect(() => {
-    if (!session || !picklist || session.status === 'completed' || picklist.status === 'closed') return
+    if (!session || !picklist || session.status === 'completed' || picklist.status === 'closed' || picklist.status === 'cancelled') return
     if (showShipmentModal || autoShipTriggeredRef.current) return
     if (session.boxes.length === 0) return
     if (totalProductsCount === 0) return
@@ -2178,12 +2221,25 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         )}
 
         {/* Completed banner — shown when picklist is closed or session completed */}
-        {(picklist?.status === 'closed' || session.status === 'completed') && (
-          <div className="px-3 py-2 lg:px-4 bg-emerald-50 border-b border-emerald-200">
+        {(isPicklistTerminal || session.status === 'completed') && (
+          <div className={`px-3 py-2 lg:px-4 border-b ${
+            picklist?.status === 'cancelled'
+              ? 'bg-red-50 border-red-200'
+              : 'bg-emerald-50 border-emerald-200'
+          }`}>
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
-                <span className="text-sm font-semibold text-emerald-800">Verzonden — deze picklijst is al ingepakt en verzonden</span>
+                {picklist?.status === 'cancelled' ? (
+                  <>
+                    <XCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+                    <span className="text-sm font-semibold text-red-800">Geannuleerd — deze picklijst is geannuleerd in Picqer</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+                    <span className="text-sm font-semibold text-emerald-800">Verzonden — deze picklijst is al ingepakt en verzonden</span>
+                  </>
+                )}
               </div>
               {batchContext && nextPicklistInBatch && (
                 <button
@@ -2199,7 +2255,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         )}
 
         {/* Feedback toast for completed view */}
-        {(picklist?.status === 'closed' || session.status === 'completed') && scanFeedback && (
+        {(isPicklistTerminal || session.status === 'completed') && scanFeedback && (
           <div className={`px-3 py-2 lg:px-4 border-b ${
             scanFeedback.type === 'success' ? 'bg-green-50 border-green-200 text-green-800' :
             scanFeedback.type === 'error' ? 'bg-red-50 border-red-200 text-red-800' :
@@ -2215,7 +2271,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         )}
 
         {/* Content area — always shown, read-only when completed */}
-        {(picklist?.status === 'closed' || session.status === 'completed') ? (
+        {(isPicklistTerminal || session.status === 'completed') ? (
           <>
         {/* Read-only product/box view for completed sessions */}
         <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
