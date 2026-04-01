@@ -2115,6 +2115,41 @@ export async function updateOrderFields(
 }
 
 /**
+ * Update delivery address on an order
+ */
+export async function updateOrderAddress(
+  idorder: number,
+  address: {
+    deliveryname?: string
+    deliverycontactname?: string
+    deliveryaddress?: string
+    deliveryzipcode?: string
+    deliverycity?: string
+    deliverycountry?: string
+  }
+): Promise<PicqerOrder> {
+  const response = await rateLimitedFetch(
+    `${PICQER_BASE_URL}/orders/${idorder}`,
+    {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+        'User-Agent': 'EveryPlants-Batchmaker/2.0',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(address),
+    }
+  )
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Failed to update order address ${idorder}: ${response.status} - ${errorText}`)
+  }
+
+  return response.json()
+}
+
+/**
  * Process an order (move from concept to processing, creates picklist)
  */
 export async function processOrder(orderId: number): Promise<PicqerOrder> {

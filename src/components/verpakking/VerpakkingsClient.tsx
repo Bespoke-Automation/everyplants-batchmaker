@@ -38,8 +38,11 @@ import {
   ExternalLink,
   Sparkles,
   Check,
+  CheckCircle2,
   Printer,
   Puzzle,
+  Pencil,
+  Save,
 } from 'lucide-react'
 import Dialog from '@/components/ui/Dialog'
 import { usePackingSession } from '@/hooks/usePackingSession'
@@ -286,6 +289,18 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
   const [order, setOrder] = useState<PicqerOrder | null>(null)
   const [orderLoading, setOrderLoading] = useState(false)
 
+  // Address editing
+  const [editingAddress, setEditingAddress] = useState(false)
+  const [addressForm, setAddressForm] = useState({
+    deliveryname: '',
+    deliverycontactname: '',
+    deliveryaddress: '',
+    deliveryzipcode: '',
+    deliverycity: '',
+    deliverycountry: '',
+  })
+  const [addressSaving, setAddressSaving] = useState(false)
+
   // Composition map: maps child idproduct → parent info (from order products)
   // Used to group products by set and filter packaging parts
   const compositionMap = useMemo(() => {
@@ -488,6 +503,40 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
 
     return () => { cancelled = true }
   }, [picklist?.idorder])
+
+  const startEditAddress = useCallback(() => {
+    if (!order) return
+    setAddressForm({
+      deliveryname: order.deliveryname || '',
+      deliverycontactname: order.deliverycontactname || '',
+      deliveryaddress: order.deliveryaddress || '',
+      deliveryzipcode: order.deliveryzipcode || '',
+      deliverycity: order.deliverycity || '',
+      deliverycountry: order.deliverycountry || '',
+    })
+    setEditingAddress(true)
+  }, [order])
+
+  const saveAddress = useCallback(async () => {
+    if (!order) return
+    setAddressSaving(true)
+    try {
+      const res = await fetch(`/api/picqer/orders/${order.idorder}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(addressForm),
+      })
+      if (!res.ok) throw new Error('Adres opslaan mislukt')
+      const data = await res.json()
+      setOrder(data.order)
+      setEditingAddress(false)
+    } catch (err) {
+      console.error('Failed to save address:', err)
+      alert('Adres opslaan mislukt')
+    } finally {
+      setAddressSaving(false)
+    }
+  }, [order, addressForm])
 
   // Fetch picklist comments once when picklist loads
   useEffect(() => {
@@ -2001,6 +2050,25 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
           </div>
         )}
 
+        {/* Completed overlay — shown when picklist is already closed in Picqer or session is completed */}
+        {(picklist?.status === 'closed' || session.status === 'completed') ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 bg-emerald-50/50">
+            <div className="flex items-center gap-3 px-6 py-3 bg-emerald-100 border-2 border-emerald-300 rounded-xl">
+              <CheckCircle2 className="w-7 h-7 text-emerald-600" />
+              <span className="text-lg font-semibold text-emerald-800">Verzonden</span>
+            </div>
+            <p className="text-sm text-emerald-700">Deze picklist is al ingepakt en verzonden.</p>
+            {batchContext && nextPicklistInBatch && (
+              <button
+                onClick={() => handleBatchNavigate(nextPicklistInBatch)}
+                className="mt-2 inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors min-h-[44px]"
+              >
+                <span>Ga naar volgende openstaande</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        ) : (<>
         {/* Tab bar - mobile/tablet only (below lg breakpoint) */}
         <div className="lg:hidden border-b border-border bg-card">
           <div className="flex">
@@ -2346,31 +2414,110 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                   Laden...
                 </div>
               ) : order ? (
-                <div className="space-y-1.5 text-sm">
-                  {order.deliveryname && (
-                    <p className="font-medium">{order.deliveryname}</p>
-                  )}
-                  {order.deliverycontactname && order.deliverycontactname !== order.deliveryname && (
-                    <p className="text-muted-foreground">{order.deliverycontactname}</p>
-                  )}
-                  {order.deliveryaddress && (
-                    <p className="text-muted-foreground">{order.deliveryaddress}</p>
-                  )}
-                  {(order.deliveryzipcode || order.deliverycity) && (
-                    <p className="text-muted-foreground">
-                      {order.deliveryzipcode}{order.deliveryzipcode && order.deliverycity ? ' ' : ''}{order.deliverycity}
-                    </p>
-                  )}
-                  {order.deliverycountry && (
-                    <p className="text-muted-foreground">{order.deliverycountry}</p>
-                  )}
-                  {picklist?.idshippingprovider_profile && (
-                    <div className="mt-2 pt-2 border-t border-border">
-                      <p className="text-xs text-muted-foreground">Verzendprofiel</p>
-                      <p className="text-xs font-medium">{shippingProfileName ?? `#${picklist.idshippingprovider_profile}`}</p>
+                editingAddress ? (
+                  <div className="space-y-2">
+                    <div>
+                      <label className="text-[10px] text-muted-foreground">Naam</label>
+                      <input
+                        className="w-full px-2 py-1 text-sm border border-border rounded bg-background"
+                        value={addressForm.deliveryname}
+                        onChange={(e) => setAddressForm((f) => ({ ...f, deliveryname: e.target.value }))}
+                      />
                     </div>
-                  )}
-                </div>
+                    <div>
+                      <label className="text-[10px] text-muted-foreground">Contactpersoon</label>
+                      <input
+                        className="w-full px-2 py-1 text-sm border border-border rounded bg-background"
+                        value={addressForm.deliverycontactname}
+                        onChange={(e) => setAddressForm((f) => ({ ...f, deliverycontactname: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-muted-foreground">Adres</label>
+                      <input
+                        className="w-full px-2 py-1 text-sm border border-border rounded bg-background"
+                        value={addressForm.deliveryaddress}
+                        onChange={(e) => setAddressForm((f) => ({ ...f, deliveryaddress: e.target.value }))}
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <div className="w-1/3">
+                        <label className="text-[10px] text-muted-foreground">Postcode</label>
+                        <input
+                          className="w-full px-2 py-1 text-sm border border-border rounded bg-background"
+                          value={addressForm.deliveryzipcode}
+                          onChange={(e) => setAddressForm((f) => ({ ...f, deliveryzipcode: e.target.value }))}
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-[10px] text-muted-foreground">Stad</label>
+                        <input
+                          className="w-full px-2 py-1 text-sm border border-border rounded bg-background"
+                          value={addressForm.deliverycity}
+                          onChange={(e) => setAddressForm((f) => ({ ...f, deliverycity: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-muted-foreground">Land</label>
+                      <input
+                        className="w-full px-2 py-1 text-sm border border-border rounded bg-background"
+                        value={addressForm.deliverycountry}
+                        onChange={(e) => setAddressForm((f) => ({ ...f, deliverycountry: e.target.value }))}
+                      />
+                    </div>
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        onClick={saveAddress}
+                        disabled={addressSaving}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors disabled:opacity-50"
+                      >
+                        {addressSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                        Opslaan
+                      </button>
+                      <button
+                        onClick={() => setEditingAddress(false)}
+                        disabled={addressSaving}
+                        className="px-2 py-1.5 text-xs font-medium border border-border rounded hover:bg-muted transition-colors"
+                      >
+                        Annuleren
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5 text-sm">
+                    {order.deliveryname && (
+                      <p className="font-medium">{order.deliveryname}</p>
+                    )}
+                    {order.deliverycontactname && order.deliverycontactname !== order.deliveryname && (
+                      <p className="text-muted-foreground">{order.deliverycontactname}</p>
+                    )}
+                    {order.deliveryaddress && (
+                      <p className="text-muted-foreground">{order.deliveryaddress}</p>
+                    )}
+                    {(order.deliveryzipcode || order.deliverycity) && (
+                      <p className="text-muted-foreground">
+                        {order.deliveryzipcode}{order.deliveryzipcode && order.deliverycity ? ' ' : ''}{order.deliverycity}
+                      </p>
+                    )}
+                    {order.deliverycountry && (
+                      <p className="text-muted-foreground">{order.deliverycountry}</p>
+                    )}
+                    <button
+                      onClick={startEditAddress}
+                      className="inline-flex items-center gap-1 mt-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground border border-border rounded hover:bg-muted transition-colors"
+                    >
+                      <Pencil className="w-3 h-3" />
+                      Adres wijzigen
+                    </button>
+                    {picklist?.idshippingprovider_profile && (
+                      <div className="mt-2 pt-2 border-t border-border">
+                        <p className="text-xs text-muted-foreground">Verzendprofiel</p>
+                        <p className="text-xs font-medium">{shippingProfileName ?? `#${picklist.idshippingprovider_profile}`}</p>
+                      </div>
+                    )}
+                  </div>
+                )
               ) : (
                 <p className="text-xs text-muted-foreground">Geen bezorggegevens beschikbaar</p>
               )}
@@ -2424,7 +2571,6 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                   <div>
                     <p className="text-xs text-muted-foreground">Picklist status</p>
                     <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium leading-none ${
-                      picklist.status === 'closed' ? 'bg-green-100 text-green-800' :
                       picklist.status === 'new' ? 'bg-yellow-100 text-yellow-800' :
                       picklist.status === 'paused' ? 'bg-amber-100 text-amber-800' :
                       picklist.status === 'cancelled' ? 'bg-red-100 text-red-800' :
@@ -2565,6 +2711,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
             {/* Opmerkingen staan full-width in BottomComments onder de kolommen */}
           </div>
         </div>
+        </>)}
       </div>
 
       {/* Drag overlay */}
