@@ -90,12 +90,30 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // Only allow claiming if picklist is in 'new' status (open and ready)
+      // Closed picklists: return existing completed session or create a read-only one
       if (picqerPicklist.status === 'closed') {
-        return NextResponse.json(
-          { error: `Picklist ${picklistId} is already closed in Picqer and cannot be claimed.` },
-          { status: 409 }
-        )
+        const { supabase } = await import('@/lib/supabase/client')
+        const { data: existingCompleted } = await supabase
+          .schema('batchmaker')
+          .from('packing_sessions')
+          .select()
+          .eq('picklist_id', picklistId)
+          .eq('status', 'completed')
+          .limit(1)
+          .maybeSingle()
+
+        if (existingCompleted) {
+          return NextResponse.json(existingCompleted)
+        }
+
+        const session = await claimPicklist(picklistId, assignedTo, assignedToName, true)
+        const { updatePackingSession } = await import('@/lib/supabase/packingSessions')
+        await updatePackingSession(session.id, {
+          status: 'completed',
+          ...(picklistid ? { picklistid } : picqerPicklist.picklistid ? { picklistid: picqerPicklist.picklistid } : {}),
+          ...(batchSessionId && { batch_session_id: batchSessionId }),
+        })
+        return NextResponse.json({ ...session, status: 'completed' })
       }
       if (picqerPicklist.status === 'cancelled') {
         return NextResponse.json(

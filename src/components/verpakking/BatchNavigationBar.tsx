@@ -30,8 +30,17 @@ export default function BatchNavigationBar({
     (pl) => pl.sessionStatus === 'completed' || pl.status === 'closed'
   ).length
 
-  const prevPicklist = currentIndex > 0 ? picklists[currentIndex - 1] : null
-  const nextPicklist = currentIndex < picklists.length - 1 ? picklists[currentIndex + 1] : null
+  // Auto-skip completed picklists (closed in Picqer or session completed)
+  const isCompleted = (pl: BatchPicklistItem) => pl.sessionStatus === 'completed' || pl.status === 'closed'
+
+  let prevPicklist: BatchPicklistItem | null = null
+  for (let i = currentIndex - 1; i >= 0; i--) {
+    if (!isCompleted(picklists[i])) { prevPicklist = picklists[i]; break }
+  }
+  let nextPicklist: BatchPicklistItem | null = null
+  for (let i = currentIndex + 1; i < picklists.length; i++) {
+    if (!isCompleted(picklists[i])) { nextPicklist = picklists[i]; break }
+  }
 
   const displayName = current.alias || current.deliveryname || current.picklistid
 

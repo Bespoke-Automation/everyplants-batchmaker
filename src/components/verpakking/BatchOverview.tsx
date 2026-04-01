@@ -248,8 +248,12 @@ export default function BatchOverview({
 
   if (!batchSession) return null
 
+  // Count completed from actual Picqer status + session status (not just Supabase counter)
+  const actualCompleted = batchSession.picklists.filter(
+    (pl) => pl.sessionStatus === 'completed' || pl.status === 'closed'
+  ).length
   const progressPercent = batchSession.totalPicklists > 0
-    ? Math.round((batchSession.completedPicklists / batchSession.totalPicklists) * 100)
+    ? Math.round((actualCompleted / batchSession.totalPicklists) * 100)
     : 0
 
   const isCompleted = batchSession.status === 'completed'
@@ -423,7 +427,7 @@ export default function BatchOverview({
         {!isPreview && (
           <div className="mt-3">
             <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-              <span>{batchSession.completedPicklists}/{batchSession.totalPicklists} picklijsten verwerkt</span>
+              <span>{actualCompleted}/{batchSession.totalPicklists} picklijsten verwerkt</span>
               <span>{progressPercent}%</span>
             </div>
             <div className="w-full bg-muted rounded-full h-2">
@@ -1002,39 +1006,56 @@ function PicklistRow({
 }) {
   const isItemCompleted = item.sessionStatus === 'completed'
   const isClosed = item.status === 'closed'
+  const isDone = isItemCompleted || (isClosed && !(item.sessionId && item.sessionStatus && item.sessionStatus !== 'completed'))
   const hasActiveSession = !!(item.sessionId && item.sessionStatus && item.sessionStatus !== 'completed')
 
   // Combine all comment bodies into a single string (like Picqer does)
   const combinedComments = comments.map((c) => c.body).join(' ')
 
+  // Completed picklists show as a compact collapsed row
+  if (isDone) {
+    return (
+      <div className="bg-emerald-50/50 transition-colors">
+        <button
+          onClick={() => onStart(item)}
+          disabled={isStartingPicklist}
+          className="w-full flex items-center gap-3 px-5 py-2.5 hover:bg-emerald-100/50 transition-colors text-left"
+        >
+          <div className="relative shrink-0">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold bg-emerald-100 text-emerald-700">
+              {item.alias || '-'}
+            </div>
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 absolute -bottom-0.5 -right-0.5 bg-white rounded-full" />
+          </div>
+          <span className="font-medium text-sm text-emerald-600">{item.picklistid}</span>
+          <span className="text-sm text-emerald-600/70">{item.deliveryname}</span>
+          <span className="text-sm text-emerald-600/70 tabular-nums">{item.totalproducts} prod</span>
+          <div className="ml-auto">
+            <span className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-medium">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              Verzonden
+            </span>
+          </div>
+        </button>
+      </div>
+    )
+  }
+
   return (
-    <div
-      className={`transition-colors ${
-        isItemCompleted
-          ? 'bg-emerald-50/50'
-          : ''
-      }`}
-    >
+    <div className="transition-colors">
       {/* Main row */}
       <div className="flex items-start gap-4 px-5 py-4 min-h-[72px]">
         {/* Alias letter */}
         <div className="relative shrink-0 mt-1">
-          <div className={`w-10 h-10 rounded-full flex items-center justify-center text-base font-bold ${
-            isItemCompleted
-              ? 'bg-emerald-100 text-emerald-700'
-              : 'bg-muted text-muted-foreground'
-          }`}>
+          <div className="w-10 h-10 rounded-full flex items-center justify-center text-base font-bold bg-muted text-muted-foreground">
             {item.alias || '-'}
           </div>
-          {isItemCompleted && (
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 absolute -bottom-0.5 -right-0.5 bg-white rounded-full" />
-          )}
         </div>
 
         {/* Content */}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className={`font-semibold text-base ${isItemCompleted ? 'text-emerald-600' : 'text-primary'}`}>
+            <span className="font-semibold text-base text-primary">
               {item.picklistid}
             </span>
             {item.hasCustomerRemarks && (
@@ -1072,12 +1093,7 @@ function PicklistRow({
 
         {/* Action buttons */}
         <div className="flex items-center gap-2 shrink-0 mt-0.5">
-          {isItemCompleted ? (
-            <span className="inline-flex items-center gap-1 px-4 py-2 bg-emerald-100 text-emerald-700 rounded-lg text-sm font-medium">
-              <CheckCircle2 className="w-4 h-4" />
-              Klaar
-            </span>
-          ) : (isClosed && !hasActiveSession) ? (
+          {(isClosed && !hasActiveSession) ? (
             <span className="text-sm text-muted-foreground px-2">Dicht</span>
           ) : devMode ? (
             <button

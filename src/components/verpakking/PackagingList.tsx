@@ -462,7 +462,7 @@ export default function PackagingList() {
           </p>
           <div className="flex items-center gap-2">
             <button
-              onClick={handleDelete}
+              onClick={() => handleDelete()}
               disabled={deletingId !== null}
               className="flex items-center gap-2 px-3 py-2 text-sm bg-destructive text-destructive-foreground rounded-lg font-medium hover:bg-destructive/90 transition-colors disabled:opacity-50"
             >
