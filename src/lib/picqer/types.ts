@@ -300,6 +300,17 @@ export interface PicqerProductField {
 }
 
 // Product with full details including custom fields
+// Stock entry nested inside product detail response
+export interface PicqerProductStockEntry {
+  idwarehouse: number
+  stock: number
+  reserved: number
+  reservedbackorders: number
+  reservedpicklists: number
+  reservedallocations: number
+  freestock: number
+}
+
 export interface PicqerProductFull {
   idproduct: number
   productcode: string
@@ -314,6 +325,9 @@ export interface PicqerProductFull {
   productfields?: PicqerProductField[]
   tags?: PicqerTag[]
   images?: string[] // Array of image URLs
+  stock?: PicqerProductStockEntry[] // Stock per warehouse (included in detail response)
+  analysis_pick_amount_per_day?: number // Average picks per day over last 28 days
+  analysis_abc_classification?: string // A, B, or C classification
   created?: string
   updated?: string
 }
@@ -387,6 +401,26 @@ export interface PicqerProductStock {
   reserved: number
   freestock: number
   locations: PicqerStockLocation[]
+}
+
+// ─── Backorders ─────────────────────────────────────────────
+
+export interface PicqerBackorder {
+  idbackorder: number
+  idorder_product: number
+  idorder: number
+  idreturn: number | null
+  idproduct: number
+  idcustomer: number
+  idwarehouse: number
+  amount: number
+  amountavailable: number
+  amount_available: number
+  priority: number
+  has_parts: boolean
+  part_of_idbackorder: number | null
+  parts_per_parent: number | null
+  created_at: string
 }
 
 // ─── Purchase Orders ──────────────────────────────────────────

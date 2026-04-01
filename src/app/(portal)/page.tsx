@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Package, Box, Flower2, Shield, Leaf } from 'lucide-react'
+import { Package, Box, Flower2, Shield, Leaf, ShoppingCart } from 'lucide-react'
 import { useAuth } from '@/components/providers/AuthProvider'
 
 const MODULES = [
@@ -34,6 +34,16 @@ const MODULES = [
     hoverBorder: 'hover:border-primary',
     iconBg: 'bg-primary/10 group-hover:bg-primary/20',
     iconColor: 'text-primary',
+  },
+  {
+    key: 'module_bestellijst' as const,
+    href: '/bestellijst',
+    label: 'Bestellijst',
+    description: 'Backorder overzicht voor inkoop',
+    icon: ShoppingCart,
+    hoverBorder: 'hover:border-amber-500',
+    iconBg: 'bg-amber-500/10 group-hover:bg-amber-500/20',
+    iconColor: 'text-amber-600',
   },
   {
     key: 'module_floriday' as const,

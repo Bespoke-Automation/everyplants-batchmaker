@@ -13,6 +13,7 @@ export interface UserProfile {
   module_verpakkingsmodule: boolean
   module_floriday: boolean
   module_raapmodule: boolean
+  module_bestellijst: boolean
   picqer_user_id: number | null
 }
 

@@ -1,4 +1,4 @@
-import { PicqerOrder, PicqerPicklist, PicqerPicklistWithProducts, PicqerProduct, PicqerTag, PicqerShipment, CreateShipmentResult, CancelShipmentResult, GetLabelResult, PicqerPackaging, PicqerPackingStation, ShippingMethod, PicqerUser, PicqerPicklistBatch, PicqerBatchPicklist, type MulticolloParcelInput, PicqerProductFull, PicqerCompositionPart, PicqerCustomer, CreateOrderInput, PicqerProductStock, PicqerPurchaseOrder, PicqerExpectedPurchaseOrder, PicqerWebhook, PicqerLocation } from './types'
+import { PicqerOrder, PicqerPicklist, PicqerPicklistWithProducts, PicqerProduct, PicqerTag, PicqerShipment, CreateShipmentResult, CancelShipmentResult, GetLabelResult, PicqerPackaging, PicqerPackingStation, ShippingMethod, PicqerUser, PicqerPicklistBatch, PicqerBatchPicklist, type MulticolloParcelInput, PicqerProductFull, PicqerCompositionPart, PicqerCustomer, CreateOrderInput, PicqerProductStock, PicqerPurchaseOrder, PicqerExpectedPurchaseOrder, PicqerWebhook, PicqerLocation, PicqerBackorder } from './types'
 
 const PICQER_SUBDOMAIN = process.env.PICQER_SUBDOMAIN!
 const PICQER_API_KEY = process.env.PICQER_API_KEY!
@@ -2207,6 +2207,29 @@ export async function cancelOrder(orderId: number, force = false): Promise<void>
  * Haal stock op voor een product in een specifiek warehouse.
  * Retourneert locaties met type, zodat PPS-locaties gefilterd kunnen worden.
  */
+export async function getProductStockAll(
+  idproduct: number
+): Promise<PicqerProductStock[]> {
+  const response = await rateLimitedFetch(
+    `${PICQER_BASE_URL}/products/${idproduct}/stock`,
+    {
+      method: 'GET',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+        'User-Agent': 'EveryPlants-Batchmaker/2.0',
+        'Content-Type': 'application/json',
+      },
+    }
+  )
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Picqer stock API error for product ${idproduct}: ${response.status} - ${errorText}`)
+  }
+
+  return response.json()
+}
+
 export async function getProductStock(
   idproduct: number,
   idwarehouse: number
@@ -2474,6 +2497,105 @@ export async function getPurchaseOrder(idpurchaseorder: number): Promise<PicqerP
   }
 
   return response.json()
+}
+
+// ── Backorders ──────────────────────────────────────────────────────
+
+/**
+ * Fetch all backorders from Picqer (paginated).
+ * Returns individual order lines where stock is insufficient.
+ */
+export async function getBackorders(): Promise<PicqerBackorder[]> {
+  const allBackorders: PicqerBackorder[] = []
+  let offset = 0
+  const limit = 100
+
+  while (true) {
+    const params = new URLSearchParams({ offset: String(offset) })
+
+    const response = await rateLimitedFetch(
+      `${PICQER_BASE_URL}/backorders?${params}`,
+      {
+        method: 'GET',
+        headers: {
+          'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+          'User-Agent': 'EveryPlants-Batchmaker/2.0',
+          'Content-Type': 'application/json',
+        },
+      }
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`Picqer backorders API error: ${response.status} - ${errorText}`)
+    }
+
+    const batch: PicqerBackorder[] = await response.json()
+    allBackorders.push(...batch)
+
+    if (batch.length < limit) break
+    offset += limit
+
+    // Safety limit
+    if (offset >= 5000) {
+      console.log('Reached safety limit of 5000 backorders')
+      break
+    }
+  }
+
+  console.log(`Fetched ${allBackorders.length} backorders from Picqer`)
+  return allBackorders
+}
+
+// ── Orders by status with date filter ───────────────────────────────
+
+/**
+ * Fetch orders by status, optionally filtered by updated_since.
+ * Used for demand calculation (recent completed orders).
+ */
+export async function fetchOrdersByStatus(
+  status: string,
+  updatedSince?: string
+): Promise<PicqerOrder[]> {
+  const allOrders: PicqerOrder[] = []
+  let offset = 0
+  const limit = 100
+
+  while (true) {
+    const params = new URLSearchParams({ status, offset: String(offset) })
+    if (updatedSince) params.set('updated_since', updatedSince)
+
+    const response = await rateLimitedFetch(
+      `${PICQER_BASE_URL}/orders?${params}`,
+      {
+        method: 'GET',
+        headers: {
+          'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+          'User-Agent': 'EveryPlants-Batchmaker/2.0',
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store',
+      }
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`Picqer orders API error: ${response.status} - ${errorText}`)
+    }
+
+    const batch: PicqerOrder[] = await response.json()
+    allOrders.push(...batch)
+
+    if (batch.length < limit) break
+    offset += limit
+
+    if (offset >= 5000) {
+      console.log(`Reached safety limit of 5000 orders for status=${status}`)
+      break
+    }
+  }
+
+  return allOrders
 }
 
 // ── Webhook CRUD ──────────────────────────────────────────────────────
