@@ -356,7 +356,7 @@ export default function BoxCard({
                     )}
                   </div>
                   {!isEditing && (
-                    <button onClick={() => onRemoveProduct(product.id)} className="p-2 text-muted-foreground hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center border border-border" title="Verwijder uit doos">
+                    <button onClick={() => onRemoveProduct(product.id)} disabled={box.isClosed} className={`p-2 rounded-lg transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center border border-border ${box.isClosed ? 'text-muted-foreground/30 cursor-not-allowed' : 'text-muted-foreground hover:text-red-500 hover:bg-red-50'}`} title={box.isClosed ? 'Heropen doos eerst' : 'Verwijder uit doos'}>
                       <X className="w-4 h-4" />
                     </button>
                   )}

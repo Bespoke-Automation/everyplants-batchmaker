@@ -194,6 +194,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     shipBox,
     shipAllBoxes,
     cancelBoxShipment,
+    completeSession,
     dismissWarning,
   } = usePackingSession(sessionId)
 
@@ -392,6 +393,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
   const [activeProduct, setActiveProduct] = useState<ProductCardItem | null>(null)
   const [showAddBoxModal, setShowAddBoxModal] = useState(false)
   const [showShipmentModal, setShowShipmentModal] = useState(false)
+  const [showClosePicklistConfirm, setShowClosePicklistConfirm] = useState(false)
+  const [isClosingPicklist, setIsClosingPicklist] = useState(false)
   const [shipmentModalBoxId, setShipmentModalBoxId] = useState<string | null>(null)
   const [showStationPicker, setShowStationPicker] = useState(false)
   const [quantityPickerState, setQuantityPickerState] = useState<{
@@ -659,7 +662,9 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
   }, [])
 
   // Auto-box state (refs + state declared early, effect runs after suggestedPackagings)
+  // Track with BOTH ref (for effect guard) and state (survives React 18 batching)
   const autoBoxCreatedRef = useRef(false)
+  const [adviceApplied, setAdviceApplied] = useState(false)
   const [autoBoxMessage, setAutoBoxMessage] = useState<string | null>(null)
 
   // Auto-dismiss warnings after 8 seconds
@@ -1043,8 +1048,9 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
   const hasSuggestions = (engineAdvice && engineAdvice.confidence !== 'no_match' && engineAdvice.advice_boxes.length > 0) || suggestedPackagings.length > 0
 
   // Auto-create boxes: prefer engine advice, fall back to tag mappings
+  // Only runs ONCE per session — adviceApplied prevents re-triggering after all boxes are removed
   useEffect(() => {
-    if (autoBoxCreatedRef.current) return
+    if (autoBoxCreatedRef.current || adviceApplied) return
     if (!session || !picklist) return
     if (session.boxes.length > 0) return
     if (packagingsLoading) return
@@ -1057,6 +1063,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
 
     if (useEngine) {
       autoBoxCreatedRef.current = true
+      setAdviceApplied(true)
 
       const createBoxes = async () => {
         for (const adviceBox of engineBoxes) {
@@ -1109,6 +1116,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     } else if (suggestedPackagings.length > 0) {
       // Fall back to tag-packaging mappings
       autoBoxCreatedRef.current = true
+      setAdviceApplied(true)
 
       const createBoxes = async () => {
         for (const pkg of suggestedPackagings) {
@@ -1122,7 +1130,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
       }
       createBoxes()
     }
-  }, [session, picklist, suggestedPackagings, packagingsLoading, engineAdvice, engineLoading, activePackagings, addBox, assignProduct])
+  }, [session, picklist, suggestedPackagings, packagingsLoading, engineAdvice, engineLoading, activePackagings, addBox, assignProduct, adviceApplied])
 
   // Auto-dismiss auto-box message
   useEffect(() => {
@@ -1134,6 +1142,54 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
   // Computed values
   const assignedProductsCount = productItems.filter((p) => p.amountAssigned >= p.amount).length
   const totalProductsCount = productItems.length
+
+  // Set of box IDs that are closed or shipped (used to protect products from removal)
+  const closedBoxIds = useMemo(() => {
+    if (!session) return new Set<string>()
+    const ids = new Set<string>()
+    for (const box of session.boxes) {
+      if (box.status === 'closed' || box.status === 'shipped' || box.status === 'label_fetched') {
+        ids.add(box.id)
+      }
+    }
+    return ids
+  }, [session])
+
+  // Auto-open shipment modal when all products are in closed boxes
+  const autoShipTriggeredRef = useRef(false)
+  useEffect(() => {
+    if (!session || !picklist || session.status === 'completed' || picklist.status === 'closed') return
+    if (showShipmentModal || autoShipTriggeredRef.current) return
+    if (session.boxes.length === 0) return
+    if (totalProductsCount === 0) return
+
+    // Check: all products assigned
+    if (assignedProductsCount < totalProductsCount) return
+
+    // Check: all boxes with products are closed
+    const boxesWithProducts = session.boxes.filter(b => b.products.length > 0)
+    const allWithProductsClosed = boxesWithProducts.length > 0 && boxesWithProducts.every(
+      b => b.status === 'closed' || b.status === 'shipped' || b.status === 'label_fetched'
+    )
+    if (!allWithProductsClosed) return
+
+    // Auto-remove empty open boxes
+    const emptyOpenBoxes = session.boxes.filter(b => b.products.length === 0 && b.status !== 'closed' && b.status !== 'shipped' && b.status !== 'label_fetched')
+    for (const box of emptyOpenBoxes) {
+      removeBox(box.id)
+    }
+
+    // Open shipment modal
+    autoShipTriggeredRef.current = true
+    setShowShipmentModal(true)
+  }, [session, picklist, showShipmentModal, totalProductsCount, assignedProductsCount, removeBox])
+
+  // Reset all auto-triggers when navigating to a new picklist
+  useEffect(() => {
+    autoShipTriggeredRef.current = false
+    autoBoxCreatedRef.current = false
+    setAdviceApplied(false)
+  }, [sessionId])
 
   // Toggle sidebar panel
   const togglePanel = useCallback((panel: string) => {
@@ -1325,6 +1381,33 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     },
     [shipAllBoxes, packingStationId]
   )
+
+  const handleClosePicklist = useCallback(async () => {
+    if (!session?.picklistId) return
+    setIsClosingPicklist(true)
+    try {
+      // Pick all products first (required before closing in Picqer)
+      try {
+        await fetch(`/api/picqer/picklists/${session.picklistId}/pick`, { method: 'POST' })
+      } catch {
+        // Non-blocking — continue with close
+      }
+      const res = await fetch(`/api/picqer/picklists/${session.picklistId}/close`, { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) {
+        setScanFeedback({ message: data.error || 'Picklijst sluiten mislukt', type: 'error' })
+        return
+      }
+      // Mark session as completed
+      await completeSession()
+      setScanFeedback({ message: 'Picklijst gesloten', type: 'success' })
+    } catch {
+      setScanFeedback({ message: 'Fout bij sluiten picklijst', type: 'error' })
+    } finally {
+      setIsClosingPicklist(false)
+      setShowClosePicklistConfirm(false)
+    }
+  }, [session?.picklistId, completeSession])
 
   const handleCancelShipment = useCallback(
     async (boxId: string) => {
@@ -1724,6 +1807,18 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
               >
                 <Info className="w-5 h-5 text-muted-foreground" />
               </button>
+              {/* Close picklist button */}
+              {session.status !== 'completed' && picklist?.status !== 'closed' && (
+                <button
+                  onClick={() => setShowClosePicklistConfirm(true)}
+                  disabled={isClosingPicklist}
+                  className="flex items-center gap-2 px-3 py-2 min-h-[44px] border border-border rounded-lg text-sm font-medium hover:bg-muted transition-colors text-muted-foreground"
+                  title="Picklijst sluiten"
+                >
+                  <Check className="w-4 h-4" />
+                  <span className="hidden sm:inline">Picklijst sluiten</span>
+                </button>
+              )}
               {/* Ship All button */}
               {session.boxes.length > 0 && (
                 <button
@@ -2081,24 +2176,108 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
           </div>
         )}
 
-        {/* Completed overlay — shown when picklist is already closed in Picqer or session is completed */}
-        {(picklist?.status === 'closed' || session.status === 'completed') ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 bg-emerald-50/50">
-            <div className="flex items-center gap-3 px-6 py-3 bg-emerald-100 border-2 border-emerald-300 rounded-xl">
-              <CheckCircle2 className="w-7 h-7 text-emerald-600" />
-              <span className="text-lg font-semibold text-emerald-800">Verzonden</span>
+        {/* Completed banner — shown when picklist is closed or session completed */}
+        {(picklist?.status === 'closed' || session.status === 'completed') && (
+          <div className="px-3 py-2 lg:px-4 bg-emerald-50 border-b border-emerald-200">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+                <span className="text-sm font-semibold text-emerald-800">Verzonden — deze picklijst is al ingepakt en verzonden</span>
+              </div>
+              {batchContext && nextPicklistInBatch && (
+                <button
+                  onClick={() => handleBatchNavigate(nextPicklistInBatch)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors min-h-[44px] flex-shrink-0"
+                >
+                  Volgende order
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              )}
             </div>
-            <p className="text-sm text-emerald-700">Deze picklist is al ingepakt en verzonden.</p>
-            {batchContext && nextPicklistInBatch && (
-              <button
-                onClick={() => handleBatchNavigate(nextPicklistInBatch)}
-                className="mt-2 inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors min-h-[44px]"
-              >
-                <span>Ga naar volgende openstaande</span>
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            )}
           </div>
+        )}
+
+        {/* Content area — always shown, read-only when completed */}
+        {(picklist?.status === 'closed' || session.status === 'completed') ? (
+          <>
+        {/* Read-only product/box view for completed sessions */}
+        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+          {/* Products column (read-only) */}
+          <div className="flex-col lg:!flex lg:w-1/2 border-r border-border flex flex-1 lg:flex-none">
+            <div className="px-4 py-3 border-b border-border bg-muted/30">
+              <h2 className="font-semibold flex items-center gap-2 text-muted-foreground">
+                <Package className="w-4 h-4" />
+                Producten ({totalProductsCount})
+              </h2>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 lg:p-4 space-y-2 opacity-75">
+              {productItems.map((product) => (
+                <div key={product.id} className="flex items-center gap-3 p-2 bg-muted/30 rounded-lg">
+                  {product.imageUrl ? (
+                    <img src={product.imageUrl} alt={product.name} className="w-10 h-10 rounded object-cover flex-shrink-0" />
+                  ) : (
+                    <div className="w-10 h-10 bg-muted rounded flex items-center justify-center flex-shrink-0">
+                      <Package className="w-4 h-4 text-muted-foreground" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm truncate">{product.name}</p>
+                    <p className="text-xs text-muted-foreground">{product.productCode} · {product.amount}x</p>
+                  </div>
+                  <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-500 text-white flex-shrink-0">
+                    <Check className="w-3.5 h-3.5" />
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Boxes column (read-only) */}
+          <div className="flex-col lg:!flex lg:w-1/2 flex flex-1 lg:flex-none">
+            <div className="px-4 py-3 border-b border-border bg-muted/30">
+              <h2 className="font-semibold flex items-center gap-2 text-muted-foreground">
+                <Box className="w-4 h-4" />
+                Dozen ({session.boxes.length})
+              </h2>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 lg:p-4 space-y-3">
+              {session.boxes.map((box) => {
+                const isShipped = box.status === 'shipped' || box.status === 'label_fetched'
+                return (
+                <div key={box.id} className={`border rounded-lg p-3 ${isShipped ? 'border-green-300 bg-green-50/50' : 'border-border bg-muted/30'}`}>
+                  <div className="flex items-center gap-3">
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${isShipped ? 'bg-green-500 text-white' : 'bg-muted text-muted-foreground'}`}>
+                      <Check className="w-3.5 h-3.5" />
+                      {isShipped ? 'Verzonden' : box.status === 'closed' ? 'Afgesloten' : 'Open'}
+                    </span>
+                    <span className="text-sm font-bold truncate">{box.packagingName}</span>
+                    <span className="text-xs text-muted-foreground">{box.products.length} prod</span>
+                    {box.trackingCode && (
+                      box.trackingUrl ? (
+                        <a href={box.trackingUrl} target="_blank" rel="noopener noreferrer" className="font-mono text-xs text-primary hover:underline ml-auto">
+                          {box.trackingCode}
+                        </a>
+                      ) : (
+                        <span className="font-mono text-xs text-muted-foreground ml-auto">{box.trackingCode}</span>
+                      )
+                    )}
+                  </div>
+                  {box.products.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {box.products.map((p) => (
+                        <p key={p.id} className="text-xs text-muted-foreground pl-1">
+                          {p.amount}x {p.productName}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+          </>
         ) : (<>
         {/* Tab bar - mobile/tablet only (below lg breakpoint) */}
         <div className="lg:hidden border-b border-border bg-card">
@@ -2326,6 +2505,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                           isSelected={selectedProducts.has(product.id)}
                           onSelectToggle={() => handleToggleSelect(product.id)}
                           isHighlighted={highlightProductId === product.id}
+                          closedBoxIds={closedBoxIds}
                         />
                       )
 
@@ -3076,6 +3256,33 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
           </div>
         </div>
       </Dialog>
+
+      {/* Close picklist confirmation */}
+      {showClosePicklistConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowClosePicklistConfirm(false)}>
+          <div className="bg-card rounded-xl shadow-xl p-6 mx-4 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-2">Picklijst sluiten?</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Weet je zeker dat je deze picklijst wilt sluiten? Dit kan niet ongedaan gemaakt worden.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowClosePicklistConfirm(false)}
+                className="px-4 py-2 min-h-[44px] text-sm rounded-lg hover:bg-muted transition-colors"
+              >
+                Annuleren
+              </button>
+              <button
+                onClick={handleClosePicklist}
+                disabled={isClosingPicklist}
+                className="px-4 py-2 min-h-[44px] bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+              >
+                {isClosingPicklist ? 'Bezig...' : 'Sluiten'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Shipment Progress Modal */}
       <ShipmentProgress

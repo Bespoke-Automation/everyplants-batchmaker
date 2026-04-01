@@ -1509,7 +1509,7 @@ export async function getComments(
  * Add a comment to a picklist or picklist batch
  */
 export async function addComment(
-  resourceType: 'picklists' | 'picklists/batches' | 'orders',
+  resourceType: 'picklists' | 'picklists/batches' | 'orders' | 'products' | 'customers' | 'suppliers' | 'purchaseorders' | 'returns' | 'receipts',
   resourceId: number,
   body: string
 ): Promise<PicqerComment> {
@@ -1764,6 +1764,63 @@ export async function deleteComment(idcomment: number): Promise<void> {
     console.error(`Picqer API error deleting comment ${idcomment}:`, response.status, errorText)
     throw new Error(`Failed to delete comment: ${response.status} - ${errorText}`)
   }
+}
+
+/**
+ * Fetch global comments with optional filters (idauthor, idmentioned)
+ * Uses the global /comments endpoint from Picqer API
+ */
+export interface PicqerGlobalComment extends PicqerComment {
+  source_type: string
+  source: {
+    idpicklist?: number
+    idorder?: number
+    idpicklist_batch?: number
+    idproduct?: number
+    picklist_id?: string
+    reference?: string
+    [key: string]: unknown
+  } | null
+  mentions: Array<{
+    text: string
+    mentioned_type: string
+    mentioned: {
+      iduser: number
+      username: string
+      full_name: string
+      image_url: string | null
+    }
+  }>
+}
+
+export async function getGlobalComments(options?: {
+  idauthor?: number
+  idmentioned?: number
+  offset?: number
+}): Promise<PicqerGlobalComment[]> {
+  const params = new URLSearchParams()
+  if (options?.idauthor) params.set('idauthor', String(options.idauthor))
+  if (options?.idmentioned) params.set('idmentioned', String(options.idmentioned))
+  if (options?.offset) params.set('offset', String(options.offset))
+
+  const url = `${PICQER_BASE_URL}/comments${params.toString() ? `?${params}` : ''}`
+
+  const response = await rateLimitedFetch(url, {
+    headers: {
+      'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+      'User-Agent': 'EveryPlants-Batchmaker/2.0',
+      'Content-Type': 'application/json',
+    },
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error('Picqer API error fetching global comments:', response.status, errorText)
+    throw new Error(`Picqer API error: ${response.status}`)
+  }
+
+  return response.json()
 }
 
 // ── Product full details & composition parts ──────────────────────────────

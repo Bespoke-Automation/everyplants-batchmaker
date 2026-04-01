@@ -65,6 +65,7 @@ interface ProductCardProps {
   isSelected?: boolean
   onSelectToggle?: () => void
   isHighlighted?: boolean
+  closedBoxIds?: Set<string>
 }
 
 export default function ProductCard({
@@ -75,6 +76,7 @@ export default function ProductCard({
   isSelected,
   onSelectToggle,
   isHighlighted,
+  closedBoxIds,
 }: ProductCardProps) {
   const [showBoxMenu, setShowBoxMenu] = useState(false)
   const [pendingBoxId, setPendingBoxId] = useState<string | null>(null)
@@ -253,7 +255,7 @@ export default function ProductCard({
                 >
                   <Box className="w-2.5 h-2.5" />
                   {ab.boxName}: {ab.amount}x
-                  {!isFullyAssigned && (
+                  {!isFullyAssigned && !(closedBoxIds?.has(ab.boxId)) && (
                     <button
                       type="button"
                       onClick={(e) => {
@@ -297,7 +299,7 @@ export default function ProductCard({
                 </span>
               )}
               {/* Remove button per assignment */}
-              {product.assignedBoxes.length === 1 && (
+              {product.assignedBoxes.length === 1 && !(closedBoxIds?.has(product.assignedBoxes[0].boxId)) && (
                 <button
                   onClick={() => onRemoveFromBox(product.assignedBoxes[0].sessionProductId)}
                   className="p-2 rounded-lg hover:bg-red-100 text-red-500 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center border border-border"
