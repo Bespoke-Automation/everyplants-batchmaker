@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getBackorders, getPurchaseOrders, getProductFull } from '@/lib/picqer/client'
+import { getBackorders, getPurchaseOrders, getProductFull, getSuppliers } from '@/lib/picqer/client'
 
 export const dynamic = 'force-dynamic'
 
@@ -7,6 +7,8 @@ export interface BestellijstRow {
   idproduct: number
   productcode: string
   name: string
+  productcode_supplier: string | null
+  supplier_name: string | null
   backorder_amount: number
   freestock: number
   purchased_incoming: number
@@ -20,22 +22,33 @@ export async function GET() {
   try {
     const now = new Date()
 
-    // Fetch backorders and purchase orders in parallel
-    const [backorders, purchaseOrders] = await Promise.all([
+    // Fetch backorders, purchase orders, and suppliers in parallel
+    const [backorders, purchaseOrders, suppliers] = await Promise.all([
       getBackorders(),
       getPurchaseOrders('purchased'),
+      getSuppliers(),
     ])
+
+    // Build supplier lookup map
+    const supplierMap = new Map<number, string>()
+    for (const s of suppliers) {
+      supplierMap.set(s.idsupplier, s.name)
+    }
 
     // 1. Group backorders by product
     //    Skip composition parents (has_parts=true) — their parts show up as separate backorders
+    //    Skip fully available backorders (amount_available >= amount) — no shortage
+    //    Only count the shortage (amount - amount_available), not the full backorder
     const backorderMap = new Map<number, number>()
     for (const bo of backorders) {
       if (bo.has_parts) continue
-      backorderMap.set(bo.idproduct, (backorderMap.get(bo.idproduct) || 0) + bo.amount)
+      if (bo.amount_available >= bo.amount) continue
+      const shortage = bo.amount - bo.amount_available
+      backorderMap.set(bo.idproduct, (backorderMap.get(bo.idproduct) || 0) + shortage)
     }
 
     if (backorderMap.size === 0) {
-      return NextResponse.json({ data: [] })
+      return NextResponse.json({ data: [], suppliers: [] })
     }
 
     // 2. Build purchased incoming map from purchase orders
@@ -50,7 +63,6 @@ export async function GET() {
     }
 
     // 3. Fetch product details in batches of 5
-    //    Product detail includes: name, productcode, stock[], analysis_pick_amount_per_day, type
     const productIds = Array.from(backorderMap.keys())
     const productDetailsMap = new Map<number, {
       productcode: string
@@ -58,6 +70,8 @@ export async function GET() {
       freestock: number
       pick_per_day: number
       type: string
+      productcode_supplier: string | null
+      idsupplier: number | null
     }>()
 
     for (let i = 0; i < productIds.length; i += 5) {
@@ -76,6 +90,8 @@ export async function GET() {
               freestock,
               pick_per_day: product.analysis_pick_amount_per_day || 0,
               type: product.type || 'normal',
+              productcode_supplier: product.productcode_supplier || null,
+              idsupplier: product.idsupplier || null,
             }
           } catch {
             return {
@@ -85,6 +101,8 @@ export async function GET() {
               freestock: 0,
               pick_per_day: 0,
               type: 'normal',
+              productcode_supplier: null,
+              idsupplier: null,
             }
           }
         })
@@ -97,6 +115,7 @@ export async function GET() {
     // 4. Combine into final rows
     //    Skip composition products and non-plant items (packaging/supplies with very high stock)
     const rows: BestellijstRow[] = []
+    const usedSuppliers = new Set<string>()
 
     for (const [idproduct, totalBackorder] of backorderMap) {
       const details = productDetailsMap.get(idproduct)!
@@ -109,6 +128,9 @@ export async function GET() {
 
       const purchased = purchasedMap.get(idproduct) || 0
       const nogTeBestellen = Math.max(0, totalBackorder - purchased)
+      const supplierName = details.idsupplier ? (supplierMap.get(details.idsupplier) || null) : null
+
+      if (supplierName) usedSuppliers.add(supplierName)
 
       // Demand estimate based on Picqer's analysis_pick_amount_per_day (28-day average)
       const ppd = details.pick_per_day
@@ -116,6 +138,8 @@ export async function GET() {
         idproduct,
         productcode: details.productcode,
         name: details.name,
+        productcode_supplier: details.productcode_supplier,
+        supplier_name: supplierName,
         backorder_amount: totalBackorder,
         freestock: details.freestock,
         purchased_incoming: purchased,
@@ -131,10 +155,12 @@ export async function GET() {
 
     return NextResponse.json({
       data: rows,
+      suppliers: Array.from(usedSuppliers).sort(),
       meta: {
         total_products: rows.length,
         total_backorder_items: backorders.length,
         fetched_at: now.toISOString(),
+        picqer_base_url: `https://${process.env.PICQER_SUBDOMAIN}.picqer.com`,
       },
     })
   } catch (error) {

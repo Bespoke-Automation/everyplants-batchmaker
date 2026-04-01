@@ -328,8 +328,25 @@ export interface PicqerProductFull {
   stock?: PicqerProductStockEntry[] // Stock per warehouse (included in detail response)
   analysis_pick_amount_per_day?: number // Average picks per day over last 28 days
   analysis_abc_classification?: string // A, B, or C classification
+  idsupplier?: number | null
+  productcode_supplier?: string | null
   created?: string
   updated?: string
+}
+
+// ─── Suppliers ──────────────────────────────────────────────
+
+export interface PicqerSupplier {
+  idsupplier: number
+  name: string
+  contactname: string | null
+  address: string | null
+  zipcode: string | null
+  city: string | null
+  country: string | null
+  emailaddress: string | null
+  telephone: string | null
+  active: boolean
 }
 
 // Composition part

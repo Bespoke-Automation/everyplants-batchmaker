@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useCallback } from 'react'
-import { RefreshCw, ArrowUpDown, ArrowUp, ArrowDown, ShoppingCart } from 'lucide-react'
+import { useState, useCallback, useMemo } from 'react'
+import { RefreshCw, ArrowUpDown, ArrowUp, ArrowDown, ShoppingCart, Search, X } from 'lucide-react'
 import type { BestellijstRow } from '@/app/api/bestellijst/route'
 
 type SortKey = keyof BestellijstRow
@@ -9,11 +9,15 @@ type SortDir = 'asc' | 'desc'
 
 export default function BestellijstClient() {
   const [rows, setRows] = useState<BestellijstRow[]>([])
+  const [suppliers, setSuppliers] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fetchedAt, setFetchedAt] = useState<string | null>(null)
   const [sortKey, setSortKey] = useState<SortKey>('nog_te_bestellen')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const [search, setSearch] = useState('')
+  const [supplierFilter, setSupplierFilter] = useState<string>('')
+  const [picqerBaseUrl, setPicqerBaseUrl] = useState<string>('')
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -24,9 +28,11 @@ export default function BestellijstClient() {
         const body = await res.json().catch(() => ({}))
         throw new Error(body.error || `HTTP ${res.status}`)
       }
-      const { data, meta } = await res.json()
+      const { data, suppliers: supplierList, meta } = await res.json()
       setRows(data)
+      setSuppliers(supplierList || [])
       setFetchedAt(meta?.fetched_at || new Date().toISOString())
+      setPicqerBaseUrl(meta?.picqer_base_url || '')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Onbekende fout')
     } finally {
@@ -43,16 +49,37 @@ export default function BestellijstClient() {
     }
   }
 
-  const sortedRows = [...rows].sort((a, b) => {
-    const aVal = a[sortKey]
-    const bVal = b[sortKey]
-    if (typeof aVal === 'string' && typeof bVal === 'string') {
-      return sortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal)
+  const filteredAndSortedRows = useMemo(() => {
+    let result = rows
+
+    // Search filter (product name or productcode)
+    if (search.trim()) {
+      const q = search.trim().toLowerCase()
+      result = result.filter(
+        r => r.name.toLowerCase().includes(q) || r.productcode.toLowerCase().includes(q)
+      )
     }
-    const aNum = Number(aVal)
-    const bNum = Number(bVal)
-    return sortDir === 'asc' ? aNum - bNum : bNum - aNum
-  })
+
+    // Supplier filter
+    if (supplierFilter) {
+      result = result.filter(r => r.supplier_name === supplierFilter)
+    }
+
+    // Sort
+    return [...result].sort((a, b) => {
+      const aVal = a[sortKey]
+      const bVal = b[sortKey]
+      if (aVal == null && bVal == null) return 0
+      if (aVal == null) return 1
+      if (bVal == null) return -1
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        return sortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal)
+      }
+      const aNum = Number(aVal)
+      const bNum = Number(bVal)
+      return sortDir === 'asc' ? aNum - bNum : bNum - aNum
+    })
+  }, [rows, search, supplierFilter, sortKey, sortDir])
 
   const SortIcon = ({ column }: { column: SortKey }) => {
     if (sortKey !== column) return <ArrowUpDown className="w-3.5 h-3.5 text-muted-foreground/50" />
@@ -64,6 +91,8 @@ export default function BestellijstClient() {
   const columns: { key: SortKey; label: string; align?: 'right' }[] = [
     { key: 'name', label: 'Product' },
     { key: 'productcode', label: 'Code' },
+    { key: 'productcode_supplier', label: 'Lev. code' },
+    { key: 'supplier_name', label: 'Leverancier' },
     { key: 'backorder_amount', label: 'Backorder', align: 'right' },
     { key: 'freestock', label: 'Vrije voorraad', align: 'right' },
     { key: 'purchased_incoming', label: 'Ingekocht (onderweg)', align: 'right' },
@@ -75,9 +104,9 @@ export default function BestellijstClient() {
 
   return (
     <main className="flex-1 p-6">
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-[1400px] mx-auto">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-xl font-bold">Bestellijst</h2>
             <p className="text-sm text-muted-foreground mt-0.5">
@@ -100,6 +129,48 @@ export default function BestellijstClient() {
             </button>
           </div>
         </div>
+
+        {/* Search + Filter bar */}
+        {rows.length > 0 && (
+          <div className="flex items-center gap-3 mb-4">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Zoek op product of code..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-9 pr-8 py-2 text-sm border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+              />
+              {search && (
+                <button
+                  onClick={() => setSearch('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            <select
+              value={supplierFilter}
+              onChange={(e) => setSupplierFilter(e.target.value)}
+              className="px-3 py-2 text-sm border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+            >
+              <option value="">Alle leveranciers</option>
+              {suppliers.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+            {(search || supplierFilter) && (
+              <button
+                onClick={() => { setSearch(''); setSupplierFilter('') }}
+                className="text-xs text-muted-foreground hover:text-foreground underline"
+              >
+                Filters wissen
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Error */}
         {error && (
@@ -135,7 +206,9 @@ export default function BestellijstClient() {
         {rows.length > 0 && (
           <>
             <div className="text-xs text-muted-foreground mb-2">
-              {rows.length} product{rows.length !== 1 ? 'en' : ''} met backorders
+              {filteredAndSortedRows.length === rows.length
+                ? `${rows.length} product${rows.length !== 1 ? 'en' : ''} met backorders`
+                : `${filteredAndSortedRows.length} van ${rows.length} producten`}
             </div>
             <div className="border border-border rounded-lg overflow-x-auto">
               <table className="w-full text-sm">
@@ -158,16 +231,31 @@ export default function BestellijstClient() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedRows.map((row) => (
+                  {filteredAndSortedRows.map((row) => (
                     <tr
                       key={row.idproduct}
                       className="border-t border-border hover:bg-muted/30 transition-colors"
                     >
                       <td className="px-3 py-2.5 font-medium max-w-[250px] truncate" title={row.name}>
-                        {row.name}
+                        {picqerBaseUrl ? (
+                          <a
+                            href={`${picqerBaseUrl}/products/${row.idproduct}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline"
+                          >
+                            {row.name}
+                          </a>
+                        ) : row.name}
                       </td>
                       <td className="px-3 py-2.5 text-muted-foreground font-mono text-xs">
                         {row.productcode}
+                      </td>
+                      <td className="px-3 py-2.5 text-muted-foreground font-mono text-xs">
+                        {row.productcode_supplier || '—'}
+                      </td>
+                      <td className="px-3 py-2.5 text-muted-foreground text-xs whitespace-nowrap">
+                        {row.supplier_name || '—'}
                       </td>
                       <td className="px-3 py-2.5 text-right text-red-600 font-medium">
                         {row.backorder_amount}

@@ -1,4 +1,4 @@
-import { PicqerOrder, PicqerPicklist, PicqerPicklistWithProducts, PicqerProduct, PicqerTag, PicqerShipment, CreateShipmentResult, CancelShipmentResult, GetLabelResult, PicqerPackaging, PicqerPackingStation, ShippingMethod, PicqerUser, PicqerPicklistBatch, PicqerBatchPicklist, type MulticolloParcelInput, PicqerProductFull, PicqerCompositionPart, PicqerCustomer, CreateOrderInput, PicqerProductStock, PicqerPurchaseOrder, PicqerExpectedPurchaseOrder, PicqerWebhook, PicqerLocation, PicqerBackorder } from './types'
+import { PicqerOrder, PicqerPicklist, PicqerPicklistWithProducts, PicqerProduct, PicqerTag, PicqerShipment, CreateShipmentResult, CancelShipmentResult, GetLabelResult, PicqerPackaging, PicqerPackingStation, ShippingMethod, PicqerUser, PicqerPicklistBatch, PicqerBatchPicklist, type MulticolloParcelInput, PicqerProductFull, PicqerCompositionPart, PicqerCustomer, CreateOrderInput, PicqerProductStock, PicqerPurchaseOrder, PicqerExpectedPurchaseOrder, PicqerWebhook, PicqerLocation, PicqerBackorder, PicqerSupplier } from './types'
 
 const PICQER_SUBDOMAIN = process.env.PICQER_SUBDOMAIN!
 const PICQER_API_KEY = process.env.PICQER_API_KEY!
@@ -2497,6 +2497,46 @@ export async function getPurchaseOrder(idpurchaseorder: number): Promise<PicqerP
   }
 
   return response.json()
+}
+
+// ── Suppliers ────────────────────────────────────────────────────────
+
+/**
+ * Fetch all active suppliers from Picqer (paginated).
+ */
+export async function getSuppliers(): Promise<PicqerSupplier[]> {
+  const allSuppliers: PicqerSupplier[] = []
+  let offset = 0
+  const limit = 100
+
+  while (true) {
+    const params = new URLSearchParams({ offset: String(offset) })
+
+    const response = await rateLimitedFetch(
+      `${PICQER_BASE_URL}/suppliers?${params}`,
+      {
+        method: 'GET',
+        headers: {
+          'Authorization': `Basic ${Buffer.from(PICQER_API_KEY + ':').toString('base64')}`,
+          'User-Agent': 'EveryPlants-Batchmaker/2.0',
+          'Content-Type': 'application/json',
+        },
+      }
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`Picqer suppliers API error: ${response.status} - ${errorText}`)
+    }
+
+    const batch: PicqerSupplier[] = await response.json()
+    allSuppliers.push(...batch)
+
+    if (batch.length < limit) break
+    offset += limit
+  }
+
+  return allSuppliers
 }
 
 // ── Backorders ──────────────────────────────────────────────────────
