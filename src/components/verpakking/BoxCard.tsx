@@ -60,6 +60,7 @@ interface BoxCardProps {
   onCancelShipment?: () => Promise<void>
   onAssignAllProducts?: () => void
   unassignedProductCount?: number
+  readOnly?: boolean
 }
 
 export default function BoxCard({
@@ -74,6 +75,7 @@ export default function BoxCard({
   onCancelShipment,
   onAssignAllProducts,
   unassignedProductCount = 0,
+  readOnly = false,
 }: BoxCardProps) {
   const { t } = useTranslation()
   const { setNodeRef, isOver } = useDroppable({
@@ -136,7 +138,7 @@ export default function BoxCard({
             )
           )}
           {box.labelUrl && (
-            <a href={box.labelUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-2 py-1 border border-border rounded text-xs hover:bg-muted transition-colors" title="Open label">
+            <a href={box.labelUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-2 py-1 border border-border rounded text-xs hover:bg-muted transition-colors" title="Label openen">
               <FileText className="w-3 h-3" />
               <ExternalLink className="w-3 h-3" />
             </a>
@@ -193,16 +195,18 @@ export default function BoxCard({
             <p className="text-xs text-muted-foreground">{box.products.length} {t.common.products} · {(totalWeight / 1000).toFixed(2)} kg</p>
           </div>
 
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button onClick={onReopenBox} className="inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[44px] border border-border rounded-lg text-sm hover:bg-muted transition-colors">
-              <Unlock className="w-4 h-4" />
-              {t.packing.reopenBox}
-            </button>
-            <button onClick={onCreateShipment} className="inline-flex items-center gap-1.5 px-4 py-1.5 min-h-[44px] bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors border border-primary">
-              <Truck className="w-4 h-4" />
-              {t.packing.createShipment}
-            </button>
-          </div>
+          {!readOnly && (
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button onClick={onReopenBox} className="inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[44px] border border-border rounded-lg text-sm hover:bg-muted transition-colors">
+                <Unlock className="w-4 h-4" />
+                {t.packing.reopenBox}
+              </button>
+              <button onClick={onCreateShipment} className="inline-flex items-center gap-1.5 px-4 py-1.5 min-h-[44px] bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors border border-primary">
+                <Truck className="w-4 h-4" />
+                {t.packing.createShipment}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Lightbox */}

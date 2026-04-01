@@ -1756,8 +1756,12 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                       <span className="text-base lg:text-lg font-semibold truncate">
                         {picklist?.picklistid ?? `Picklist #${session.picklistId}`}
                       </span>
-                      <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 rounded flex-shrink-0">
-                        {translateStatus(session.status)}
+                      <span className={`px-2 py-0.5 text-xs font-medium rounded flex-shrink-0 ${
+                        picklist?.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                        session.status === 'completed' ? 'bg-green-100 text-green-800' :
+                        'bg-blue-100 text-blue-800'
+                      }`}>
+                        {picklist?.status === 'cancelled' ? translateStatus('cancelled') : translateStatus(session.status)}
                       </span>
                       {isSaving && (
                         <span className="flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
@@ -1852,7 +1856,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                 <Info className="w-5 h-5 text-muted-foreground" />
               </button>
               {/* Close picklist button */}
-              {session.status !== 'completed' && picklist?.status !== 'closed' && (
+              {session.status !== 'completed' && !isPicklistTerminal && (
                 <button
                   onClick={() => setShowClosePicklistConfirm(true)}
                   disabled={isClosingPicklist}
@@ -1864,7 +1868,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                 </button>
               )}
               {/* Ship All button */}
-              {session.boxes.length > 0 && (
+              {session.boxes.length > 0 && !isPicklistTerminal && (
                 <button
                   onClick={() => setShowShipmentModal(true)}
                   className="flex items-center gap-2 px-3 py-2 lg:px-4 min-h-[44px] bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors border border-primary"
@@ -2903,6 +2907,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                         onCancelShipment={() => handleCancelShipment(box.id)}
                         onAssignAllProducts={() => handleAssignAllToBox(box.id)}
                         unassignedProductCount={unassignedUnitCount}
+                        readOnly={picklist?.status === 'cancelled'}
                       />
                     )
                   })}
