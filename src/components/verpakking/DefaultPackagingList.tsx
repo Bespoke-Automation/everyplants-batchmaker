@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
 import { Loader2, AlertCircle, Package, Search, Upload, CheckCircle2, Tag, Box, Layers, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react'
+import { useTranslation } from '@/i18n/LanguageContext'
 
 interface ClassifiedProduct {
   id: string
@@ -52,6 +53,7 @@ interface ImportResult {
 type FilterMode = 'all' | 'set' | 'unset'
 
 export default function DefaultPackagingList() {
+  const { t } = useTranslation()
   const [products, setProducts] = useState<ClassifiedProduct[]>([])
   const [packagings, setPackagings] = useState<PackagingOption[]>([])
   const [shippingUnits, setShippingUnits] = useState<Map<string, string>>(new Map())
@@ -91,8 +93,8 @@ export default function DefaultPackagingList() {
         fetch(`/api/verpakking/engine/costs?countries=${ALL_COST_COUNTRIES.join(',')}`),
       ])
 
-      if (!classifiedRes.ok) throw new Error('Fout bij ophalen producten')
-      if (!packRes.ok) throw new Error('Fout bij ophalen verpakkingen')
+      if (!classifiedRes.ok) throw new Error(t.settings.errorLoadingProducts)
+      if (!packRes.ok) throw new Error(t.settings.errorLoadingPackagings)
 
       const classifiedData = await classifiedRes.json()
       const packData = await packRes.json()
@@ -145,7 +147,7 @@ export default function DefaultPackagingList() {
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || 'Fout bij opslaan')
+        throw new Error(errorData.error || t.settings.saveError)
       }
 
       setProducts((prev) =>
@@ -182,12 +184,12 @@ export default function DefaultPackagingList() {
       })
 
       const result = await response.json()
-      if (!response.ok) throw new Error(result.error || 'Import mislukt')
+      if (!response.ok) throw new Error(result.error || t.settings.importFailed)
 
       setImportResult(result)
       await fetchData() // Refresh data
     } catch (err) {
-      setError(err instanceof Error ? err : new Error('Import fout'))
+      setError(err instanceof Error ? err : new Error(t.settings.importError))
     } finally {
       setIsImporting(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -202,7 +204,7 @@ export default function DefaultPackagingList() {
 
     const pkgName = packagings.find((p) => p.id === bulkPackagingId)?.name || '?'
     const confirmed = window.confirm(
-      `Weet je zeker dat je "${pkgName}" wilt toewijzen aan ${ids.length} ${ids.length === 1 ? 'product' : 'producten'}?`
+      `${t.settings.bulkAssignConfirm} "${pkgName}" → ${ids.length} ${ids.length === 1 ? t.common.product : t.common.products}?`
     )
     if (!confirmed) return
 
@@ -221,7 +223,7 @@ export default function DefaultPackagingList() {
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || 'Bulk update mislukt')
+        throw new Error(errorData.error || t.settings.bulkUpdateFailed)
       }
 
       // Update local state
@@ -231,9 +233,9 @@ export default function DefaultPackagingList() {
           idSet.has(p.id) ? { ...p, default_packaging_id: packagingValue } : p
         )
       )
-      setBulkResult({ count: ids.length, name: packagingValue ? pkgName : 'Geen (engine bepaalt)' })
+      setBulkResult({ count: ids.length, name: packagingValue ? pkgName : t.settings.noneEngineDecides })
     } catch (err) {
-      setError(err instanceof Error ? err : new Error('Bulk update fout'))
+      setError(err instanceof Error ? err : new Error(t.settings.bulkUpdateError))
     } finally {
       setIsBulkSaving(false)
     }
@@ -328,7 +330,7 @@ export default function DefaultPackagingList() {
       <div className="max-w-7xl mx-auto">
         <div className="flex flex-col items-center justify-center p-12">
           <Loader2 className="w-10 h-10 text-primary animate-spin mb-4" />
-          <p className="text-lg text-muted-foreground">Gegevens laden...</p>
+          <p className="text-lg text-muted-foreground">{t.settings.loadingData}</p>
         </div>
       </div>
     )
@@ -340,7 +342,7 @@ export default function DefaultPackagingList() {
         <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg flex items-center gap-2 text-destructive">
           <AlertCircle className="w-5 h-5 shrink-0" />
           <div>
-            <p className="font-medium">Fout bij laden</p>
+            <p className="font-medium">{t.settings.errorLoading}</p>
             <p className="text-sm">{error.message}</p>
           </div>
         </div>
@@ -357,9 +359,9 @@ export default function DefaultPackagingList() {
             <Package className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <h2 className="text-xl font-bold">Default Verpakkingen</h2>
+            <h2 className="text-xl font-bold">{t.settings.defaultPackagings}</h2>
             <p className="text-sm text-muted-foreground">
-              {setCount} van {products.length} producten ingesteld
+              {setCount} {t.common.of} {products.length} {t.settings.productsConfigured}
             </p>
           </div>
         </div>
@@ -381,7 +383,7 @@ export default function DefaultPackagingList() {
             ) : (
               <Upload className="w-4 h-4" />
             )}
-            Importeer Everspring CSV
+            {t.settings.importEverspringCsv}
           </button>
         </div>
       </div>
@@ -390,28 +392,28 @@ export default function DefaultPackagingList() {
       {importResult && (
         <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-lg text-sm">
           <div className="flex items-center gap-2 font-medium text-emerald-800 mb-2">
-            <CheckCircle2 className="w-4 h-4" /> Import voltooid
+            <CheckCircle2 className="w-4 h-4" /> {t.settings.importCompleted}
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-emerald-700">
-            <div>Totaal rijen: {importResult.total_rows}</div>
-            <div>Gematcht: {importResult.matched}</div>
-            <div>Verpakking: {importResult.updated_packaging}</div>
-            <div>Maten verrijkt: {importResult.enriched_dimensions}</div>
-            <div>Z-OUD skip: {importResult.skipped_zoud}</div>
+            <div>{t.settings.totalRows}: {importResult.total_rows}</div>
+            <div>{t.settings.matched}: {importResult.matched}</div>
+            <div>{t.settings.packagings}: {importResult.updated_packaging}</div>
+            <div>{t.settings.dimensionsEnriched}: {importResult.enriched_dimensions}</div>
+            <div>{t.settings.zoudSkipped}: {importResult.skipped_zoud}</div>
           </div>
           {importResult.not_found_in_batchmaker.length > 0 && (
             <div className="mt-2 text-amber-700">
-              <span className="font-medium">{importResult.not_found_in_batchmaker.length} producten niet gevonden in batchmaker</span>
+              <span className="font-medium">{importResult.not_found_in_batchmaker.length} {t.settings.productsNotFoundInBatchmaker}</span>
               <span className="text-xs ml-1">(eerste 10: {importResult.not_found_in_batchmaker.slice(0, 10).join(', ')})</span>
             </div>
           )}
           {importResult.unmapped_packaging_ids.length > 0 && (
             <div className="mt-1 text-amber-700">
-              <span className="font-medium">Onbekende Everspring Packaging IDs:</span>
+              <span className="font-medium">{t.settings.unknownEverspringIds}:</span>
               <span className="text-xs ml-1">{importResult.unmapped_packaging_ids.join(', ')}</span>
             </div>
           )}
-          <button onClick={() => setImportResult(null)} className="mt-2 text-xs text-emerald-600 underline">Sluiten</button>
+          <button onClick={() => setImportResult(null)} className="mt-2 text-xs text-emerald-600 underline">{t.common.close}</button>
         </div>
       )}
 
@@ -429,7 +431,7 @@ export default function DefaultPackagingList() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Zoeken op naam of code..."
+            placeholder={t.settings.searchByNameOrCode}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-9 pr-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[44px]"
@@ -440,17 +442,17 @@ export default function DefaultPackagingList() {
           onChange={(e) => setFilter(e.target.value as FilterMode)}
           className="px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[44px]"
         >
-          <option value="all">Alle ({products.length})</option>
-          <option value="set">Ingesteld ({setCount})</option>
-          <option value="unset">Niet ingesteld ({products.length - setCount})</option>
+          <option value="all">{t.settings.all} ({products.length})</option>
+          <option value="set">{t.settings.configured} ({setCount})</option>
+          <option value="unset">{t.settings.notConfigured} ({products.length - setCount})</option>
         </select>
         <select
           value={packagingFilter}
           onChange={(e) => setPackagingFilter(e.target.value)}
           className="px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[44px]"
         >
-          <option value="all">Alle verpakkingen</option>
-          <option value="_empty">Niet ingesteld</option>
+          <option value="all">{t.settings.allPackagings}</option>
+          <option value="_empty">{t.settings.notConfigured}</option>
           {packagings
             .filter((p) => usedPackagingIds.has(p.id))
             .map((p) => (
@@ -462,8 +464,8 @@ export default function DefaultPackagingList() {
           onChange={(e) => setUnitFilter(e.target.value)}
           className="px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[44px]"
         >
-          <option value="all">Alle eenheden</option>
-          <option value="_empty">Niet ingesteld</option>
+          <option value="all">{t.settings.allUnits}</option>
+          <option value="_empty">{t.settings.notConfigured}</option>
           {Array.from(usedUnitIds).map((id) => (
             <option key={id} value={id}>{shippingUnits.get(id) || id}</option>
           ))}
@@ -473,11 +475,11 @@ export default function DefaultPackagingList() {
       {/* Results count */}
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs text-muted-foreground">
-          {filteredProducts.length} {filteredProducts.length === 1 ? 'product' : 'producten'} gevonden
+          {filteredProducts.length} {filteredProducts.length === 1 ? t.common.product : t.common.products} {t.settings.found}
         </span>
         {totalPages > 1 && (
           <span className="text-xs text-muted-foreground">
-            Pagina {page} van {totalPages}
+            {t.settings.page} {page} {t.common.of} {totalPages}
           </span>
         )}
       </div>
@@ -487,7 +489,7 @@ export default function DefaultPackagingList() {
         <div className="mb-3 p-3 bg-muted/30 border border-border rounded-lg flex flex-col sm:flex-row items-start sm:items-center gap-3">
           <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground shrink-0">
             <Layers className="w-4 h-4" />
-            Bulk toewijzen aan {filteredProducts.length} producten:
+            {t.settings.bulkAssignTo} {filteredProducts.length} {t.common.products}:
           </div>
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <select
@@ -496,8 +498,8 @@ export default function DefaultPackagingList() {
               disabled={isBulkSaving}
               className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
             >
-              <option value="">Kies verpakking...</option>
-              <option value="none">Geen (engine bepaalt)</option>
+              <option value="">{t.settings.choosePackaging}...</option>
+              <option value="none">{t.settings.noneEngineDecides}</option>
               {packagings.map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
@@ -510,7 +512,7 @@ export default function DefaultPackagingList() {
               {isBulkSaving ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
-                'Toepassen'
+                t.settings.apply
               )}
             </button>
           </div>
@@ -522,9 +524,9 @@ export default function DefaultPackagingList() {
         <div className="mb-3 p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between text-sm text-emerald-800">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4" />
-            <span><strong>{bulkResult.count}</strong> producten bijgewerkt naar <strong>{bulkResult.name}</strong></span>
+            <span><strong>{bulkResult.count}</strong> {t.settings.productsUpdatedTo} <strong>{bulkResult.name}</strong></span>
           </div>
-          <button onClick={() => setBulkResult(null)} className="text-xs text-emerald-600 underline">Sluiten</button>
+          <button onClick={() => setBulkResult(null)} className="text-xs text-emerald-600 underline">{t.common.close}</button>
         </div>
       )}
 
@@ -533,17 +535,17 @@ export default function DefaultPackagingList() {
           <table className="w-full table-fixed min-w-[1200px]">
             <thead>
               <tr className="bg-muted/20 border-b border-border text-left">
-                <th className="w-[16%] px-3 py-2 text-xs font-medium text-muted-foreground">Product</th>
-                <th className="w-[7%] px-3 py-2 text-xs font-medium text-muted-foreground">Eenheid</th>
-                <th className="w-[4%] px-3 py-2 text-xs font-medium text-muted-foreground">Maat</th>
-                <th className="w-[15%] px-3 py-2 text-xs font-medium text-muted-foreground">Default verpakking</th>
+                <th className="w-[16%] px-3 py-2 text-xs font-medium text-muted-foreground">{t.common.product}</th>
+                <th className="w-[7%] px-3 py-2 text-xs font-medium text-muted-foreground">{t.settings.unit}</th>
+                <th className="w-[4%] px-3 py-2 text-xs font-medium text-muted-foreground">{t.settings.size}</th>
+                <th className="w-[15%] px-3 py-2 text-xs font-medium text-muted-foreground">{t.settings.defaultPackaging}</th>
                 <th className="w-[10%] px-3 py-2 text-xs font-medium text-muted-foreground">
                   <span className="inline-flex items-center gap-1"><Tag className="w-3 h-3" /> Tag</span>
                 </th>
                 <th className="w-[7%] px-3 py-2 text-xs font-medium text-muted-foreground">
                   <span className="inline-flex items-center gap-1"><Box className="w-3 h-3" /> idpackaging</span>
                 </th>
-                <th className="w-[8%] px-3 py-2 text-xs font-medium text-muted-foreground">Barcode</th>
+                <th className="w-[8%] px-3 py-2 text-xs font-medium text-muted-foreground">{t.settings.barcode}</th>
                 {COST_COUNTRIES_PRIMARY.map(c => (
                   <th key={c} className="w-[7%] px-3 py-2 text-xs font-medium text-muted-foreground text-right">{c}</th>
                 ))}
@@ -554,7 +556,7 @@ export default function DefaultPackagingList() {
               {paginatedProducts.length === 0 ? (
                 <tr>
                   <td colSpan={8 + COST_COUNTRIES_PRIMARY.length} className="px-4 py-8 text-center text-sm text-muted-foreground">
-                    Geen producten gevonden
+                    {t.settings.noProductsFound}
                   </td>
                 </tr>
               ) : (
@@ -615,7 +617,7 @@ export default function DefaultPackagingList() {
                               !product.default_packaging_id ? 'text-muted-foreground' : ''
                             }`}
                           >
-                            <option value="">Geen (engine bepaalt)</option>
+                            <option value="">{t.settings.noneEngineDecides}</option>
                             {packagings.map((p) => (
                               <option key={p.id} value={p.id}>
                                 {p.name}
@@ -633,7 +635,7 @@ export default function DefaultPackagingList() {
                         {pkg?.picqer_tag_name ? (
                           <span className="text-xs font-medium">{pkg.picqer_tag_name}</span>
                         ) : pkg ? (
-                          <span className="text-xs text-muted-foreground italic">geen tag</span>
+                          <span className="text-xs text-muted-foreground italic">{t.settings.noTag}</span>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
@@ -645,7 +647,7 @@ export default function DefaultPackagingList() {
                           pkg.idpackaging > 0 ? (
                             <span className="text-xs font-mono">{pkg.idpackaging}</span>
                           ) : (
-                            <span className="text-xs text-muted-foreground italic">lokaal</span>
+                            <span className="text-xs text-muted-foreground italic">{t.settings.local}</span>
                           )
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
@@ -688,7 +690,7 @@ export default function DefaultPackagingList() {
                           <button
                             onClick={() => setExpandedProductId(prev => prev === product.id ? null : product.id)}
                             className="p-1 rounded hover:bg-muted transition-colors"
-                            title="Meer landen"
+                            title={t.settings.moreCountries}
                           >
                             <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${expandedProductId === product.id ? 'rotate-180' : ''}`} />
                           </button>
@@ -701,7 +703,7 @@ export default function DefaultPackagingList() {
                       <tr className="bg-muted/5 border-b border-border">
                         <td colSpan={8 + COST_COUNTRIES_PRIMARY.length} className="px-4 py-2">
                           <div className="flex items-center gap-6">
-                            <span className="text-xs text-muted-foreground shrink-0">Overige landen</span>
+                            <span className="text-xs text-muted-foreground shrink-0">{t.settings.otherCountries}</span>
                             {COST_COUNTRIES_EXTRA.map(country => {
                               const costData = getCostForPackaging(product.default_packaging_id, country)
                               return (
@@ -739,7 +741,7 @@ export default function DefaultPackagingList() {
             className="flex items-center gap-1 px-3 py-2 text-sm font-medium border border-border rounded-lg hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed min-h-[44px]"
           >
             <ChevronLeft className="w-4 h-4" />
-            Vorige
+            {t.settings.previous}
           </button>
 
           <div className="flex items-center gap-1">
@@ -767,7 +769,7 @@ export default function DefaultPackagingList() {
             disabled={page >= totalPages}
             className="flex items-center gap-1 px-3 py-2 text-sm font-medium border border-border rounded-lg hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed min-h-[44px]"
           >
-            Volgende
+            {t.common.next}
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>

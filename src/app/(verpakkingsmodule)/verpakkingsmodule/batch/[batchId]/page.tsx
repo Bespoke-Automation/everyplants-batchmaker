@@ -8,6 +8,7 @@ import BatchOverview from '@/components/verpakking/BatchOverview'
 import WorkerSelector from '@/components/verpakking/WorkerSelector'
 import type { Worker } from '@/types/verpakking'
 import { DEV_MODE_USER_IDS } from '@/lib/constants'
+import { useTranslation } from '@/i18n/LanguageContext'
 
 export default function BatchPage({ params }: { params: Promise<{ batchId: string }> }) {
   const { batchId: batchIdStr } = use(params)
@@ -15,6 +16,7 @@ export default function BatchPage({ params }: { params: Promise<{ batchId: strin
   const router = useRouter()
   const searchParams = useSearchParams()
   const { workers, selectedWorker, isLoading: isLoadingWorker, error: workerError, selectWorker } = useWorker()
+  const { t } = useTranslation()
 
   const [batchSessionId, setBatchSessionId] = useState<string | null>(null)
   const [isLoadingSession, setIsLoadingSession] = useState(true)
@@ -79,7 +81,7 @@ export default function BatchPage({ params }: { params: Promise<{ batchId: strin
       })
 
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Sessie aanmaken mislukt')
+      if (!res.ok) throw new Error(data.error || t.batch.sessionCreateFailed)
 
       router.push(`/verpakkingsmodule/picklist/${data.id}?batchId=${batchId}`)
     } catch (err) {
@@ -106,7 +108,7 @@ export default function BatchPage({ params }: { params: Promise<{ batchId: strin
       }`}
     >
       <Code2 className="w-3.5 h-3.5" />
-      {devMode ? 'Dev Mode AAN' : 'Dev Mode'}
+      {devMode ? t.batch.devModeOn : t.batch.devMode}
     </button>
   ) : null
 
@@ -133,7 +135,7 @@ export default function BatchPage({ params }: { params: Promise<{ batchId: strin
     )
   }
 
-  const worker: Worker = selectedWorker ?? { iduser: 0, firstname: 'Dev', lastname: 'Mode', fullName: 'Developer' }
+  const worker: Worker = selectedWorker ?? { iduser: 0, firstname: 'Dev', lastname: 'Mode', fullName: t.batch.devMode }
 
   return (
     <main className="flex-1 flex flex-col overflow-hidden">
@@ -163,7 +165,7 @@ export default function BatchPage({ params }: { params: Promise<{ batchId: strin
         <div className="fixed inset-0 bg-background/50 flex items-center justify-center z-40">
           <div className="flex items-center gap-3 bg-card px-6 py-4 rounded-lg shadow-lg border border-border">
             <Loader2 className="w-5 h-5 animate-spin text-violet-600" />
-            <span className="text-sm font-medium">Dev sessie aanmaken...</span>
+            <span className="text-sm font-medium">{t.batch.devSessionCreating}</span>
           </div>
         </div>
       )}

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { User, Loader2, AlertCircle, RefreshCw, Monitor, Printer } from 'lucide-react'
+import { useTranslation } from '@/i18n/LanguageContext'
 import type { Worker } from '@/types/verpakking'
 import type { PackingStation } from '@/hooks/usePackingStation'
 
@@ -51,6 +52,7 @@ export default function WorkerSelector({
   onSelectStation,
   onSkipStation,
 }: WorkerSelectorProps) {
+  const { t } = useTranslation()
   // Step state: 'worker' or 'station'
   const [step, setStep] = useState<'worker' | 'station'>('worker')
   const [pendingWorker, setPendingWorker] = useState<Worker | null>(null)
@@ -92,7 +94,7 @@ export default function WorkerSelector({
             <AlertCircle className="w-8 h-8 text-destructive" />
           </div>
           <div>
-            <h2 className="text-xl font-bold mb-2">Fout bij laden</h2>
+            <h2 className="text-xl font-bold mb-2">{t.worker.loadError}</h2>
             <p className="text-muted-foreground">{error.message}</p>
           </div>
           <button
@@ -100,7 +102,7 @@ export default function WorkerSelector({
             className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg font-medium text-base hover:bg-primary/90 transition-colors min-h-[48px]"
           >
             <RefreshCw className="w-5 h-5" />
-            Opnieuw proberen
+            {t.worker.retryLoad}
           </button>
         </div>
       </div>
@@ -112,7 +114,7 @@ export default function WorkerSelector({
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8">
         <Loader2 className="w-10 h-10 text-primary animate-spin mb-4" />
-        <p className="text-lg text-muted-foreground">Medewerkers laden...</p>
+        <p className="text-lg text-muted-foreground">{t.worker.loadingWorkers}</p>
       </div>
     )
   }
@@ -126,9 +128,9 @@ export default function WorkerSelector({
             <User className="w-8 h-8 text-muted-foreground" />
           </div>
           <div>
-            <h2 className="text-xl font-bold mb-2">Geen medewerkers gevonden</h2>
+            <h2 className="text-xl font-bold mb-2">{t.worker.noWorkers}</h2>
             <p className="text-muted-foreground">
-              Er zijn geen actieve medewerkers gevonden in Picqer.
+              {t.worker.noWorkersDesc}
             </p>
           </div>
           <button
@@ -136,7 +138,7 @@ export default function WorkerSelector({
             className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg font-medium text-base hover:bg-primary/90 transition-colors min-h-[48px]"
           >
             <RefreshCw className="w-5 h-5" />
-            Vernieuwen
+            {t.worker.refresh}
           </button>
         </div>
       </div>
@@ -153,9 +155,9 @@ export default function WorkerSelector({
             <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
               <Monitor className="w-8 h-8 text-primary" />
             </div>
-            <h2 className="text-2xl sm:text-3xl font-bold">Kies je werkstation</h2>
+            <h2 className="text-2xl sm:text-3xl font-bold">{t.worker.chooseStation}</h2>
             <p className="text-muted-foreground mt-2 text-base">
-              Hiermee wordt het label automatisch op de juiste printer geprint.
+              {t.worker.stationHint}
             </p>
           </div>
 
@@ -193,13 +195,13 @@ export default function WorkerSelector({
               }}
               className="px-4 py-2.5 min-h-[48px] text-sm text-muted-foreground hover:bg-muted rounded-lg transition-colors"
             >
-              Terug
+              {t.common.back}
             </button>
             <button
               onClick={handleSkipStation}
               className="px-4 py-2.5 min-h-[48px] text-sm text-muted-foreground hover:bg-muted rounded-lg transition-colors"
             >
-              Overslaan (geen auto-print)
+              {t.worker.skipStation}
             </button>
           </div>
         </div>
@@ -216,9 +218,9 @@ export default function WorkerSelector({
           <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
             <User className="w-8 h-8 text-primary" />
           </div>
-          <h2 className="text-2xl sm:text-3xl font-bold">Wie ben jij?</h2>
+          <h2 className="text-2xl sm:text-3xl font-bold">{t.worker.whoAreYou}</h2>
           <p className="text-muted-foreground mt-2 text-base">
-            Selecteer je naam om te beginnen
+            {t.worker.selectToStart}
           </p>
         </div>
 

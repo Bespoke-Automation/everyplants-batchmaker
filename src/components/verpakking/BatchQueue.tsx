@@ -13,26 +13,38 @@ import {
 } from 'lucide-react'
 import { useBatchQueue } from '@/hooks/useBatchQueue'
 import { usePicqerUsers } from '@/hooks/usePicqerUsers'
+import { useTranslation } from '@/i18n/LanguageContext'
 import type { Worker, QueueBatch } from '@/types/verpakking'
 
-// Relative time in Dutch (full words)
-function timeAgo(dateString: string): string {
+// Relative time helper — returns translated string via dictionary
+function timeAgo(
+  dateString: string,
+  t: {
+    now: string
+    minuteAgo: string
+    minutesAgo: string
+    hourAgo: string
+    hoursAgo: string
+    dayAgo: string
+    daysAgo: string
+  }
+): string {
   const now = Date.now()
   const then = new Date(dateString).getTime()
   const diffMs = now - then
   const diffMins = Math.round(diffMs / 60000)
 
-  if (diffMins < 1) return 'nu'
-  if (diffMins === 1) return '1 minuut geleden'
-  if (diffMins < 60) return `${diffMins} minuten geleden`
+  if (diffMins < 1) return t.now
+  if (diffMins === 1) return t.minuteAgo
+  if (diffMins < 60) return `${diffMins} ${t.minutesAgo}`
 
   const diffHours = Math.floor(diffMins / 60)
-  if (diffHours === 1) return '1 uur geleden'
-  if (diffHours < 24) return `${diffHours} uur geleden`
+  if (diffHours === 1) return t.hourAgo
+  if (diffHours < 24) return `${diffHours} ${t.hoursAgo}`
 
   const diffDays = Math.floor(diffHours / 24)
-  if (diffDays === 1) return '1 dag geleden'
-  return `${diffDays} dagen geleden`
+  if (diffDays === 1) return t.dayAgo
+  return `${diffDays} ${t.daysAgo}`
 }
 
 interface BatchQueueProps {
@@ -48,6 +60,7 @@ export default function BatchQueue({
   onBatchPreview,
   onBatchClaimed,
 }: BatchQueueProps) {
+  const { t } = useTranslation()
   const {
     batches,
     totalBatches,
@@ -82,6 +95,16 @@ export default function BatchQueue({
     [onBatchClaimed, onBatchPreview]
   )
 
+  const timeAgoKeys = {
+    now: t.queue.timeNow,
+    minuteAgo: t.queue.timeMinuteAgo,
+    minutesAgo: t.queue.timeMinutesAgo,
+    hourAgo: t.queue.timeHourAgo,
+    hoursAgo: t.queue.timeHoursAgo,
+    dayAgo: t.queue.timeDayAgo,
+    daysAgo: t.queue.timeDaysAgo,
+  }
+
   return (
     <div className="flex-1 flex flex-col">
       {/* Worker header bar */}
@@ -98,7 +121,7 @@ export default function BatchQueue({
           className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg hover:bg-muted transition-colors text-sm font-medium min-h-[44px]"
         >
           <ArrowRightLeft className="w-3.5 h-3.5" />
-          Wissel
+          {t.queue.switchWorker}
         </button>
       </div>
 
@@ -107,7 +130,7 @@ export default function BatchQueue({
         <div className="flex items-center gap-2">
           <Layers className="w-4 h-4 text-muted-foreground" />
           <h2 className="font-semibold text-base">
-            Batches
+            {t.queue.batches}
             {!isLoading && (
               <span className="text-muted-foreground font-normal ml-1.5">
                 ({batches.length}{batches.length !== totalBatches ? `/${totalBatches}` : ''})
@@ -134,7 +157,7 @@ export default function BatchQueue({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Zoek batch of picker..."
+              placeholder={t.queue.searchPlaceholder}
               className="w-full pl-8 pr-3 py-1.5 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
             />
           </div>
@@ -142,9 +165,9 @@ export default function BatchQueue({
           {/* Status filter */}
           <div className="flex items-center rounded-lg border border-border overflow-hidden shrink-0">
             {([
-              { value: 'open', label: 'Open' },
-              { value: 'completed', label: 'Afgerond' },
-              { value: 'all', label: 'Alle' },
+              { value: 'open', label: t.status.open },
+              { value: 'completed', label: t.queue.filterCompleted },
+              { value: 'all', label: t.queue.filterAll },
             ] as const).map((opt) => (
               <button
                 key={opt.value}
@@ -166,9 +189,9 @@ export default function BatchQueue({
           {/* Type filter */}
           <div className="flex items-center rounded-lg border border-border overflow-hidden shrink-0">
             {([
-              { value: 'all', label: 'Alle types' },
-              { value: 'normal', label: 'Normaal' },
-              { value: 'singles', label: 'Singles' },
+              { value: 'all', label: t.queue.filterAllTypes },
+              { value: 'normal', label: t.queue.filterNormal },
+              { value: 'singles', label: t.queue.filterSingles },
             ] as const).map((opt) => (
               <button
                 key={opt.value}
@@ -190,7 +213,7 @@ export default function BatchQueue({
             onChange={(e) => setAssignedToFilter(e.target.value ? Number(e.target.value) : null)}
             className="flex-1 px-3 py-1.5 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
           >
-            <option value="">Alle pickers</option>
+            <option value="">{t.queue.allPickers}</option>
             {picqerUsers.map((u) => (
               <option key={u.iduser} value={u.iduser}>
                 {u.fullName}
@@ -212,7 +235,7 @@ export default function BatchQueue({
               className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg font-medium text-sm hover:bg-primary/90 transition-colors min-h-[44px]"
             >
               <RefreshCw className="w-4 h-4" />
-              Opnieuw
+              {t.common.retry}
             </button>
           </div>
         )}
@@ -221,7 +244,7 @@ export default function BatchQueue({
         {isLoading && !error && batches.length === 0 && (
           <div className="p-8 flex flex-col items-center justify-center gap-2">
             <Loader2 className="w-6 h-6 text-primary animate-spin" />
-            <p className="text-muted-foreground text-sm">Laden...</p>
+            <p className="text-muted-foreground text-sm">{t.common.loading}</p>
           </div>
         )}
 
@@ -229,13 +252,13 @@ export default function BatchQueue({
         {!isLoading && !error && batches.length === 0 && (
           <div className="p-8 flex flex-col items-center justify-center gap-3 text-center">
             <Layers className="w-8 h-8 text-muted-foreground" />
-            <p className="text-muted-foreground text-base">Geen openstaande batches</p>
+            <p className="text-muted-foreground text-base">{t.queue.noBatches}</p>
             <button
               onClick={refetch}
               className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg font-medium text-sm hover:bg-primary/90 transition-colors min-h-[44px]"
             >
               <RefreshCw className="w-4 h-4" />
-              Vernieuw
+              {t.queue.refresh}
             </button>
           </div>
         )}
@@ -267,7 +290,7 @@ export default function BatchQueue({
                         >
                           <MessageSquare className="w-4 h-4" />
                           <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 bg-gray-800 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                            {batch.totalComments} {batch.totalComments === 1 ? 'opmerking' : 'opmerkingen'}
+                            {batch.totalComments} {batch.totalComments === 1 ? t.queue.commentSingular : t.queue.commentPlural}
                           </span>
                         </span>
                       )}
@@ -278,32 +301,32 @@ export default function BatchQueue({
                       )}
                       {batch.status === 'open' && !hasMySession && !batch.isClaimed && (
                         <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium leading-none bg-gray-100 text-gray-600">
-                          Open
+                          {t.status.open}
                         </span>
                       )}
                       {batch.status === 'completed' && (
                         <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium leading-none bg-emerald-100 text-emerald-700">
-                          Afgerond
+                          {t.queue.filterCompleted}
                         </span>
                       )}
                       {batch.isClaimed && batch.claimedByName && (
                         <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium leading-none bg-blue-100 text-blue-700">
-                          Actief · {batch.claimedByName}
+                          {t.queue.active} · {batch.claimedByName}
                         </span>
                       )}
                     </div>
                     <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
-                      <span>{batch.totalPicklists} picklijsten</span>
+                      <span>{batch.totalPicklists} {t.queue.picklists}</span>
                       <span className="text-border">·</span>
-                      <span>{batch.totalProducts} producten</span>
+                      <span>{batch.totalProducts} {t.common.products}</span>
                       {batch.picqerAssignedTo && (
                         <>
                           <span className="text-border">·</span>
-                          <span className="truncate max-w-[180px]">Gepickt door {batch.picqerAssignedTo}</span>
+                          <span className="truncate max-w-[180px]">{t.queue.pickedBy} {batch.picqerAssignedTo}</span>
                         </>
                       )}
                       <span className="text-border">·</span>
-                      <span>{timeAgo(batch.createdAt)}</span>
+                      <span>{timeAgo(batch.createdAt, timeAgoKeys)}</span>
                     </div>
                   </div>
 
@@ -319,7 +342,7 @@ export default function BatchQueue({
                 onClick={loadMoreCompleted}
                 className="w-full py-3 text-sm text-primary hover:bg-muted/50 transition-colors font-medium"
               >
-                Meer laden...
+                {t.queue.loadMore}
               </button>
             )}
           </div>
@@ -329,7 +352,7 @@ export default function BatchQueue({
       {/* Footer */}
       <div className="border-t border-border bg-muted/30 px-4 py-2 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
         <RefreshCw className="w-3 h-3" />
-        Auto-refresh 5s
+        {t.queue.autoRefresh}
       </div>
     </div>
   )

@@ -3,6 +3,7 @@
 import { useState, useEffect, useSyncExternalStore, Suspense } from 'react'
 import dynamic from 'next/dynamic'
 import { Loader2 } from 'lucide-react'
+import { useTranslation } from '@/i18n/LanguageContext'
 
 const TabLoading = () => (
   <div className="flex items-center justify-center py-12">
@@ -18,17 +19,17 @@ const ShippingUnitList = dynamic(() => import('@/components/verpakking/ShippingU
 const DefaultPackagingList = dynamic(() => import('@/components/verpakking/DefaultPackagingList'), { loading: TabLoading })
 const PackingStationSettings = dynamic(() => import('@/components/verpakking/PackingStationSettings'), { loading: TabLoading })
 
-const TABS = [
-  { id: 'verpakkingen', label: 'Verpakkingen' },
-  { id: 'tags', label: 'Tags' },
-  { id: 'compartimenten', label: 'Compartimenten' },
-  { id: 'producten', label: 'Producten' },
-  { id: 'verzendeenheden', label: 'Verzendeenheden' },
-  { id: 'default-verpakkingen', label: 'Default Verpakkingen' },
-  { id: 'werkstations', label: 'Werkstations' },
+const TAB_IDS = [
+  'verpakkingen',
+  'tags',
+  'compartimenten',
+  'producten',
+  'verzendeenheden',
+  'default-verpakkingen',
+  'werkstations',
 ] as const
 
-type TabId = (typeof TABS)[number]['id']
+type TabId = (typeof TAB_IDS)[number]
 
 // Read hash client-side only to avoid hydration mismatch
 function useHash(): string {
@@ -45,10 +46,16 @@ function useHash(): string {
 export default function InstellingenPage() {
   const hash = useHash()
   const [activeTab, setActiveTab] = useState<TabId>('verpakkingen')
+  const { t } = useTranslation()
+
+  const TABS = TAB_IDS.map((id) => ({
+    id,
+    label: t.settings[id as keyof typeof t.settings] ?? id,
+  }))
 
   // Sync hash → tab on mount and hash changes
   useEffect(() => {
-    if (hash && TABS.some((t) => t.id === hash)) {
+    if (hash && TAB_IDS.includes(hash as TabId)) {
       setActiveTab(hash as TabId)
     }
   }, [hash])

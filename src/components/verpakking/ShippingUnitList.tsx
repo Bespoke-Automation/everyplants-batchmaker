@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Loader2, AlertCircle, Package2, Search, Plus, Pencil, Trash2, X, AlertTriangle, Check } from 'lucide-react'
+import { useTranslation } from '@/i18n/LanguageContext'
 
 interface ShippingUnit {
   id: string
@@ -72,7 +73,7 @@ function buildName(productType: string, form: FormData): string {
     parts.push('BREEKBAAR')
   }
 
-  return parts.join(' | ') || 'Nieuwe verzendeenheid'
+  return parts.join(' | ') || ''
 }
 
 function rangesOverlap(
@@ -93,6 +94,7 @@ function fragileCompatible(a: boolean | null, b: boolean | null): boolean {
 }
 
 export default function ShippingUnitList() {
+  const { t } = useTranslation()
   const [shippingUnits, setShippingUnits] = useState<ShippingUnit[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
@@ -159,7 +161,7 @@ export default function ShippingUnitList() {
   }, [editingId, form, shippingUnits])
 
   // Generated name preview
-  const namePreview = useMemo(() => buildName(form.product_type, form), [form])
+  const namePreview = useMemo(() => buildName(form.product_type, form) || t.settings.newShippingUnit, [form, t])
 
   // Filter by search query
   const filteredUnits = useMemo(() => {
@@ -218,7 +220,7 @@ export default function ShippingUnitList() {
 
   const handleSave = async () => {
     if (!form.product_type) {
-      setSaveError('Product type is verplicht')
+      setSaveError(t.settings.productTypeRequired)
       return
     }
 
@@ -248,13 +250,13 @@ export default function ShippingUnitList() {
 
       if (!res.ok) {
         const data = await res.json()
-        throw new Error(data.error || 'Opslaan mislukt')
+        throw new Error(data.error || t.settings.saveFailed)
       }
 
       cancelEdit()
       await fetchData()
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Onbekende fout')
+      setSaveError(err instanceof Error ? err.message : t.settings.unknownError)
     } finally {
       setIsSaving(false)
     }
@@ -271,13 +273,13 @@ export default function ShippingUnitList() {
 
       if (!res.ok) {
         const data = await res.json()
-        throw new Error(data.error || 'Verwijderen mislukt')
+        throw new Error(data.error || t.settings.deleteFailed)
       }
 
       setDeleteConfirmId(null)
       await fetchData()
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Onbekende fout')
+      setSaveError(err instanceof Error ? err.message : t.settings.unknownError)
       setDeleteConfirmId(null)
     } finally {
       setIsDeleting(false)
@@ -293,7 +295,7 @@ export default function ShippingUnitList() {
       <div className="max-w-3xl mx-auto">
         <div className="flex flex-col items-center justify-center p-12">
           <Loader2 className="w-10 h-10 text-primary animate-spin mb-4" />
-          <p className="text-lg text-muted-foreground">Gegevens laden...</p>
+          <p className="text-lg text-muted-foreground">{t.settings.loadingData}</p>
         </div>
       </div>
     )
@@ -305,7 +307,7 @@ export default function ShippingUnitList() {
         <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg flex items-center gap-2 text-destructive">
           <AlertCircle className="w-5 h-5 shrink-0" />
           <div>
-            <p className="font-medium">Fout bij laden</p>
+            <p className="font-medium">{t.settings.loadError}</p>
             <p className="text-sm">{error.message}</p>
           </div>
         </div>
@@ -318,7 +320,7 @@ export default function ShippingUnitList() {
     <div className="p-4 bg-card border border-primary/30 rounded-lg space-y-4 mb-6">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold">
-          {editingId === 'new' ? 'Nieuwe verzendeenheid' : 'Bewerken'}
+          {editingId === 'new' ? t.settings.newShippingUnit : t.settings.edit}
         </h3>
         <button onClick={cancelEdit} className="p-1 hover:bg-muted rounded transition-colors">
           <X className="w-4 h-4" />
@@ -327,13 +329,13 @@ export default function ShippingUnitList() {
 
       {/* Name preview */}
       <div className="px-3 py-2 bg-muted/50 rounded-md">
-        <div className="text-[10px] text-muted-foreground uppercase font-medium mb-0.5">Naam (automatisch)</div>
+        <div className="text-[10px] text-muted-foreground uppercase font-medium mb-0.5">{t.settings.nameAutomatic}</div>
         <div className="text-sm font-semibold">{namePreview}</div>
       </div>
 
       {/* Product type */}
       <div>
-        <label className="text-xs font-medium text-muted-foreground block mb-1">Product type *</label>
+        <label className="text-xs font-medium text-muted-foreground block mb-1">{t.settings.productType} *</label>
         <div className="flex gap-2">
           <select
             value={knownProductTypes.includes(form.product_type) ? form.product_type : '__custom'}
@@ -346,18 +348,18 @@ export default function ShippingUnitList() {
             }}
             className="flex-1 px-3 py-2 border border-border rounded-md text-sm bg-background min-h-[40px]"
           >
-            <option value="">Kies type...</option>
-            {knownProductTypes.map(t => (
-              <option key={t} value={t}>{t}</option>
+            <option value="">{t.settings.chooseType}</option>
+            {knownProductTypes.map(pt => (
+              <option key={pt} value={pt}>{pt}</option>
             ))}
-            <option value="__custom">Nieuw type...</option>
+            <option value="__custom">{t.settings.newType}</option>
           </select>
           {(!knownProductTypes.includes(form.product_type) && form.product_type !== '') && (
             <input
               type="text"
               value={form.product_type}
               onChange={(e) => updateForm('product_type', e.target.value)}
-              placeholder="Nieuw type naam"
+              placeholder={t.settings.newTypeName}
               className="flex-1 px-3 py-2 border border-border rounded-md text-sm bg-background min-h-[40px]"
             />
           )}
@@ -367,7 +369,7 @@ export default function ShippingUnitList() {
       {/* Ranges */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="text-xs font-medium text-muted-foreground block mb-1">Potmaat (cm)</label>
+          <label className="text-xs font-medium text-muted-foreground block mb-1">{t.settings.potSize} (cm)</label>
           <div className="flex items-center gap-2">
             <div className="flex-1">
               <input
@@ -375,27 +377,27 @@ export default function ShippingUnitList() {
                 step="0.1"
                 value={form.pot_size_min}
                 onChange={(e) => updateForm('pot_size_min', e.target.value)}
-                placeholder="geen min"
+                placeholder={t.settings.noMin}
                 className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background min-h-[40px]"
               />
-              <div className="text-[10px] text-muted-foreground mt-0.5">Leeg = geen ondergrens</div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">{t.settings.emptyNoLowerBound}</div>
             </div>
-            <span className="text-muted-foreground text-sm">t/m</span>
+            <span className="text-muted-foreground text-sm">{t.settings.upTo}</span>
             <div className="flex-1">
               <input
                 type="number"
                 step="0.1"
                 value={form.pot_size_max}
                 onChange={(e) => updateForm('pot_size_max', e.target.value)}
-                placeholder="geen max"
+                placeholder={t.settings.noMax}
                 className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background min-h-[40px]"
               />
-              <div className="text-[10px] text-muted-foreground mt-0.5">Leeg = geen bovengrens</div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">{t.settings.emptyNoUpperBound}</div>
             </div>
           </div>
         </div>
         <div>
-          <label className="text-xs font-medium text-muted-foreground block mb-1">Hoogte (cm)</label>
+          <label className="text-xs font-medium text-muted-foreground block mb-1">{t.settings.plantHeight} (cm)</label>
           <div className="flex items-center gap-2">
             <div className="flex-1">
               <input
@@ -403,22 +405,22 @@ export default function ShippingUnitList() {
                 step="0.1"
                 value={form.height_min}
                 onChange={(e) => updateForm('height_min', e.target.value)}
-                placeholder="geen min"
+                placeholder={t.settings.noMin}
                 className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background min-h-[40px]"
               />
-              <div className="text-[10px] text-muted-foreground mt-0.5">Leeg = geen ondergrens</div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">{t.settings.emptyNoLowerBound}</div>
             </div>
-            <span className="text-muted-foreground text-sm">t/m</span>
+            <span className="text-muted-foreground text-sm">{t.settings.upTo}</span>
             <div className="flex-1">
               <input
                 type="number"
                 step="0.1"
                 value={form.height_max}
                 onChange={(e) => updateForm('height_max', e.target.value)}
-                placeholder="geen max"
+                placeholder={t.settings.noMax}
                 className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background min-h-[40px]"
               />
-              <div className="text-[10px] text-muted-foreground mt-0.5">Leeg = geen bovengrens</div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">{t.settings.emptyNoUpperBound}</div>
             </div>
           </div>
         </div>
@@ -427,19 +429,19 @@ export default function ShippingUnitList() {
       {/* Fragile + Sort order */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="text-xs font-medium text-muted-foreground block mb-1">Breekbaar filter</label>
+          <label className="text-xs font-medium text-muted-foreground block mb-1">{t.settings.fragileFilter}</label>
           <select
             value={form.is_fragile_filter}
             onChange={(e) => updateForm('is_fragile_filter', e.target.value)}
             className="w-full px-3 py-2 border border-border rounded-md text-sm bg-background min-h-[40px]"
           >
-            <option value="all">Alle (geen filter)</option>
-            <option value="true">Alleen breekbaar</option>
-            <option value="false">Alleen niet-breekbaar</option>
+            <option value="all">{t.settings.allNoFilter}</option>
+            <option value="true">{t.settings.onlyFragile}</option>
+            <option value="false">{t.settings.onlyNonFragile}</option>
           </select>
         </div>
         <div>
-          <label className="text-xs font-medium text-muted-foreground block mb-1">Sorteervolgorde</label>
+          <label className="text-xs font-medium text-muted-foreground block mb-1">{t.settings.sortOrder}</label>
           <input
             type="number"
             value={form.sort_order}
@@ -454,7 +456,7 @@ export default function ShippingUnitList() {
         <div className="p-3 bg-amber-50 border border-amber-200 rounded-md">
           <div className="flex items-center gap-2 text-amber-700 text-sm font-medium mb-1">
             <AlertTriangle className="w-4 h-4 shrink-0" />
-            Overlap met {overlaps.length} bestaande {overlaps.length === 1 ? 'eenheid' : 'eenheden'}
+            {t.settings.overlapWith} {overlaps.length} {overlaps.length === 1 ? t.settings.unit : t.settings.units}
           </div>
           <div className="text-xs text-amber-600 space-y-0.5">
             {overlaps.map(u => (
@@ -462,7 +464,7 @@ export default function ShippingUnitList() {
             ))}
           </div>
           <div className="text-[10px] text-amber-500 mt-1">
-            Bij overlap bepaalt de sorteervolgorde welke eenheid prioriteit krijgt.
+            {t.settings.overlapSortHint}
           </div>
         </div>
       )}
@@ -480,7 +482,7 @@ export default function ShippingUnitList() {
           onClick={cancelEdit}
           className="px-4 py-2 text-sm border border-border rounded-md hover:bg-muted transition-colors min-h-[40px]"
         >
-          Annuleren
+          {t.common.cancel}
         </button>
         <button
           onClick={handleSave}
@@ -488,7 +490,7 @@ export default function ShippingUnitList() {
           className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50 min-h-[40px] inline-flex items-center gap-2"
         >
           {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-          {editingId === 'new' ? 'Aanmaken' : 'Opslaan'}
+          {editingId === 'new' ? t.settings.create : t.common.save}
         </button>
       </div>
     </div>
@@ -503,9 +505,9 @@ export default function ShippingUnitList() {
             <Package2 className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <h2 className="text-xl font-bold">Verzendeenheden</h2>
+            <h2 className="text-xl font-bold">{t.settings.shippingUnits}</h2>
             <p className="text-sm text-muted-foreground">
-              {shippingUnits.length} actieve eenheden
+              {shippingUnits.length} {t.settings.activeUnits}
             </p>
           </div>
         </div>
@@ -515,7 +517,7 @@ export default function ShippingUnitList() {
             className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors min-h-[44px]"
           >
             <Plus className="w-4 h-4" />
-            Nieuwe eenheid
+            {t.settings.newUnit}
           </button>
         )}
       </div>
@@ -529,7 +531,7 @@ export default function ShippingUnitList() {
           <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
-            placeholder="Zoek op naam of type..."
+            placeholder={t.settings.searchByNameOrType}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-10 pr-4 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary min-h-[44px]"
@@ -549,7 +551,7 @@ export default function ShippingUnitList() {
         <div className="text-center py-12 bg-card border border-border rounded-lg">
           <Package2 className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
           <p className="text-sm text-muted-foreground">
-            {searchQuery ? 'Geen resultaten gevonden' : 'Geen verzendeenheden beschikbaar'}
+            {searchQuery ? t.common.noResults : t.settings.noShippingUnits}
           </p>
         </div>
       ) : (
@@ -574,19 +576,19 @@ export default function ShippingUnitList() {
                               <h4 className="text-sm font-semibold mb-2">{unit.name}</h4>
                               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                                 <div className="flex items-center gap-2">
-                                  <span className="text-muted-foreground">Potmaat:</span>
+                                  <span className="text-muted-foreground">{t.settings.potSize}:</span>
                                   <span className="font-medium">
                                     {formatRange(unit.pot_size_min, unit.pot_size_max, ' cm')}
                                   </span>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  <span className="text-muted-foreground">Hoogte:</span>
+                                  <span className="text-muted-foreground">{t.settings.plantHeight}:</span>
                                   <span className="font-medium">
                                     {formatRange(unit.height_min, unit.height_max, ' cm')}
                                   </span>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  <span className="text-muted-foreground">Volgorde:</span>
+                                  <span className="text-muted-foreground">{t.settings.sortOrder}:</span>
                                   <span className="font-medium">{unit.sort_order}</span>
                                 </div>
                               </div>
@@ -594,11 +596,11 @@ export default function ShippingUnitList() {
                             <div className="flex items-center gap-2 shrink-0">
                               {unit.is_fragile_filter && (
                                 <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                  Breekbaar
+                                  {t.settings.fragile}
                                 </span>
                               )}
                               <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                {unit.product_count} {unit.product_count === 1 ? 'product' : 'producten'}
+                                {unit.product_count} {unit.product_count === 1 ? t.common.product : t.common.products}
                               </span>
 
                               {/* Edit/Delete buttons */}
@@ -609,13 +611,13 @@ export default function ShippingUnitList() {
                                     disabled={isDeleting}
                                     className="px-2 py-1 text-xs bg-destructive text-destructive-foreground rounded hover:bg-destructive/90 transition-colors min-h-[32px]"
                                   >
-                                    {isDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Ja, verwijder'}
+                                    {isDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : t.settings.yesDelete}
                                   </button>
                                   <button
                                     onClick={() => setDeleteConfirmId(null)}
                                     className="px-2 py-1 text-xs border border-border rounded hover:bg-muted transition-colors min-h-[32px]"
                                   >
-                                    Nee
+                                    {t.common.no}
                                   </button>
                                 </div>
                               ) : (
@@ -623,14 +625,14 @@ export default function ShippingUnitList() {
                                   <button
                                     onClick={() => startEdit(unit)}
                                     className="p-1.5 rounded hover:bg-muted transition-colors"
-                                    title="Bewerken"
+                                    title={t.settings.edit}
                                   >
                                     <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
                                   </button>
                                   <button
                                     onClick={() => setDeleteConfirmId(unit.id)}
                                     className="p-1.5 rounded hover:bg-destructive/10 transition-colors"
-                                    title="Verwijderen"
+                                    title={t.common.delete}
                                   >
                                     <Trash2 className="w-3.5 h-3.5 text-destructive" />
                                   </button>

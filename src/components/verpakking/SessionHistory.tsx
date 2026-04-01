@@ -14,6 +14,7 @@ import {
   Sparkles,
   Box as BoxIcon,
 } from 'lucide-react'
+import { useTranslation } from '@/i18n/LanguageContext'
 
 interface BatchSession {
   id: string
@@ -85,52 +86,24 @@ interface PackingSessionsResponse {
 
 const PAGE_SIZE = 20
 
-const STATUS_CONFIG: Record<
-  string,
-  { label: string; className: string }
-> = {
-  claimed: {
-    label: 'Geclaimd',
-    className: 'bg-amber-100 text-amber-800 border-amber-200',
-  },
-  in_progress: {
-    label: 'Bezig',
-    className: 'bg-blue-100 text-blue-800 border-blue-200',
-  },
-  assigned: {
-    label: 'Toegewezen',
-    className: 'bg-amber-100 text-amber-800 border-amber-200',
-  },
-  packing: {
-    label: 'Inpakken',
-    className: 'bg-blue-100 text-blue-800 border-blue-200',
-  },
-  shipping: {
-    label: 'Verzenden',
-    className: 'bg-blue-100 text-blue-800 border-blue-200',
-  },
-  completed: {
-    label: 'Voltooid',
-    className: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  },
-  failed: {
-    label: 'Mislukt',
-    className: 'bg-red-100 text-red-800 border-red-200',
-  },
+const STATUS_CLASS: Record<string, string> = {
+  claimed: 'bg-amber-100 text-amber-800 border-amber-200',
+  in_progress: 'bg-blue-100 text-blue-800 border-blue-200',
+  assigned: 'bg-amber-100 text-amber-800 border-amber-200',
+  packing: 'bg-blue-100 text-blue-800 border-blue-200',
+  shipping: 'bg-blue-100 text-blue-800 border-blue-200',
+  completed: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  failed: 'bg-red-100 text-red-800 border-red-200',
 }
 
-function getStatusBadge(status: string) {
-  const config = STATUS_CONFIG[status] ?? {
-    label: status,
-    className: 'bg-muted text-muted-foreground border-border',
-  }
-  return (
-    <span
-      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${config.className}`}
-    >
-      {config.label}
-    </span>
-  )
+const STATUS_KEY: Record<string, string> = {
+  claimed: 'claimed',
+  in_progress: 'inProgress',
+  assigned: 'assigned',
+  packing: 'packing',
+  shipping: 'shipping',
+  completed: 'completed',
+  failed: 'failed',
 }
 
 function formatDate(dateString: string): string {
@@ -160,20 +133,51 @@ function formatDuration(start: string, end: string | null): string {
   return `${hrs}u ${remainMins}m`
 }
 
-const CONFIDENCE_CONFIG: Record<string, { label: string; className: string }> = {
-  full_match: { label: 'Volledig', className: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
-  partial_match: { label: 'Gedeeltelijk', className: 'bg-amber-100 text-amber-800 border-amber-200' },
-  no_match: { label: 'Geen match', className: 'bg-red-100 text-red-800 border-red-200' },
+const CONFIDENCE_CLASS: Record<string, string> = {
+  full_match: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  partial_match: 'bg-amber-100 text-amber-800 border-amber-200',
+  no_match: 'bg-red-100 text-red-800 border-red-200',
 }
 
-const OUTCOME_CONFIG: Record<string, { label: string; className: string }> = {
-  followed: { label: 'Gevolgd', className: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
-  modified: { label: 'Aangepast', className: 'bg-blue-100 text-blue-800 border-blue-200' },
-  ignored: { label: 'Genegeerd', className: 'bg-amber-100 text-amber-800 border-amber-200' },
+const OUTCOME_CLASS: Record<string, string> = {
+  followed: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  modified: 'bg-blue-100 text-blue-800 border-blue-200',
+  ignored: 'bg-amber-100 text-amber-800 border-amber-200',
 }
 
 function SessionDetailPanel({ data }: { data: SessionDetailData }) {
   const { session, advice } = data
+  const { t } = useTranslation()
+
+  const getStatusBadge = (status: string) => {
+    const key = STATUS_KEY[status] as keyof typeof t.status | undefined
+    const label = key ? t.status[key] : status
+    const className = STATUS_CLASS[status] ?? 'bg-muted text-muted-foreground border-border'
+    return (
+      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${className}`}>
+        {label}
+      </span>
+    )
+  }
+
+  const CONFIDENCE_LABEL: Record<string, string> = {
+    full_match: t.history.confidenceFull,
+    partial_match: t.history.confidencePartial,
+    no_match: t.history.confidenceNone,
+  }
+
+  const OUTCOME_LABEL: Record<string, string> = {
+    followed: t.history.outcomeFollowed,
+    modified: t.history.outcomeModified,
+    ignored: t.history.outcomeIgnored,
+  }
+
+  const DEVIATION_LABEL: Record<string, string> = {
+    extra_boxes: t.history.deviationExtraBoxes,
+    fewer_boxes: t.history.deviationFewerBoxes,
+    different_packaging: t.history.deviationDifferentPackaging,
+    mixed: t.history.deviationMixed,
+  }
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -181,7 +185,7 @@ function SessionDetailPanel({ data }: { data: SessionDetailData }) {
       <div>
         <div className="flex items-center gap-2 mb-3">
           <BoxIcon className="w-4 h-4 text-primary" />
-          <h4 className="font-semibold text-sm">Dozen</h4>
+          <h4 className="font-semibold text-sm">{t.history.boxes}</h4>
         </div>
 
         <div className="space-y-3">
@@ -190,7 +194,7 @@ function SessionDetailPanel({ data }: { data: SessionDetailData }) {
               <div className="flex items-start justify-between mb-2">
                 <div>
                   <p className="font-medium text-sm">{box.packaging_name}</p>
-                  <p className="text-xs text-muted-foreground">Doos {i + 1}</p>
+                  <p className="text-xs text-muted-foreground">{t.history.box} {i + 1}</p>
                 </div>
                 {getStatusBadge(box.status)}
               </div>
@@ -198,10 +202,10 @@ function SessionDetailPanel({ data }: { data: SessionDetailData }) {
               {box.was_override && box.suggested_packaging_name && (
                 <div className="mb-2 p-2 bg-amber-50 border border-amber-200 rounded text-xs">
                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border bg-amber-100 text-amber-800 border-amber-200 mb-1">
-                    Afgeweken
+                    {t.history.deviated}
                   </span>
                   <p className="text-amber-700 mt-1">
-                    Advies was: {box.suggested_packaging_name}
+                    {t.history.adviceWas}: {box.suggested_packaging_name}
                   </p>
                 </div>
               )}
@@ -232,25 +236,25 @@ function SessionDetailPanel({ data }: { data: SessionDetailData }) {
       <div>
         <div className="flex items-center gap-2 mb-3">
           <Sparkles className="w-4 h-4 text-primary" />
-          <h4 className="font-semibold text-sm">Engine Advies</h4>
+          <h4 className="font-semibold text-sm">{t.history.engineAdvice}</h4>
         </div>
 
         {advice ? (
           <div className="space-y-3">
             {/* Confidence & outcome badges */}
             <div className="flex flex-wrap gap-2">
-              {advice.confidence && CONFIDENCE_CONFIG[advice.confidence] && (
+              {advice.confidence && CONFIDENCE_CLASS[advice.confidence] && (
                 <span
-                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${CONFIDENCE_CONFIG[advice.confidence].className}`}
+                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${CONFIDENCE_CLASS[advice.confidence]}`}
                 >
-                  {CONFIDENCE_CONFIG[advice.confidence].label}
+                  {CONFIDENCE_LABEL[advice.confidence]}
                 </span>
               )}
-              {advice.outcome && OUTCOME_CONFIG[advice.outcome] && (
+              {advice.outcome && OUTCOME_CLASS[advice.outcome] && (
                 <span
-                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${OUTCOME_CONFIG[advice.outcome].className}`}
+                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${OUTCOME_CLASS[advice.outcome]}`}
                 >
-                  {OUTCOME_CONFIG[advice.outcome].label}
+                  {OUTCOME_LABEL[advice.outcome]}
                 </span>
               )}
             </div>
@@ -258,19 +262,15 @@ function SessionDetailPanel({ data }: { data: SessionDetailData }) {
             {/* Deviation info */}
             {advice.deviation_type && advice.deviation_type !== 'none' && (
               <div className="p-2 bg-muted rounded text-xs text-muted-foreground">
-                <span className="font-medium">Afwijking:</span>{' '}
-                {advice.deviation_type === 'extra_boxes' ? 'Extra dozen' :
-                 advice.deviation_type === 'fewer_boxes' ? 'Minder dozen' :
-                 advice.deviation_type === 'different_packaging' ? 'Andere verpakking' :
-                 advice.deviation_type === 'mixed' ? 'Gemengde afwijking' :
-                 advice.deviation_type}
+                <span className="font-medium">{t.history.deviation}:</span>{' '}
+                {DEVIATION_LABEL[advice.deviation_type] ?? advice.deviation_type}
               </div>
             )}
 
             {/* Weight warning */}
             {advice.weight_exceeded && (
               <div className="p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700">
-                ⚠️ Gewichtslimiet overschreden
+                {t.history.weightExceeded}
               </div>
             )}
 
@@ -294,7 +294,7 @@ function SessionDetailPanel({ data }: { data: SessionDetailData }) {
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
-            Geen engine-advies beschikbaar voor deze sessie
+            {t.history.noEngineAdvice}
           </p>
         )}
       </div>
@@ -303,6 +303,7 @@ function SessionDetailPanel({ data }: { data: SessionDetailData }) {
 }
 
 export default function SessionHistory() {
+  const { t } = useTranslation()
   const [batchSessions, setBatchSessions] = useState<BatchSession[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(0)
@@ -327,13 +328,13 @@ export default function SessionHistory() {
       )
       if (!response.ok) {
         const data = await response.json()
-        throw new Error(data.error || 'Kon sessies niet laden')
+        throw new Error(data.error || t.history.loadError)
       }
       const data: BatchSessionsResponse = await response.json()
       setBatchSessions(data.sessions ?? [])
       setTotal(data.total ?? 0)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Onbekende fout')
+      setError(err instanceof Error ? err.message : t.history.unknownError)
     } finally {
       setIsLoading(false)
     }
@@ -342,6 +343,17 @@ export default function SessionHistory() {
   useEffect(() => {
     fetchSessions(page)
   }, [page, fetchSessions])
+
+  const getStatusBadge = (status: string) => {
+    const key = STATUS_KEY[status] as keyof typeof t.status | undefined
+    const label = key ? t.status[key] : status
+    const className = STATUS_CLASS[status] ?? 'bg-muted text-muted-foreground border-border'
+    return (
+      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${className}`}>
+        {label}
+      </span>
+    )
+  }
 
   const handleRefresh = () => {
     fetchSessions(page)
@@ -410,9 +422,9 @@ export default function SessionHistory() {
             <Layers className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <h2 className="text-xl font-bold">Batch Geschiedenis</h2>
+            <h2 className="text-xl font-bold">{t.history.title}</h2>
             <p className="text-sm text-muted-foreground">
-              Overzicht van alle batch sessies
+              {t.history.subtitle}
             </p>
           </div>
         </div>
@@ -420,12 +432,12 @@ export default function SessionHistory() {
           onClick={handleRefresh}
           disabled={isLoading}
           className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border hover:bg-muted transition-colors disabled:opacity-50"
-          title="Vernieuwen"
+          title={t.history.refresh}
         >
           <RefreshCw
             className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`}
           />
-          <span className="text-sm hidden sm:inline">Vernieuwen</span>
+          <span className="text-sm hidden sm:inline">{t.history.refresh}</span>
         </button>
       </div>
 
@@ -441,7 +453,7 @@ export default function SessionHistory() {
       {isLoading && batchSessions.length === 0 ? (
         <div className="flex flex-col items-center justify-center p-12">
           <Loader2 className="w-10 h-10 text-primary animate-spin mb-4" />
-          <p className="text-lg text-muted-foreground">Sessies laden...</p>
+          <p className="text-lg text-muted-foreground">{t.history.loadingSessions}</p>
         </div>
       ) : batchSessions.length === 0 && !error ? (
         /* Empty state */
@@ -449,9 +461,9 @@ export default function SessionHistory() {
           <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
             <Layers className="w-8 h-8 text-muted-foreground" />
           </div>
-          <h3 className="text-lg font-semibold mb-1">Geen sessies</h3>
+          <h3 className="text-lg font-semibold mb-1">{t.history.noSessions}</h3>
           <p className="text-sm text-muted-foreground">
-            Er zijn nog geen batch sessies gevonden.
+            {t.history.noSessionsDesc}
           </p>
         </div>
       ) : (
@@ -460,12 +472,12 @@ export default function SessionHistory() {
           <div className="bg-card border border-border rounded-lg overflow-hidden">
             {/* Table header */}
             <div className="hidden sm:grid sm:grid-cols-[1fr_1fr_1fr_100px_100px_120px] gap-4 px-4 py-3 bg-muted/50 border-b border-border text-sm font-medium text-muted-foreground">
-              <div>Datum</div>
-              <div>Batch</div>
-              <div>Medewerker</div>
-              <div>Picklists</div>
-              <div>Duur</div>
-              <div>Status</div>
+              <div>{t.history.date}</div>
+              <div>{t.history.batch}</div>
+              <div>{t.history.worker}</div>
+              <div>{t.history.picklistsHeader}</div>
+              <div>{t.history.duration}</div>
+              <div>{t.history.status}</div>
             </div>
 
             {/* Table rows */}
@@ -479,7 +491,7 @@ export default function SessionHistory() {
                     {/* Date */}
                     <div>
                       <span className="sm:hidden text-xs text-muted-foreground font-medium">
-                        Datum:{' '}
+                        {t.history.date}:{' '}
                       </span>
                       <span className="text-sm">
                         {formatDate(session.created_at)}
@@ -492,7 +504,7 @@ export default function SessionHistory() {
                     {/* Batch ID */}
                     <div className="flex items-center gap-1.5">
                       <span className="sm:hidden text-xs text-muted-foreground font-medium">
-                        Batch:{' '}
+                        {t.history.batch}:{' '}
                       </span>
                       <span className="text-sm font-mono">
                         {session.batch_display_id || session.batch_id}
@@ -507,7 +519,7 @@ export default function SessionHistory() {
                     {/* Worker */}
                     <div>
                       <span className="sm:hidden text-xs text-muted-foreground font-medium">
-                        Medewerker:{' '}
+                        {t.history.worker}:{' '}
                       </span>
                       <span className="text-sm">
                         {session.assigned_to_name || '-'}
@@ -517,7 +529,7 @@ export default function SessionHistory() {
                     {/* Picklists count */}
                     <div>
                       <span className="sm:hidden text-xs text-muted-foreground font-medium">
-                        Picklists:{' '}
+                        {t.history.picklistsHeader}:{' '}
                       </span>
                       <span className="text-sm">
                         {session.completed_picklists}/{session.total_picklists}
@@ -527,7 +539,7 @@ export default function SessionHistory() {
                     {/* Duration */}
                     <div>
                       <span className="sm:hidden text-xs text-muted-foreground font-medium">
-                        Duur:{' '}
+                        {t.history.duration}:{' '}
                       </span>
                       <span className="text-sm">
                         {formatDuration(session.created_at, session.completed_at)}
@@ -537,7 +549,7 @@ export default function SessionHistory() {
                     {/* Status */}
                     <div>
                       <span className="sm:hidden text-xs text-muted-foreground font-medium mr-1">
-                        Status:{' '}
+                        {t.history.status}:{' '}
                       </span>
                       {getStatusBadge(session.status)}
                     </div>
@@ -549,18 +561,18 @@ export default function SessionHistory() {
                       {isLoadingDetails ? (
                         <div className="flex items-center gap-2 py-3 text-sm text-muted-foreground">
                           <Loader2 className="w-4 h-4 animate-spin" />
-                          Picklists laden...
+                          {t.history.loadingPicklists}
                         </div>
                       ) : batchPicklistSessions.length === 0 ? (
                         <p className="text-sm text-muted-foreground py-3">
-                          Geen picklist sessies gevonden.
+                          {t.history.noPicklistSessions}
                         </p>
                       ) : (
                         <div className="border border-border rounded-lg overflow-hidden bg-card">
                           <div className="hidden sm:grid sm:grid-cols-[1fr_1fr_120px] gap-3 px-3 py-2 bg-muted/50 border-b border-border text-xs font-medium text-muted-foreground">
-                            <div>Picklist</div>
-                            <div>Tijdstip</div>
-                            <div>Status</div>
+                            <div>{t.history.picklist}</div>
+                            <div>{t.history.time}</div>
+                            <div>{t.history.status}</div>
                           </div>
                           <div className="divide-y divide-border">
                             {batchPicklistSessions.map((ps) => (
@@ -597,13 +609,13 @@ export default function SessionHistory() {
                                     {detailLoading === ps.id ? (
                                       <div className="flex items-center gap-2 text-muted-foreground">
                                         <Loader2 className="w-4 h-4 animate-spin" />
-                                        Laden...
+                                        {t.common.loading}
                                       </div>
                                     ) : sessionDetails[ps.id] ? (
                                       <SessionDetailPanel data={sessionDetails[ps.id]!} />
                                     ) : (
                                       <p className="text-sm text-muted-foreground">
-                                        Kon details niet laden
+                                        {t.history.loadDetailsFailed}
                                       </p>
                                     )}
                                   </div>
@@ -629,11 +641,11 @@ export default function SessionHistory() {
                 className="flex items-center gap-1 px-3 py-2 text-sm rounded-lg border border-border hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <ChevronLeft className="w-4 h-4" />
-                Vorige
+                {t.history.previous}
               </button>
 
               <span className="text-sm text-muted-foreground">
-                Pagina {page + 1} van {totalPages}
+                {t.history.page} {page + 1} {t.common.of} {totalPages}
               </span>
 
               <button
@@ -641,7 +653,7 @@ export default function SessionHistory() {
                 disabled={page >= totalPages - 1 || isLoading}
                 className="flex items-center gap-1 px-3 py-2 text-sm rounded-lg border border-border hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Volgende
+                {t.common.next}
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
@@ -649,7 +661,7 @@ export default function SessionHistory() {
 
           {/* Total count */}
           <p className="text-xs text-muted-foreground text-center mt-3">
-            {total} batch sessie{total !== 1 ? 's' : ''} totaal
+            {total} {t.history.totalSessions}
           </p>
         </>
       )}

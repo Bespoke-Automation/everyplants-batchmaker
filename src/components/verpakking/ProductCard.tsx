@@ -4,6 +4,7 @@ import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 import { Package, GripVertical, Check, X, ChevronDown, Box, Minus, Plus, ZoomIn } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
+import { useTranslation } from '@/i18n/LanguageContext'
 
 // Box assignment for split tracking
 export interface BoxAssignment {
@@ -78,6 +79,7 @@ export default function ProductCard({
   isHighlighted,
   closedBoxIds,
 }: ProductCardProps) {
+  const { t } = useTranslation()
   const [showBoxMenu, setShowBoxMenu] = useState(false)
   const [pendingBoxId, setPendingBoxId] = useState<string | null>(null)
   const [showImageModal, setShowImageModal] = useState(false)
@@ -235,12 +237,12 @@ export default function ProductCard({
               )}
               {product.customFields.isFragile && (
                 <span className="inline-block px-1.5 py-0.5 text-[10px] bg-red-100 text-red-700 rounded">
-                  Breekbaar
+                  {t.packing.fragile}
                 </span>
               )}
               {!product.customFields.isMixable && (
                 <span className="inline-block px-1.5 py-0.5 text-[10px] bg-orange-100 text-orange-700 rounded">
-                  Niet mixable
+                  {t.packing.notMixable}
                 </span>
               )}
             </div>
@@ -263,7 +265,7 @@ export default function ProductCard({
                         onRemoveFromBox(ab.sessionProductId)
                       }}
                       className="ml-1 p-0.5 rounded border border-red-200 hover:bg-red-100 hover:text-red-600 transition-colors"
-                      title="Verwijder uit doos"
+                      title={t.packing.removeFromBox}
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -272,7 +274,7 @@ export default function ProductCard({
               ))}
               {remaining > 0 && (
                 <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700 rounded">
-                  {remaining}x resterend
+                  {remaining}x {t.packing.remaining}
                 </span>
               )}
             </div>
@@ -295,7 +297,7 @@ export default function ProductCard({
               ) : (
                 <span className="px-2.5 py-1 text-xs font-semibold bg-green-100 text-green-800 rounded flex items-center gap-1">
                   <Check className="w-3 h-3" />
-                  {product.amount}x verdeeld
+                  {product.amount}x {t.packing.distributed}
                 </span>
               )}
               {/* Remove button per assignment */}
@@ -303,7 +305,7 @@ export default function ProductCard({
                 <button
                   onClick={() => onRemoveFromBox(product.assignedBoxes[0].sessionProductId)}
                   className="p-2 rounded-lg hover:bg-red-100 text-red-500 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center border border-border"
-                  title="Verwijder uit doos"
+                  title={t.packing.removeFromBox}
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -332,7 +334,7 @@ export default function ProductCard({
                       ? 'text-muted-foreground bg-muted cursor-not-allowed'
                       : 'text-primary hover:bg-primary/10'
                   }`}
-                  title={openBoxes.length === 0 ? 'Voeg eerst een doos toe' : 'Wijs toe aan doos'}
+                  title={openBoxes.length === 0 ? t.packing.addBoxFirst : t.packing.assignToBox}
                 >
                   <Box className="w-4 h-4" />
                   <ChevronDown className="w-3 h-3" />
@@ -351,7 +353,7 @@ export default function ProductCard({
                     <div className="absolute right-0 top-full mt-1 bg-card border border-border rounded-lg shadow-lg z-20 min-w-[220px]">
                       <div className="p-1">
                         <p className="px-2 py-1 text-xs text-muted-foreground font-medium">
-                          Wijs toe aan doos {remaining > 1 ? `(${remaining}x beschikbaar)` : ''}
+                          {t.packing.assignToBox} {remaining > 1 ? `(${remaining}x ${t.packing.available})` : ''}
                         </p>
                         {openBoxes.map((box) => (
                           <div key={box.id}>
@@ -366,10 +368,10 @@ export default function ProductCard({
                               </div>
                               <div className="flex-1 min-w-0">
                                 <p className="font-medium truncate">
-                                  Doos {box.index}: {box.name}
+                                  {t.packing.boxNumber} {box.index}: {box.name}
                                 </p>
                                 <p className="text-xs text-muted-foreground">
-                                  {box.productCount} producten
+                                  {box.productCount} {t.common.products}
                                 </p>
                               </div>
                             </button>
@@ -377,7 +379,7 @@ export default function ProductCard({
                             {pendingBoxId === box.id && (
                               <div className="px-2 pb-2 pt-1">
                                 <div className="flex items-center gap-2 bg-muted/50 rounded-lg p-2">
-                                  <span className="text-xs text-muted-foreground whitespace-nowrap">Aantal:</span>
+                                  <span className="text-xs text-muted-foreground whitespace-nowrap">{t.packing.quantity}:</span>
                                   <button
                                     type="button"
                                     onClick={(e) => {
@@ -419,7 +421,7 @@ export default function ProductCard({
                                     }}
                                     className="px-4 min-h-[44px] bg-primary text-primary-foreground text-sm font-semibold rounded-lg hover:bg-primary/90 transition-colors whitespace-nowrap"
                                   >
-                                    Bevestig
+                                    {t.common.confirm}
                                   </button>
                                 </div>
                               </div>

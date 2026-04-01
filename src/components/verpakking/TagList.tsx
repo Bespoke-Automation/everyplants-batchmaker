@@ -9,8 +9,10 @@ import {
   Tag,
 } from 'lucide-react'
 import { useLocalTags } from '@/hooks/useLocalTags'
+import { useTranslation } from '@/i18n/LanguageContext'
 
 export default function TagList() {
+  const { t } = useTranslation()
   const {
     tags,
     isLoading,
@@ -33,17 +35,17 @@ export default function TagList() {
     const dates = tags.map((t) => new Date(t.lastSyncedAt).getTime())
     const latest = Math.max(...dates)
     const mins = Math.round((Date.now() - latest) / 60000)
-    if (mins < 1) return 'Zojuist'
-    if (mins < 60) return `${mins} min geleden`
+    if (mins < 1) return t.comments.justNow
+    if (mins < 60) return `${mins} ${t.comments.minutesAgo}`
     const hours = Math.round(mins / 60)
-    return `${hours} uur geleden`
+    return `${hours} ${t.comments.hoursAgo}`
   }, [tags])
 
   const handleSync = async () => {
     setSyncResult(null)
     try {
       const result = await syncFromPicqer()
-      setSyncResult(`${result.synced} tags gesynchroniseerd (${result.added} nieuw, ${result.updated} bijgewerkt)`)
+      setSyncResult(`${result.synced} ${t.settings.tagsSynced} (${result.added} ${t.settings.newCount}, ${result.updated} ${t.settings.updatedCount})`)
     } catch {
       // Error is set by the hook
     }
@@ -53,7 +55,7 @@ export default function TagList() {
     return (
       <div className="flex flex-col items-center justify-center p-12">
         <Loader2 className="w-10 h-10 text-primary animate-spin mb-4" />
-        <p className="text-lg text-muted-foreground">Tags laden...</p>
+        <p className="text-lg text-muted-foreground">{t.settings.loadingTags}</p>
       </div>
     )
   }
@@ -67,10 +69,10 @@ export default function TagList() {
             <Tag className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <h2 className="text-xl font-bold">Tags</h2>
+            <h2 className="text-xl font-bold">{t.settings.tags}</h2>
             {lastSyncedAt && (
               <p className="text-xs text-muted-foreground">
-                Laatst gesynchroniseerd: {lastSyncedAt}
+                {t.settings.lastSynced}: {lastSyncedAt}
               </p>
             )}
           </div>
@@ -85,7 +87,7 @@ export default function TagList() {
           ) : (
             <RefreshCw className="w-4 h-4" />
           )}
-          Synchroniseer van Picqer
+          {t.settings.syncFromPicqer}
         </button>
       </div>
 
@@ -111,9 +113,9 @@ export default function TagList() {
           <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
             <Tag className="w-8 h-8 text-muted-foreground" />
           </div>
-          <h3 className="text-lg font-semibold mb-1">Nog geen tags gesynchroniseerd</h3>
+          <h3 className="text-lg font-semibold mb-1">{t.settings.noTagsSynced}</h3>
           <p className="text-sm text-muted-foreground mb-4">
-            Klik op &quot;Synchroniseer van Picqer&quot; om tags op te halen.
+            {t.settings.noTagsSyncedHint}
           </p>
           <button
             onClick={handleSync}
@@ -125,7 +127,7 @@ export default function TagList() {
             ) : (
               <RefreshCw className="w-5 h-5" />
             )}
-            Synchroniseer
+            {t.settings.sync}
           </button>
         </div>
       ) : (
@@ -137,7 +139,7 @@ export default function TagList() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Zoek op titel..."
+              placeholder={t.settings.searchByTitle}
               className="w-full pl-9 pr-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
             />
           </div>
@@ -145,7 +147,7 @@ export default function TagList() {
           {/* Tag count */}
           <p className="text-xs text-muted-foreground mb-2">
             {filteredTags.length} {filteredTags.length === 1 ? 'tag' : 'tags'}
-            {searchQuery.trim() && ` gevonden`}
+            {searchQuery.trim() && ` ${t.settings.found}`}
           </p>
 
           {/* Tag list */}

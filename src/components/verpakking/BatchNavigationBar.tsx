@@ -1,6 +1,7 @@
 'use client'
 
 import { ChevronLeft, ChevronRight, Layers, Loader2, ArrowLeft } from 'lucide-react'
+import { useTranslation } from '@/i18n/LanguageContext'
 import type { BatchPicklistItem } from '@/types/verpakking'
 
 interface BatchNavigationBarProps {
@@ -22,6 +23,7 @@ export default function BatchNavigationBar({
   isNavigating,
   sessionCompleted,
 }: BatchNavigationBarProps) {
+  const { t } = useTranslation()
   const currentIndex = picklists.findIndex((pl) => pl.sessionId === currentSessionId)
   if (currentIndex === -1) return null
 
@@ -51,10 +53,10 @@ export default function BatchNavigationBar({
         <button
           onClick={onBatchClick}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-border bg-background hover:bg-muted transition-colors flex-shrink-0 min-h-[36px]"
-          title="Terug naar batch overzicht"
+          title={t.batch.backToBatchOverview}
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Terug</span>
+          <span>{t.common.back}</span>
         </button>
 
         <div className="flex items-center gap-2 min-w-0">
@@ -70,7 +72,7 @@ export default function BatchNavigationBar({
                 {currentIndex + 1} / {picklists.length}
               </span>
               <span className="text-xs text-muted-foreground flex-shrink-0">
-                ({completedCount} afgerond)
+                ({completedCount} {t.batch.completed})
               </span>
             </>
           )}
@@ -86,7 +88,7 @@ export default function BatchNavigationBar({
             title={prevPicklist ? (prevPicklist.alias || prevPicklist.deliveryname || prevPicklist.picklistid) : undefined}
           >
             <ChevronLeft className="w-4 h-4" />
-            <span className="hidden sm:inline">Vorige</span>
+            <span className="hidden sm:inline">{t.batch.previous}</span>
           </button>
 
           <button
@@ -95,7 +97,7 @@ export default function BatchNavigationBar({
             className="inline-flex items-center gap-1 px-4 py-1.5 text-sm font-medium rounded-md border border-primary bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-30 disabled:cursor-not-allowed min-h-[36px]"
             title={nextPicklist ? (nextPicklist.alias || nextPicklist.deliveryname || nextPicklist.picklistid) : undefined}
           >
-            <span>Volgende</span>
+            <span>{t.common.next}</span>
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>

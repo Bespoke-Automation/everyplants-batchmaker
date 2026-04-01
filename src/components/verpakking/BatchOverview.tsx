@@ -26,6 +26,7 @@ import { createPortal } from 'react-dom'
 import { useBatchSession, type BatchComment } from '@/hooks/useBatchSession'
 import { usePicqerUsers, type PicqerUserItem } from '@/hooks/usePicqerUsers'
 import MentionTextarea from '@/components/verpakking/MentionTextarea'
+import { useTranslation } from '@/i18n/LanguageContext'
 import type { Worker, BatchPicklistItem, BatchProduct } from '@/types/verpakking'
 
 interface BatchOverviewProps {
@@ -49,6 +50,7 @@ export default function BatchOverview({
   devMode,
   onPicklistPreview,
 }: BatchOverviewProps) {
+  const { t } = useTranslation()
   const {
     batchSession,
     isLoading,
@@ -145,13 +147,13 @@ export default function BatchOverview({
       const data = await response.json()
 
       if (!response.ok) {
-        setClaimError(data.error || 'Kon batch niet claimen')
+        setClaimError(data.error || t.batch.claimFailed)
         return
       }
 
       onBatchClaimed?.(data.id)
     } catch (err) {
-      setClaimError(err instanceof Error ? err.message : 'Onbekende fout')
+      setClaimError(err instanceof Error ? err.message : t.batch.unknownError)
     } finally {
       setIsClaiming(false)
     }
@@ -179,7 +181,7 @@ export default function BatchOverview({
       if (result.success && result.sessionId) {
         onPicklistStarted(result.sessionId)
       } else if (!result.success) {
-        setStartError(result.error || 'Onbekende fout bij het starten')
+        setStartError(result.error || t.batch.startError)
       }
     },
     [startPicklist, worker.iduser, worker.fullName, onPicklistStarted]
@@ -211,7 +213,7 @@ export default function BatchOverview({
       if (result.success) {
         onBack()
       } else {
-        setDeleteError(result.error || 'Kon batch niet verwijderen')
+        setDeleteError(result.error || t.batch.deleteFailed)
       }
     } finally {
       setIsDeleting(false)
@@ -224,7 +226,7 @@ export default function BatchOverview({
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-2">
         <Loader2 className="w-6 h-6 text-primary animate-spin" />
-        <p className="text-muted-foreground text-sm">Laden...</p>
+        <p className="text-muted-foreground text-sm">{t.common.loading}</p>
       </div>
     )
   }
@@ -240,7 +242,7 @@ export default function BatchOverview({
           className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-lg font-medium text-sm hover:bg-primary/90 transition-colors min-h-[44px]"
         >
           <RefreshCw className="w-4 h-4" />
-          Opnieuw
+          {t.common.retry}
         </button>
       </div>
     )
@@ -272,7 +274,7 @@ export default function BatchOverview({
             className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg hover:bg-muted transition-colors text-sm font-medium min-h-[44px]"
           >
             <ArrowLeft className="w-4 h-4" />
-            Terug
+            {t.common.back}
           </button>
 
           <div className="flex items-center gap-2">
@@ -287,7 +289,7 @@ export default function BatchOverview({
               ) : (
                 <FileText className="w-4 h-4" />
               )}
-              Batch PDF
+              {t.batch.batchPdf}
             </button>
 
             {/* Annuleer Batch button (hidden in preview mode) */}
@@ -297,7 +299,7 @@ export default function BatchOverview({
                 className="flex items-center gap-1.5 px-3 py-2 border border-destructive/30 text-destructive rounded-lg hover:bg-destructive/10 transition-colors text-sm font-medium min-h-[44px]"
               >
                 <Trash2 className="w-4 h-4" />
-                Annuleer Batch
+                {t.batch.cancelBatch}
               </button>
             )}
 
@@ -324,14 +326,14 @@ export default function BatchOverview({
                   : 'bg-blue-100 text-blue-700'
             }`}>
               {isPreview ? (
-                'Voorbeeld'
+                t.batch.preview
               ) : isCompleted ? (
                 <>
                   <CheckCircle2 className="w-3 h-3" />
-                  Afgerond
+                  {t.status.completed}
                 </>
               ) : (
-                'Open'
+                t.status.open
               )}
             </span>
             {batchSession.batchType === 'singles' && (
@@ -343,8 +345,8 @@ export default function BatchOverview({
           {isPreview ? (
             <p className="text-sm text-muted-foreground mt-1">
               {batchSession.assignedToName
-                ? <>Gepickt door <span className="font-medium text-foreground">{batchSession.assignedToName}</span></>
-                : 'Niet toegewezen'}
+                ? <>{t.batch.pickedBy} <span className="font-medium text-foreground">{batchSession.assignedToName}</span></>
+                : t.batch.notAssigned}
             </p>
           ) : (
             <div className="relative mt-1 flex items-center gap-2" ref={reassignRef}>
@@ -352,14 +354,14 @@ export default function BatchOverview({
                 onClick={() => setShowReassign(!showReassign)}
                 className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
               >
-                Toegewezen aan <span className="font-medium text-foreground">{batchSession.assignedToName}</span>
+                {t.batch.assignedTo} <span className="font-medium text-foreground">{batchSession.assignedToName}</span>
                 <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showReassign ? 'rotate-180' : ''}`} />
               </button>
               <button
                 onClick={handleUnassignBatch}
                 disabled={isUnassigning}
                 className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
-                title="Toewijzing verwijderen"
+                title={t.batch.removeAssignment}
               >
                 {isUnassigning ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -379,7 +381,7 @@ export default function BatchOverview({
                       }`}
                     >
                       {user.fullName}
-                      {user.iduser === batchSession.assignedTo && ' (huidig)'}
+                      {user.iduser === batchSession.assignedTo && ` (${t.batch.current})`}
                     </button>
                   ))}
                 </div>
@@ -393,7 +395,7 @@ export default function BatchOverview({
           <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm text-amber-800">
-                Je bekijkt deze batch zonder claim. Claim om picklijsten te verwerken.
+                {t.batch.previewBanner}
               </p>
               <button
                 onClick={handleClaimBatch}
@@ -405,7 +407,7 @@ export default function BatchOverview({
                 ) : (
                   <CheckCircle2 className="w-4 h-4" />
                 )}
-                Batch claimen
+                {t.batch.claimBatch}
               </button>
             </div>
             {claimError && (
@@ -418,7 +420,7 @@ export default function BatchOverview({
         {!isPreview && (
           <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2.5">
             <p className="text-sm text-emerald-800 font-medium">
-              Batch geclaimd met {totalProductAmount} producten en {batchSession.totalPicklists} picklijst{batchSession.totalPicklists !== 1 ? 'en' : ''}
+              {t.batch.claimedWith} {totalProductAmount} {t.common.products} {t.batch.and} {batchSession.totalPicklists} {t.batch.picklists}
             </p>
           </div>
         )}
@@ -427,7 +429,7 @@ export default function BatchOverview({
         {!isPreview && (
           <div className="mt-3">
             <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-              <span>{actualCompleted}/{batchSession.totalPicklists} picklijsten verwerkt</span>
+              <span>{actualCompleted}/{batchSession.totalPicklists} {t.batch.picklistsProcessed}</span>
               <span>{progressPercent}%</span>
             </div>
             <div className="w-full bg-muted rounded-full h-2">
@@ -448,9 +450,9 @@ export default function BatchOverview({
           <div className="flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-sm font-medium text-destructive">Batch verwijderen?</p>
+              <p className="text-sm font-medium text-destructive">{t.batch.deleteConfirmTitle}</p>
               <p className="text-xs text-muted-foreground mt-1">
-                Dit verwijdert de batch in Picqer. De picklijsten worden losgekoppeld en kunnen opnieuw gebatcht worden.
+                {t.batch.deleteConfirmDesc}
               </p>
               {deleteError && (
                 <p className="text-xs text-destructive mt-1.5">{deleteError}</p>
@@ -466,14 +468,14 @@ export default function BatchOverview({
                   ) : (
                     <Trash2 className="w-3.5 h-3.5" />
                   )}
-                  Ja, verwijder
+                  {t.batch.yesDelete}
                 </button>
                 <button
                   onClick={() => { setShowDeleteConfirm(false); setDeleteError(null) }}
                   disabled={isDeleting}
                   className="px-3 py-1.5 border border-border rounded-lg text-sm font-medium hover:bg-muted transition-colors min-h-[36px]"
                 >
-                  Annuleren
+                  {t.common.cancel}
                 </button>
               </div>
             </div>
@@ -489,7 +491,7 @@ export default function BatchOverview({
           <button
             onClick={() => setStartError(null)}
             className="shrink-0 p-1 rounded hover:bg-destructive/20 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
-            aria-label="Sluiten"
+            aria-label={t.common.close}
           >
             &times;
           </button>
@@ -503,7 +505,7 @@ export default function BatchOverview({
           {/* Card header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-muted/30">
             <h3 className="font-semibold text-lg">
-              Verwerk {batchSession.picklists.length} picklijst{batchSession.picklists.length !== 1 ? 'en' : ''}
+              {t.batch.process} {batchSession.picklists.length} {t.batch.picklists}
             </h3>
             <div className="flex items-center gap-2">
               {!isCompleted && !isPreview && (
@@ -512,7 +514,7 @@ export default function BatchOverview({
                   className="flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-lg hover:bg-muted transition-colors text-sm font-medium min-h-[36px]"
                 >
                   <Plus className="w-4 h-4" />
-                  Toevoegen
+                  {t.batch.add}
                 </button>
               )}
               <button
@@ -525,7 +527,7 @@ export default function BatchOverview({
                 ) : (
                   <FileText className="w-4 h-4" />
                 )}
-                Pakbonnen
+                {t.batch.packingSlips}
               </button>
             </div>
           </div>
@@ -541,7 +543,7 @@ export default function BatchOverview({
           {/* Picklist rows */}
           {batchSession.picklists.length === 0 ? (
             <div className="text-center py-6">
-              <p className="text-muted-foreground text-sm">Geen picklijsten gevonden.</p>
+              <p className="text-muted-foreground text-sm">{t.batch.noPicklists}</p>
             </div>
           ) : (
             <div className="divide-y divide-border">
@@ -565,7 +567,7 @@ export default function BatchOverview({
 
           {/* Card footer */}
           <div className="px-5 py-3 border-t border-border bg-muted/20 text-sm text-muted-foreground">
-            {batchSession.picklists.length} picklijst{batchSession.picklists.length !== 1 ? 'en' : ''} · {totalProductAmount} producten
+            {batchSession.picklists.length} {t.batch.picklists} · {totalProductAmount} {t.common.products}
           </div>
         </div>
 
@@ -573,7 +575,7 @@ export default function BatchOverview({
         {batchSession.products.length > 0 && (
           <div className="bg-card border border-border rounded-lg overflow-hidden">
             <div className="px-5 py-4 border-b border-border bg-muted/30">
-              <h3 className="font-semibold text-lg">Producten</h3>
+              <h3 className="font-semibold text-lg">{t.batch.products}</h3>
             </div>
             <div className="divide-y divide-border">
               {batchSession.products.map((product) => (
@@ -603,7 +605,7 @@ export default function BatchOverview({
             className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-lg font-medium text-sm hover:bg-emerald-700 transition-colors min-h-[44px]"
           >
             <CheckCircle2 className="w-4 h-4" />
-            Batch afgerond — Terug naar wachtrij
+            {t.batch.completedBackToQueue}
           </button>
         </div>
       )}
@@ -630,6 +632,7 @@ function CommentsCard({
   users: PicqerUserItem[]
   currentUserName: string
 }) {
+  const { t } = useTranslation()
   const [newComment, setNewComment] = useState('')
   const [isSending, setIsSending] = useState(false)
   const [deletingId, setDeletingId] = useState<number | null>(null)
@@ -647,7 +650,7 @@ function CommentsCard({
       if (result.success) {
         setNewComment('')
       } else {
-        setSendError(result.error || 'Kon opmerking niet versturen')
+        setSendError(result.error || t.batch.commentSendFailed)
       }
     } finally {
       setIsSending(false)
@@ -667,7 +670,7 @@ function CommentsCard({
     try {
       const result = await onDeleteComment(idcomment)
       if (!result.success) {
-        setSendError(result.error || 'Kon opmerking niet verwijderen')
+        setSendError(result.error || t.batch.commentDeleteFailed)
       }
     } finally {
       setDeletingId(null)
@@ -704,7 +707,7 @@ function CommentsCard({
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
         <h3 className="font-semibold text-base flex items-center gap-2">
           <MessageSquare className="w-4 h-4" />
-          Opmerkingen
+          {t.comments.title}
           {comments.length > 0 && (
             <span className="text-xs text-muted-foreground font-normal">({comments.length})</span>
           )}
@@ -722,7 +725,7 @@ function CommentsCard({
       {isLoading && comments.length === 0 ? (
         <div className="flex items-center gap-2 px-4 py-4 text-sm text-muted-foreground">
           <Loader2 className="w-4 h-4 animate-spin" />
-          Opmerkingen laden...
+          {t.batch.commentsLoading}
         </div>
       ) : comments.length > 0 ? (
         <div className="divide-y divide-border max-h-[300px] overflow-y-auto">
@@ -738,7 +741,7 @@ function CommentsCard({
                     onClick={() => handleReply(comment.authorName)}
                     className="px-2 py-0.5 text-xs border border-border rounded hover:bg-muted transition-colors"
                   >
-                    Reageer
+                    {t.comments.reply}
                   </button>
                   {isOwnComment(comment.authorName) && (
                     <button
@@ -746,7 +749,7 @@ function CommentsCard({
                       disabled={deletingId === comment.idcomment}
                       className="px-2 py-0.5 text-xs border border-border rounded hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition-colors disabled:opacity-50"
                     >
-                      {deletingId === comment.idcomment ? 'Bezig...' : 'Verwijder'}
+                      {deletingId === comment.idcomment ? t.common.loading : t.common.delete}
                     </button>
                   )}
                 </div>
@@ -757,7 +760,7 @@ function CommentsCard({
         </div>
       ) : (
         <div className="px-4 py-4 text-sm text-muted-foreground">
-          Nog geen opmerkingen.
+          {t.batch.noComments}
         </div>
       )}
 
@@ -772,7 +775,7 @@ function CommentsCard({
             value={newComment}
             onChange={setNewComment}
             onKeyDown={handleKeyDown}
-            placeholder="Schrijf een opmerking... (@mention)"
+            placeholder={t.batch.commentPlaceholder}
             disabled={isSending}
             users={users}
           />
@@ -810,6 +813,7 @@ function AddPicklistForm({
   onAdd: (picklistId: number) => Promise<{ success: boolean; error?: string }>
   onClose: () => void
 }) {
+  const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [isSearching, setIsSearching] = useState(false)
   const [isAdding, setIsAdding] = useState<number | null>(null)
@@ -870,7 +874,7 @@ function AddPicklistForm({
     setAddError(null)
 
     if (picklist.idpicklist_batch) {
-      setAddError(`${picklist.picklistid} zit al in een batch`)
+      setAddError(`${picklist.picklistid} ${t.batch.alreadyInBatch}`)
       return
     }
 
@@ -882,7 +886,7 @@ function AddPicklistForm({
         setResults(null)
         onClose()
       } else {
-        setAddError(result.error || 'Kon picklijst niet toevoegen')
+        setAddError(result.error || t.batch.addPicklistFailed)
       }
     } finally {
       setIsAdding(null)
@@ -898,7 +902,7 @@ function AddPicklistForm({
           <input
             ref={inputRef}
             type="text"
-            placeholder="Zoek op picklijst nummer (bijv. P2026-11068)"
+            placeholder={t.batch.searchPicklistPlaceholder}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="w-full pl-9 pr-3 py-2 border border-border rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary min-h-[36px]"
@@ -926,7 +930,7 @@ function AddPicklistForm({
       {results !== null && (
         <div className="mt-2">
           {results.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-2">Geen picklijsten gevonden voor &ldquo;{query.trim()}&rdquo;</p>
+            <p className="text-xs text-muted-foreground py-2">{t.batch.noPicklistsFoundFor} &ldquo;{query.trim()}&rdquo;</p>
           ) : (
             <div className="border border-border rounded-lg bg-white divide-y divide-border overflow-hidden">
               {results.map((pl) => {
@@ -943,7 +947,7 @@ function AddPicklistForm({
                     <div className="min-w-0 flex-1">
                       <span className="font-semibold text-primary">{pl.picklistid}</span>
                       <span className="text-muted-foreground ml-2">
-                        {pl.totalproducts} producten
+                        {pl.totalproducts} {t.common.products}
                       </span>
                       <span className={`ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium leading-none ${
                         pl.status === 'new' ? 'bg-blue-100 text-blue-700' :
@@ -953,7 +957,7 @@ function AddPicklistForm({
                         {pl.status}
                       </span>
                       {alreadyInBatch && (
-                        <span className="ml-2 text-xs text-muted-foreground">(al in batch)</span>
+                        <span className="ml-2 text-xs text-muted-foreground">({t.batch.alreadyInBatch})</span>
                       )}
                     </div>
                     <button
@@ -966,7 +970,7 @@ function AddPicklistForm({
                       ) : (
                         <Plus className="w-3 h-3" />
                       )}
-                      Toevoegen
+                      {t.batch.add}
                     </button>
                   </div>
                 )
@@ -1004,6 +1008,7 @@ function PicklistRow({
   devMode?: boolean
   onPicklistPreview?: (picklistId: number, displayId: string) => void
 }) {
+  const { t } = useTranslation()
   const isItemCompleted = item.sessionStatus === 'completed'
   const isClosed = item.status === 'closed'
   const isDone = isItemCompleted || (isClosed && !(item.sessionId && item.sessionStatus && item.sessionStatus !== 'completed'))
@@ -1033,7 +1038,7 @@ function PicklistRow({
           <div className="ml-auto">
             <span className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-medium">
               <CheckCircle2 className="w-3.5 h-3.5" />
-              Verzonden
+              {t.status.shipped}
             </span>
           </div>
         </button>
@@ -1079,7 +1084,7 @@ function PicklistRow({
             <div className="mt-2">
               <div className="flex items-center gap-1 mb-0.5">
                 <AlertTriangle className="w-3.5 h-3.5 text-orange-500" />
-                <span className="text-sm font-semibold text-orange-500">Opmerkingen</span>
+                <span className="text-sm font-semibold text-orange-500">{t.comments.title}</span>
               </div>
               <p className="text-sm text-muted-foreground">{combinedComments}</p>
             </div>
@@ -1094,7 +1099,7 @@ function PicklistRow({
         {/* Action buttons */}
         <div className="flex items-center gap-2 shrink-0 mt-0.5">
           {(isClosed && !hasActiveSession) ? (
-            <span className="text-sm text-muted-foreground px-2">Dicht</span>
+            <span className="text-sm text-muted-foreground px-2">{t.status.closed}</span>
           ) : devMode ? (
             <button
               onClick={() => onPicklistPreview?.(item.idpicklist, item.picklistid)}
@@ -1112,7 +1117,7 @@ function PicklistRow({
               {isStartingPicklist ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
-                'Verwerk'
+                t.batch.process
               )}
             </button>
           )}
@@ -1146,6 +1151,7 @@ function MoreDropdown({
   isCompleted?: boolean
   isPreview?: boolean
 }) {
+  const { t } = useTranslation()
   const [isOpen, setIsOpen] = useState(false)
   const [isRemoving, setIsRemoving] = useState(false)
   const [showProducts, setShowProducts] = useState(false)
@@ -1218,7 +1224,7 @@ function MoreDropdown({
             className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-muted transition-colors"
           >
             <Eye className="w-4 h-4" />
-            Producten
+            {t.batch.products}
           </button>
           {!isCompleted && !isPreview && (
             <button
@@ -1231,7 +1237,7 @@ function MoreDropdown({
               ) : (
                 <Trash2 className="w-4 h-4" />
               )}
-              Verwijder van batch
+              {t.batch.removeFromBatch}
             </button>
           )}
         </div>,
@@ -1266,6 +1272,7 @@ function PicklistProductsModal({
   picklistId: number
   onClose: () => void
 }) {
+  const { t } = useTranslation()
   const [products, setProducts] = useState<PicklistProductItem[] | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const modalRef = useRef<HTMLDivElement>(null)
@@ -1317,7 +1324,7 @@ function PicklistProductsModal({
       >
         {/* Modal header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h3 className="font-semibold text-base">Producten in picklijst</h3>
+          <h3 className="font-semibold text-base">{t.batch.productsInPicklist}</h3>
           <button
             onClick={onClose}
             className="p-1.5 border border-border rounded-lg hover:bg-muted transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center"
@@ -1331,7 +1338,7 @@ function PicklistProductsModal({
           {isLoading ? (
             <div className="flex items-center gap-2 px-5 py-6 text-sm text-muted-foreground justify-center">
               <Loader2 className="w-4 h-4 animate-spin" />
-              Producten laden...
+              {t.batch.productsLoading}
             </div>
           ) : products && products.length > 0 ? (
             <div className="divide-y divide-border">
@@ -1347,7 +1354,7 @@ function PicklistProductsModal({
                   <div className="text-right shrink-0">
                     <span className="text-base font-bold tabular-nums">{product.amount}&times;</span>
                     {product.amount_picked > 0 && product.amount_picked < product.amount && (
-                      <p className="text-xs text-muted-foreground">{product.amount_picked} gepickt</p>
+                      <p className="text-xs text-muted-foreground">{product.amount_picked} {t.packing.picked}</p>
                     )}
                   </div>
                 </div>
@@ -1355,7 +1362,7 @@ function PicklistProductsModal({
             </div>
           ) : (
             <div className="px-5 py-6 text-sm text-muted-foreground text-center">
-              Geen producten gevonden.
+              {t.batch.noProductsFound}
             </div>
           )}
         </div>
@@ -1367,6 +1374,7 @@ function PicklistProductsModal({
 // ── Product Row ─────────────────────────────────────────────────────────────
 
 function ProductRow({ product, batchId, picklistAliases }: { product: BatchProduct; batchId: number; picklistAliases: BatchPicklistItem[] }) {
+  const { t } = useTranslation()
   const aliasMap = useMemo(() => {
     const map = new Map<number, string | null>()
     for (const pl of picklistAliases) {
@@ -1414,7 +1422,7 @@ function ProductRow({ product, batchId, picklistAliases }: { product: BatchProdu
               }
             </span>
             {product.amountPicked > 0 && product.amountPicked >= product.amount && (
-              <p className="text-xs text-emerald-600">Gepickt</p>
+              <p className="text-xs text-emerald-600">{t.packing.picked}</p>
             )}
           </div>
         </div>
@@ -1423,10 +1431,10 @@ function ProductRow({ product, batchId, picklistAliases }: { product: BatchProdu
         <button
           onClick={() => setShowModal(true)}
           className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg hover:bg-muted transition-colors text-sm font-medium min-h-[40px]"
-          title="Picklijsten"
+          title={t.batch.picklists}
         >
           <List className="w-4 h-4 text-muted-foreground" />
-          Picklijsten
+          {t.batch.picklists}
         </button>
       </div>
 
@@ -1459,22 +1467,7 @@ interface ProductPicklistDetail {
   created?: string
 }
 
-function timeAgoShort(dateString: string): string {
-  const now = Date.now()
-  const then = new Date(dateString).getTime()
-  const diffMs = now - then
-  const diffMins = Math.round(diffMs / 60000)
-
-  if (diffMins < 1) return 'nu'
-  if (diffMins < 60) return `${diffMins} min geleden`
-
-  const diffHours = Math.floor(diffMins / 60)
-  if (diffHours < 24) return `${diffHours} uur geleden`
-
-  const diffDays = Math.floor(diffHours / 24)
-  if (diffDays === 1) return '1 dag geleden'
-  return `${diffDays} dagen geleden`
-}
+// timeAgoShort is defined inside ProductPicklistsModal to access `t`
 
 function ProductPicklistsModal({
   batchId,
@@ -1487,6 +1480,22 @@ function ProductPicklistsModal({
   aliasMap: Map<number, string | null>
   onClose: () => void
 }) {
+  const { t } = useTranslation()
+
+  const timeAgoShort = (dateString: string): string => {
+    const now = Date.now()
+    const then = new Date(dateString).getTime()
+    const diffMs = now - then
+    const diffMins = Math.round(diffMs / 60000)
+    if (diffMins < 1) return t.comments.justNow
+    if (diffMins < 60) return `${diffMins} ${t.comments.minutesAgo}`
+    const diffHours = Math.floor(diffMins / 60)
+    if (diffHours < 24) return `${diffHours} ${t.comments.hoursAgo}`
+    const diffDays = Math.floor(diffHours / 24)
+    if (diffDays === 1) return t.comments.yesterday
+    return `${diffDays} ${t.comments.daysAgo}`
+  }
+
   const [picklists, setPicklists] = useState<ProductPicklistDetail[] | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const modalRef = useRef<HTMLDivElement>(null)
@@ -1552,7 +1561,7 @@ function ProductPicklistsModal({
               )}
             </div>
             <div>
-              <h3 className="font-semibold text-base">Picklijsten</h3>
+              <h3 className="font-semibold text-base">{t.batch.picklists}</h3>
               <p className="text-xs text-muted-foreground mt-0.5">
                 {product.productcode} — {product.name}
               </p>
@@ -1571,19 +1580,19 @@ function ProductPicklistsModal({
           {isLoading ? (
             <div className="flex items-center gap-2 px-5 py-6 text-sm text-muted-foreground justify-center">
               <Loader2 className="w-4 h-4 animate-spin" />
-              Picklijsten laden...
+              {t.batch.picklistsLoading}
             </div>
           ) : picklists && picklists.length > 0 ? (
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-muted/30 text-left">
-                  <th className="px-4 py-2.5 text-xs font-semibold text-muted-foreground w-12">Alias</th>
-                  <th className="px-4 py-2.5 text-xs font-semibold text-muted-foreground">Picklijst</th>
-                  <th className="px-4 py-2.5 text-xs font-semibold text-muted-foreground">Klant</th>
-                  <th className="px-4 py-2.5 text-xs font-semibold text-muted-foreground text-center w-20">Producten</th>
-                  <th className="px-4 py-2.5 text-xs font-semibold text-muted-foreground w-20">Status</th>
-                  <th className="px-4 py-2.5 text-xs font-semibold text-muted-foreground">Referentie</th>
-                  <th className="px-4 py-2.5 text-xs font-semibold text-muted-foreground text-right">Besteld op</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold text-muted-foreground w-12">{t.batch.alias}</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold text-muted-foreground">{t.batch.picklist}</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold text-muted-foreground">{t.batch.customer}</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold text-muted-foreground text-center w-20">{t.batch.products}</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold text-muted-foreground w-20">{t.batch.status}</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold text-muted-foreground">{t.batch.reference}</th>
+                  <th className="px-4 py-2.5 text-xs font-semibold text-muted-foreground text-right">{t.batch.orderedAt}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -1608,9 +1617,9 @@ function ProductPicklistsModal({
                               ? 'bg-gray-100 text-gray-600'
                               : 'bg-blue-100 text-blue-700'
                         }`}>
-                          {pl.status === 'new' ? 'Open' :
-                           pl.status === 'processing' ? 'Open' :
-                           pl.status === 'closed' ? 'Dicht' :
+                          {pl.status === 'new' ? t.status.open :
+                           pl.status === 'processing' ? t.status.open :
+                           pl.status === 'closed' ? t.status.closed :
                            pl.status}
                         </span>
                       </td>
@@ -1627,7 +1636,7 @@ function ProductPicklistsModal({
             </table>
           ) : (
             <div className="px-5 py-6 text-sm text-muted-foreground text-center">
-              Geen picklijsten gevonden.
+              {t.batch.noPicklists}
             </div>
           )}
         </div>

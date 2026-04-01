@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, Trash2, Loader2, Printer, AlertCircle, Monitor, Wifi, WifiOff, RefreshCw } from 'lucide-react'
+import { useTranslation } from '@/i18n/LanguageContext'
 
 interface PackingStation {
   id: string
@@ -20,6 +21,7 @@ interface PrintNodePrinter {
 }
 
 export default function PackingStationSettings() {
+  const { t } = useTranslation()
   const [stations, setStations] = useState<PackingStation[]>([])
   const [printers, setPrinters] = useState<PrintNodePrinter[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -55,13 +57,13 @@ export default function PackingStationSettings() {
       const res = await fetch('/api/verpakking/printnode/printers')
       if (!res.ok) {
         const data = await res.json()
-        setPrintersError(data.error || 'Kon printers niet ophalen')
+        setPrintersError(data.error || t.settings.couldNotFetchPrinters)
         return
       }
       const data = await res.json()
       setPrinters(data.printers ?? [])
     } catch {
-      setPrintersError('Kon printers niet ophalen van PrintNode')
+      setPrintersError(t.settings.couldNotFetchPrintersFromPrintNode)
     } finally {
       setIsLoadingPrinters(false)
     }
@@ -115,7 +117,7 @@ export default function PackingStationSettings() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Werkstation verwijderen?')) return
+    if (!confirm(t.settings.deleteStationConfirm)) return
 
     try {
       await fetch('/api/verpakking/packing-stations/delete', {
@@ -143,13 +145,13 @@ export default function PackingStationSettings() {
       const res = await fetch('/api/verpakking/packing-stations/sync', { method: 'POST' })
       const data = await res.json()
       if (!res.ok) {
-        setSyncResult(`Fout: ${data.error}`)
+        setSyncResult(`${t.common.error}: ${data.error}`)
       } else {
         setSyncResult(data.message)
         await fetchStations()
       }
     } catch {
-      setSyncResult('Synchronisatie mislukt')
+      setSyncResult(t.settings.syncFailed)
     } finally {
       setIsSyncing(false)
     }
@@ -167,9 +169,9 @@ export default function PackingStationSettings() {
     <div className="max-w-3xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold">Werkstations</h2>
+          <h2 className="text-lg font-semibold">{t.settings.stations}</h2>
           <p className="text-sm text-muted-foreground">
-            Koppel werkstations aan PrintNode printers voor automatisch label printen.
+            {t.settings.stationsDescription}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -179,7 +181,7 @@ export default function PackingStationSettings() {
             className="flex items-center gap-2 px-4 py-2 min-h-[44px] border border-border rounded-lg text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-            Importeer uit Picqer
+            {t.settings.importFromPicqer}
           </button>
           <button
             onClick={() => {
@@ -191,7 +193,7 @@ export default function PackingStationSettings() {
             className="flex items-center gap-2 px-4 py-2 min-h-[44px] bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
           >
             <Plus className="w-4 h-4" />
-            Nieuw werkstation
+            {t.settings.newStation}
           </button>
         </div>
       </div>
@@ -209,7 +211,7 @@ export default function PackingStationSettings() {
         <div className="flex items-start gap-2 px-3 py-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
           <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />
           <div>
-            <p className="font-medium">PrintNode niet beschikbaar</p>
+            <p className="font-medium">{t.settings.printNodeUnavailable}</p>
             <p className="text-xs mt-0.5">{printersError}</p>
           </div>
         </div>
@@ -218,29 +220,29 @@ export default function PackingStationSettings() {
       {/* Add/Edit form */}
       {showForm && (
         <div className="border border-border rounded-lg p-4 space-y-4 bg-muted/30">
-          <h3 className="font-medium">{editingId ? 'Werkstation bewerken' : 'Nieuw werkstation'}</h3>
+          <h3 className="font-medium">{editingId ? t.settings.editStation : t.settings.newStation}</h3>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Naam</label>
+            <label className="block text-sm font-medium mb-1">{t.settings.name}</label>
             <input
               type="text"
               value={formName}
               onChange={(e) => setFormName(e.target.value)}
-              placeholder="Bijv. Inpakstation 1"
+              placeholder={t.settings.stationPlaceholder}
               className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Printer</label>
+            <label className="block text-sm font-medium mb-1">{t.settings.printer}</label>
             {isLoadingPrinters ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Printers ophalen...
+                {t.settings.fetchingPrinters}
               </div>
             ) : printers.length === 0 ? (
               <p className="text-sm text-muted-foreground py-2">
-                Geen printers gevonden. Controleer of PrintNode actief is.
+                {t.settings.noPrintersFound}
               </p>
             ) : (
               <select
@@ -248,7 +250,7 @@ export default function PackingStationSettings() {
                 onChange={(e) => setFormPrinterId(e.target.value ? Number(e.target.value) : null)}
                 className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               >
-                <option value="">Selecteer een printer...</option>
+                <option value="">{t.settings.selectPrinter}</option>
                 {printers.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name} ({p.state}) {p.computer ? `— ${p.computer.name}` : ''}
@@ -265,7 +267,7 @@ export default function PackingStationSettings() {
               className="flex items-center gap-2 px-4 py-2 min-h-[44px] bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
               {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
-              {editingId ? 'Opslaan' : 'Aanmaken'}
+              {editingId ? t.common.save : t.settings.create}
             </button>
             <button
               onClick={() => {
@@ -274,7 +276,7 @@ export default function PackingStationSettings() {
               }}
               className="px-4 py-2 min-h-[44px] text-sm rounded-lg hover:bg-muted transition-colors"
             >
-              Annuleren
+              {t.common.cancel}
             </button>
           </div>
         </div>
@@ -284,8 +286,8 @@ export default function PackingStationSettings() {
       {stations.length === 0 && !showForm ? (
         <div className="text-center py-12 text-muted-foreground">
           <Monitor className="w-12 h-12 mx-auto mb-3 opacity-50" />
-          <p className="text-sm">Nog geen werkstations geconfigureerd.</p>
-          <p className="text-xs mt-1">Maak een werkstation aan en koppel een printer voor automatisch label printen.</p>
+          <p className="text-sm">{t.settings.noStationsConfigured}</p>
+          <p className="text-xs mt-1">{t.settings.noStationsHint}</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -328,7 +330,7 @@ export default function PackingStationSettings() {
                     onClick={() => handleEdit(station)}
                     className="px-3 py-2 min-h-[44px] text-sm text-primary hover:bg-primary/10 rounded-lg transition-colors"
                   >
-                    Bewerken
+                    {t.settings.edit}
                   </button>
                   <button
                     onClick={() => handleDelete(station.id)}

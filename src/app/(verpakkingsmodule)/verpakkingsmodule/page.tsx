@@ -11,11 +11,13 @@ import BatchOverview from '@/components/verpakking/BatchOverview'
 import VerpakkingsClient from '@/components/verpakking/VerpakkingsClient'
 import EnginePreviewPanel from '@/components/verpakking/EnginePreviewPanel'
 import { DEV_MODE_USER_IDS } from '@/lib/constants'
+import { useTranslation } from '@/i18n/LanguageContext'
 
 export default function VerpakkingsmodulePage() {
   const router = useRouter()
   const { workers, selectedWorker, isLoading, error, selectWorker, clearWorker } = useWorker()
   const { stations, selectedStation, selectStation, clearStation } = usePackingStation()
+  const { t } = useTranslation()
 
   // Developer mode: browse batches/picklists without claiming, preview engine advice
   const canUseDevMode = selectedWorker && DEV_MODE_USER_IDS.includes(selectedWorker.iduser)
@@ -63,7 +65,7 @@ export default function VerpakkingsmodulePage() {
       }`}
     >
       <Code2 className="w-3.5 h-3.5" />
-      {devMode ? 'Dev Mode AAN' : 'Dev Mode'}
+      {devMode ? t.batch.devModeOn : t.batch.devMode}
     </button>
   ) : null
 
@@ -85,7 +87,7 @@ export default function VerpakkingsmodulePage() {
 
   // Dev mode: skip WorkerSelector, go straight to BatchQueue
   if (devMode && !devPreviewBatchId) {
-    const dummyWorker = selectedWorker || { iduser: 0, firstname: 'Dev', lastname: 'Mode', fullName: 'Developer' }
+    const dummyWorker = selectedWorker || { iduser: 0, firstname: 'Dev', lastname: 'Mode', fullName: t.batch.devMode }
     return (
       <main className="flex-1 flex flex-col overflow-hidden">
         <div className="w-full flex-1 flex flex-col overflow-y-auto px-6">
@@ -103,7 +105,7 @@ export default function VerpakkingsmodulePage() {
 
   // Dev mode: BatchOverview in preview-only, picklist click → engine preview
   if (devMode && devPreviewBatchId) {
-    const dummyWorker = selectedWorker || { iduser: 0, firstname: 'Dev', lastname: 'Mode', fullName: 'Developer' }
+    const dummyWorker = selectedWorker || { iduser: 0, firstname: 'Dev', lastname: 'Mode', fullName: t.batch.devMode }
     return (
       <main className="flex-1 flex flex-col overflow-hidden">
         <div className="w-full flex-1 flex flex-col overflow-y-auto px-6">

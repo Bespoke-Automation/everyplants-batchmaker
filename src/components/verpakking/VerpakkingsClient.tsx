@@ -124,13 +124,12 @@ function formatCost(value: number | undefined): string {
   return `\u20AC${value.toFixed(2)}`
 }
 
-function getCountryName(code: string): string {
-  const countries: Record<string, string> = {
-    NL: 'Nederland', BE: 'Belgie', DE: 'Duitsland', FR: 'Frankrijk',
-    AT: 'Oostenrijk', LU: 'Luxemburg', SE: 'Zweden', IT: 'Italie', ES: 'Spanje',
-    DK: 'Denemarken', PL: 'Polen', CZ: 'Tsjechie', UK: 'Verenigd Koninkrijk', GB: 'Verenigd Koninkrijk',
+function getCountryName(code: string, countryDict?: Record<string, string>): string {
+  if (countryDict) {
+    const key = code?.toUpperCase()
+    if (key && countryDict[key]) return countryDict[key]
   }
-  return countries[code?.toUpperCase()] ?? code
+  return code
 }
 
 // Map API status keys → dictionary keys in status section
@@ -239,7 +238,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Sessie aanmaken mislukt')
+      if (!res.ok) throw new Error(data.error || t.packing.createSessionFailed)
 
       const batchIdParam = new URLSearchParams(window.location.search).get('batchId')
       router.push(`/verpakkingsmodule/picklist/${data.id}${batchIdParam ? `?batchId=${batchIdParam}` : ''}`)
@@ -426,7 +425,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
 
     fetch(`/api/picqer/picklists/${session.picklistId}`)
       .then((res) => {
-        if (!res.ok) throw new Error('Picklist ophalen mislukt')
+        if (!res.ok) throw new Error(t.packing.fetchPicklistFailed)
         return res.json()
       })
       .then((data) => {
@@ -492,7 +491,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
 
     fetch(`/api/picqer/orders/${picklist.idorder}`)
       .then((res) => {
-        if (!res.ok) throw new Error('Order ophalen mislukt')
+        if (!res.ok) throw new Error(t.packing.fetchOrderFailed)
         return res.json()
       })
       .then((data) => {
@@ -530,13 +529,13 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(addressForm),
       })
-      if (!res.ok) throw new Error('Adres opslaan mislukt')
+      if (!res.ok) throw new Error(t.packing.saveAddressFailed)
       const data = await res.json()
       setOrder(data.order)
       setEditingAddress(false)
     } catch (err) {
       console.error('Failed to save address:', err)
-      alert('Adres opslaan mislukt')
+      alert(t.packing.saveAddressFailed)
     } finally {
       setAddressSaving(false)
     }
@@ -577,7 +576,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
       }),
     })
       .then((res) => {
-        if (!res.ok) throw new Error('Engine advies ophalen mislukt')
+        if (!res.ok) throw new Error(t.packing.fetchEngineFailed)
         return res.json()
       })
       .then((data) => {
@@ -1146,14 +1145,14 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
             }
           }
         }
-        const label = engineAdvice!.confidence === 'full_match' ? 'Advies' : 'Gedeeltelijk advies'
+        const label = engineAdvice!.confidence === 'full_match' ? t.packing.fullMatch : t.packing.partialMatch
         const autoAssigned = engineBoxes.every(b => b.products.length > 0)
-          ? ' — producten automatisch toegewezen'
+          ? ` — ${t.packing.productsAutoAssigned}`
           : ''
         setAutoBoxMessage(
           engineBoxes.length === 1
             ? `${label}: ${engineBoxes[0].packaging_name}${autoAssigned}`
-            : `${label}: ${engineBoxes.length} dozen aangemaakt${autoAssigned}`
+            : `${label}: ${engineBoxes.length} ${t.packing.boxesCreated}${autoAssigned}`
         )
       }
       createBoxes()
@@ -1168,8 +1167,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         }
         setAutoBoxMessage(
           suggestedPackagings.length === 1
-            ? `Doos automatisch aangemaakt: ${suggestedPackagings[0].name}`
-            : `${suggestedPackagings.length} dozen automatisch aangemaakt`
+            ? `${t.packing.boxAutoCreated}: ${suggestedPackagings[0].name}`
+            : `${suggestedPackagings.length} ${t.packing.boxesAutoCreated}`
         )
       }
       createBoxes()
@@ -1439,14 +1438,14 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
       const res = await fetch(`/api/picqer/picklists/${session.picklistId}/close`, { method: 'POST' })
       const data = await res.json()
       if (!res.ok) {
-        setScanFeedback({ message: data.error || 'Picklijst sluiten mislukt', type: 'error' })
+        setScanFeedback({ message: data.error || t.packing.closePicklistFailed, type: 'error' })
         return
       }
       // Mark session as completed
       await completeSession()
-      setScanFeedback({ message: 'Picklijst gesloten', type: 'success' })
+      setScanFeedback({ message: t.packing.picklistClosed, type: 'success' })
     } catch {
-      setScanFeedback({ message: 'Fout bij sluiten picklijst', type: 'error' })
+      setScanFeedback({ message: t.packing.closePicklistFailed, type: 'error' })
     } finally {
       setIsClosingPicklist(false)
       setShowClosePicklistConfirm(false)
@@ -1463,9 +1462,9 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
           next.delete(boxId)
           return next
         })
-        setScanFeedback({ message: 'Zending geannuleerd', type: 'success' })
+        setScanFeedback({ message: t.packing.shipmentCancelled, type: 'success' })
       } else if (result.error) {
-        setScanFeedback({ message: `Annuleren mislukt: ${result.error}`, type: 'error' })
+        setScanFeedback({ message: `${t.packing.cancelFailed}: ${result.error}`, type: 'error' })
       }
     },
     [cancelBoxShipment]
@@ -1597,7 +1596,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
           }
         }
         addBox(matchedPackaging.name, matchedPackaging.idpackaging, matchedPackaging.barcode ?? undefined, adviceMeta)
-        setScanFeedback({ message: `Doos aangemaakt: ${matchedPackaging.name}`, type: 'success' })
+        setScanFeedback({ message: `${t.packing.boxCreated}: ${matchedPackaging.name}`, type: 'success' })
         return
       }
 
@@ -1609,14 +1608,14 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         // Find first open box
         const openBox = session?.boxes.find((b) => !closedBoxes.has(b.id) && b.status !== 'shipped')
         if (!openBox) {
-          setScanFeedback({ message: 'Maak eerst een doos aan', type: 'warning' })
+          setScanFeedback({ message: t.packing.addBoxFirst, type: 'warning' })
           return
         }
         const remaining = matchedProduct.amount - matchedProduct.amountAssigned
         handleAssignProduct(matchedProduct.id, openBox.id, remaining)
         setHighlightProductId(matchedProduct.id)
         const openBoxDisplayIndex = (session?.boxes.findIndex((b) => b.id === openBox.id) ?? 0) + 1
-        setScanFeedback({ message: `${matchedProduct.productCode} (${remaining}x) → Doos ${openBoxDisplayIndex}`, type: 'success' })
+        setScanFeedback({ message: `${matchedProduct.productCode} (${remaining}x) → ${t.packing.boxNumber} ${openBoxDisplayIndex}`, type: 'success' })
         return
       }
 
@@ -1625,12 +1624,12 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         (p) => p.productCode.toLowerCase() === barcode.toLowerCase() && p.amountAssigned >= p.amount
       )
       if (alreadyAssigned) {
-        setScanFeedback({ message: `${barcode} is al volledig toegewezen`, type: 'warning' })
+        setScanFeedback({ message: `${barcode} ${t.packing.alreadyFullyAssigned}`, type: 'warning' })
         return
       }
 
       // 4. No match
-      setScanFeedback({ message: `Barcode niet herkend: ${barcode}`, type: 'error' })
+      setScanFeedback({ message: `${t.packing.scanUnknownBarcode}: ${barcode}`, type: 'error' })
     },
     [activePackagings, productItems, session, closedBoxes, addBox, handleAssignProduct, engineAdvice]
   )
@@ -1655,7 +1654,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
       <div className="flex-1 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          <p className="text-muted-foreground">Sessie laden...</p>
+          <p className="text-muted-foreground">{t.packing.loadingSession}</p>
         </div>
       </div>
     )
@@ -1667,13 +1666,13 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
       <div className="flex-1 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3 text-center">
           <AlertCircle className="w-8 h-8 text-red-500" />
-          <p className="text-red-600 font-medium">Fout bij laden sessie</p>
+          <p className="text-red-600 font-medium">{t.packing.loadSessionError}</p>
           <p className="text-sm text-muted-foreground">{sessionError.message}</p>
           <button
             onClick={onBack}
             className="mt-2 px-4 py-2 min-h-[48px] text-sm text-primary hover:bg-primary/10 rounded-lg transition-colors"
           >
-            Terug naar wachtrij
+            {t.packing.backToQueue}
           </button>
         </div>
       </div>
@@ -1683,7 +1682,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
   if (!session) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <p className="text-muted-foreground">Geen sessie gevonden</p>
+        <p className="text-muted-foreground">{t.packing.noSessionFound}</p>
       </div>
     )
   }
@@ -1717,8 +1716,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                 <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                   <p className="text-sm text-amber-800">
                     {isSaving
-                      ? 'Even wachten...'
-                      : 'Sessie verlaten? Je voortgang wordt bewaard.'}
+                      ? t.packing.pleaseWait
+                      : t.packing.leaveSessionConfirm}
                   </p>
                   {isSaving ? (
                     <Loader2 className="w-4 h-4 animate-spin text-amber-600 flex-shrink-0" />
@@ -1728,13 +1727,13 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                         onClick={onBack}
                         className="px-3 py-1.5 min-h-[44px] bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 transition-colors"
                       >
-                        Verlaat sessie
+                        {t.packing.leaveSession}
                       </button>
                       <button
                         onClick={() => setShowLeaveConfirm(false)}
                         className="px-3 py-1.5 min-h-[44px] border border-border text-muted-foreground rounded-lg text-sm font-medium hover:bg-muted transition-colors"
                       >
-                        Annuleer
+                        {t.common.cancel}
                       </button>
                     </div>
                   )}
@@ -1746,7 +1745,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                     <button
                       onClick={() => setShowLeaveConfirm(true)}
                       className="p-2 -ml-1 rounded-lg hover:bg-muted transition-colors flex-shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center border border-border"
-                      title="Terug naar wachtrij"
+                      title={t.packing.backToQueue}
                     >
                       <ArrowLeft className="w-5 h-5" />
                     </button>
@@ -1861,7 +1860,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                   onClick={() => setShowClosePicklistConfirm(true)}
                   disabled={isClosingPicklist}
                   className="flex items-center gap-2 px-3 py-2 min-h-[44px] border border-border rounded-lg text-sm font-medium hover:bg-muted transition-colors text-muted-foreground"
-                  title="Picklijst sluiten"
+                  title={t.packing.closePicklist}
                 >
                   <Check className="w-4 h-4" />
                   <span className="hidden sm:inline">{t.packing.closePicklist}</span>
@@ -1895,12 +1894,12 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
               </div>
               {picklist && (
                 <div>
-                  <p className="text-xs text-muted-foreground">Totaal producten</p>
-                  <p>{picklist.totalproducts} ({picklist.totalpicked} gepickt)</p>
+                  <p className="text-xs text-muted-foreground">{t.packing.totalProducts}</p>
+                  <p>{picklist.totalproducts} ({picklist.totalpicked} {t.packing.picked})</p>
                 </div>
               )}
               <div>
-                <p className="text-xs text-muted-foreground">Dozen</p>
+                <p className="text-xs text-muted-foreground">{t.packing.boxesLabel}</p>
                 <p>{session.boxes.length}</p>
               </div>
             </div>
@@ -1949,7 +1948,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                     Advies: {engineAdvice.advice_boxes.map((b) => b.packaging_name).join(' + ')}
                     {engineAdvice.cost_data_available !== false && engineAdvice.advice_boxes.some(b => b.total_cost !== undefined) && (
                       <span className="ml-1 font-medium">
-                        ({formatCost(engineAdvice.advice_boxes.reduce((sum, b) => sum + (b.total_cost ?? 0), 0))} totaal)
+                        ({formatCost(engineAdvice.advice_boxes.reduce((sum, b) => sum + (b.total_cost ?? 0), 0))} {t.packing.totalCost})
                       </span>
                     )}
                   </>
@@ -1959,22 +1958,22 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                     Gedeeltelijk advies: {engineAdvice.advice_boxes.map((b) => b.packaging_name).join(' + ')}
                     {engineAdvice.cost_data_available !== false && engineAdvice.advice_boxes.some(b => b.total_cost !== undefined) && (
                       <span className="ml-1 font-medium">
-                        ({formatCost(engineAdvice.advice_boxes.reduce((sum, b) => sum + (b.total_cost ?? 0), 0))} totaal)
+                        ({formatCost(engineAdvice.advice_boxes.reduce((sum, b) => sum + (b.total_cost ?? 0), 0))} {t.packing.totalCost})
                       </span>
                     )}
                   </>
                 )}
                 {engineAdvice.confidence === 'no_match' && (
-                  <>Geen verpakkingsadvies beschikbaar</>
+                  <>{t.packing.noAdviceAvailable}</>
                 )}
                 {engineAdvice.unclassified_products.length > 0 && engineAdvice.confidence !== 'no_match' && (
                   <span className="text-xs ml-1 opacity-75">
-                    ({engineAdvice.unclassified_products.length} product{engineAdvice.unclassified_products.length !== 1 ? 'en' : ''} niet geclassificeerd)
+                    ({engineAdvice.unclassified_products.length} {engineAdvice.unclassified_products.length !== 1 ? t.common.products : t.common.product} {t.packing.notClassified})
                   </span>
                 )}
                 {engineAdvice.weight_exceeded && (
                   <span className="text-xs ml-1 text-amber-700 font-medium">
-                    — Let op: gewicht overschrijdt maximum
+                    — {t.packing.weightExceeded}
                   </span>
                 )}
               </span>
@@ -2001,7 +2000,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                   {order?.deliverycountry && (
                     <span className="inline-flex items-center gap-1">
                       <MapPin className="w-3 h-3" />
-                      {getCountryName(order.deliverycountry)}
+                      {getCountryName(order.deliverycountry, t.countries)}
                     </span>
                   )}
                   {engineAdvice.shipping_units_detected.length > 0 && (
@@ -2017,19 +2016,19 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                 {engineAdvice.unclassified_products.length > 0 && (
                   <div className="px-3 py-1.5 bg-amber-50 border-t border-amber-200 text-amber-700 flex items-center gap-1.5">
                     <AlertTriangle className="w-3 h-3 shrink-0" />
-                    Niet geclassificeerd: {engineAdvice.unclassified_products.join(', ')}
+                    {t.packing.unclassified}: {engineAdvice.unclassified_products.join(', ')}
                   </div>
                 )}
                 {engineAdvice.confidence === 'no_match' && engineAdvice.shipping_units_detected.length > 0 && (
                   <div className="px-3 py-1.5 bg-amber-50 border-t border-amber-200 text-amber-700 flex items-center gap-1.5">
                     <AlertTriangle className="w-3 h-3 shrink-0" />
-                    Geen verpakking past bij deze verzendeenheden. Compartment rules ontbreken.
+                    {t.packing.noPackagingMatch}
                   </div>
                 )}
                 {engineAdvice.cost_data_available === false && (
                   <div className="px-3 py-1.5 bg-amber-50 border-t border-amber-200 text-amber-700 flex items-center gap-1.5">
                     <AlertTriangle className="w-3 h-3 shrink-0" />
-                    Kostdata niet beschikbaar — advies gebaseerd op specificiteit.
+                    {t.packing.noCostData}
                   </div>
                 )}
 
@@ -2039,12 +2038,12 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="bg-muted/30 text-muted-foreground">
-                          <th className="text-left py-1.5 px-3 font-medium">Advies</th>
-                          <th className="text-right py-1.5 px-2 font-medium">Materiaal</th>
+                          <th className="text-left py-1.5 px-3 font-medium">{t.packing.engineAdvice}</th>
+                          <th className="text-right py-1.5 px-2 font-medium">{t.packing.material}</th>
                           <th className="text-right py-1.5 px-2 font-medium">Pick</th>
                           <th className="text-right py-1.5 px-2 font-medium">Pack</th>
                           <th className="text-right py-1.5 px-2 font-medium">Transport</th>
-                          <th className="text-right py-1.5 px-3 font-medium">Totaal</th>
+                          <th className="text-right py-1.5 px-3 font-medium">{t.packing.totalCost}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2068,7 +2067,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                         ))}
                         {engineAdvice.advice_boxes.length > 1 && (
                           <tr className="border-t-2 border-inherit font-semibold">
-                            <td className="py-1.5 px-3">Totaal ({engineAdvice.advice_boxes.length} dozen)</td>
+                            <td className="py-1.5 px-3">{t.packing.totalCost} ({engineAdvice.advice_boxes.length} {t.packing.boxesLabel})</td>
                             <td className="text-right py-1.5 px-2 tabular-nums">{formatCost(engineAdvice.advice_boxes.reduce((s, b) => s + (b.box_cost ?? 0), 0))}</td>
                             <td className="text-right py-1.5 px-2 tabular-nums">{formatCost(engineAdvice.advice_boxes.reduce((s, b) => s + (b.box_pick_cost ?? 0), 0))}</td>
                             <td className="text-right py-1.5 px-2 tabular-nums">{formatCost(engineAdvice.advice_boxes.reduce((s, b) => s + (b.box_pack_cost ?? 0), 0))}</td>
@@ -2085,18 +2084,18 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                 {engineAdvice.alternatives && engineAdvice.alternatives.length > 1 && engineAdvice.cost_data_available !== false && (
                   <div className="border-t border-inherit">
                     <div className="px-3 py-1.5 bg-muted/20 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                      Alle passende verpakkingen
+                      {t.packing.allMatchingPackagings}
                     </div>
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="bg-muted/10 text-muted-foreground">
-                          <th className="text-left py-1.5 px-3 font-medium">Verpakking</th>
-                          <th className="text-right py-1.5 px-2 font-medium">Materiaal</th>
+                          <th className="text-left py-1.5 px-3 font-medium">{t.packing.packaging}</th>
+                          <th className="text-right py-1.5 px-2 font-medium">{t.packing.material}</th>
                           <th className="text-right py-1.5 px-2 font-medium">Pick</th>
                           <th className="text-right py-1.5 px-2 font-medium">Pack</th>
                           <th className="text-right py-1.5 px-2 font-medium">Transport</th>
                           <th className="text-left py-1.5 px-2 font-medium">Carrier</th>
-                          <th className="text-right py-1.5 px-3 font-medium">Totaal</th>
+                          <th className="text-right py-1.5 px-3 font-medium">{t.packing.totalCost}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2105,10 +2104,10 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                             <td className="py-1.5 px-3">
                               <span className={alt.is_recommended ? 'font-semibold' : ''}>{alt.name}</span>
                               {alt.is_recommended && (
-                                <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-700">Aanbevolen</span>
+                                <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-700">{t.packing.suggested}</span>
                               )}
                               {alt.is_cheapest && !alt.is_recommended && (
-                                <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-700">Goedkoopst</span>
+                                <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-700">{t.packing.cheapest}</span>
                               )}
                             </td>
                             <td className="text-right py-1.5 px-2 tabular-nums">{formatCost(alt.box_cost)}</td>
@@ -2131,7 +2130,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
           <div className="px-3 pt-2 lg:px-4">
             <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 rounded-lg text-sm text-muted-foreground">
               <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
-              <span>Verpakkingsadvies berekenen...</span>
+              <span>{t.packing.calculatingAdvice}</span>
             </div>
           </div>
         )}
@@ -2149,7 +2148,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                 <button
                   onClick={() => dismissWarning(index)}
                   className="p-1 -mr-1 -mt-0.5 rounded hover:bg-amber-200/50 transition-colors flex-shrink-0"
-                  title="Sluiten"
+                  title={t.common.close}
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -2196,15 +2195,15 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                 )}
               </div>
               <span className="flex-1 font-medium">
-                {outcomeFeedback.outcome === 'followed' ? 'Engine-advies volledig gevolgd'
+                {outcomeFeedback.outcome === 'followed' ? t.packing.engineAdviceFollowed
                   : outcomeFeedback.outcome === 'modified' ? (
-                    outcomeFeedback.deviationType === 'extra_boxes' ? 'Engine-advies aangepast — extra dozen toegevoegd' :
-                    outcomeFeedback.deviationType === 'fewer_boxes' ? 'Engine-advies aangepast — minder dozen gebruikt' :
-                    outcomeFeedback.deviationType === 'different_packaging' ? 'Engine-advies aangepast — andere verpakking gekozen' :
-                    'Engine-advies aangepast'
+                    outcomeFeedback.deviationType === 'extra_boxes' ? t.packing.engineModifiedExtraBoxes :
+                    outcomeFeedback.deviationType === 'fewer_boxes' ? t.packing.engineModifiedFewerBoxes :
+                    outcomeFeedback.deviationType === 'different_packaging' ? t.packing.engineModifiedDifferentPkg :
+                    t.packing.engineModified
                   )
-                  : outcomeFeedback.outcome === 'ignored' ? 'Engine-advies niet gevolgd — andere verpakking gebruikt'
-                  : 'Sessie voltooid'}
+                  : outcomeFeedback.outcome === 'ignored' ? t.packing.engineIgnored
+                  : t.packing.sessionCompleted}
               </span>
               <button
                 onClick={() => setOutcomeFeedback(null)}
@@ -2353,7 +2352,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                           <button
                             onClick={() => handleCancelShipment(box.id)}
                             className="inline-flex items-center gap-1 px-2 py-1 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 border border-red-200 rounded transition-colors ml-auto flex-shrink-0"
-                            title="Zending annuleren"
+                            title={t.packing.cancelShipment}
                           >
                             <XCircle className="w-3 h-3" />
                             {t.packing.cancelShipmentBtn}
@@ -2503,13 +2502,13 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                 </div>
                 {picklist && (
                   <div>
-                    <p className="text-xs text-muted-foreground">Producten</p>
-                    <p>{picklist.totalproducts} ({picklist.totalpicked} gepickt)</p>
+                    <p className="text-xs text-muted-foreground">{t.packing.productsLabel}</p>
+                    <p>{picklist.totalproducts} ({picklist.totalpicked} {t.packing.picked})</p>
                   </div>
                 )}
                 {picklist?.tags && picklist.tags.length > 0 && (
                   <div>
-                    <p className="text-xs text-muted-foreground mb-1">Tags</p>
+                    <p className="text-xs text-muted-foreground mb-1">{t.packing.tagsLabel}</p>
                     <div className="flex flex-wrap gap-1">
                       {picklist.tags.map((tag) => (
                         <span
@@ -2528,13 +2527,13 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                   </div>
                 )}
                 <div>
-                  <p className="text-xs text-muted-foreground">Aangemaakt</p>
+                  <p className="text-xs text-muted-foreground">{t.packing.createdAt}</p>
                   <p className="text-xs">
                     {new Date(session.createdAt).toLocaleString('nl-NL')}
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">Dozen</p>
+                  <p className="text-xs text-muted-foreground">{t.packing.boxesLabel}</p>
                   <p>{session.boxes.length}</p>
                 </div>
               </div>
@@ -2560,13 +2559,13 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                     return (
                       <div key={box.id} className="text-sm">
                         <div className="flex items-center gap-2">
-                          <span className="font-medium">Doos {i + 1}</span>
+                          <span className="font-medium">{t.packing.boxNumber} {i + 1}</span>
                           <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium leading-none ${statusBadge}`}>
                             {translateStatus(box.status, t.status)}
                           </span>
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          {box.packagingName} · {box.products.length} product{box.products.length !== 1 ? 'en' : ''}
+                          {box.packagingName} · {box.products.length} {box.products.length !== 1 ? t.common.products : t.common.product}
                         </p>
                         {box.trackingCode && (
                           <p className="text-xs font-mono text-muted-foreground mt-0.5">
@@ -2597,7 +2596,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                         )}
                         {box.shippedAt && (
                           <p className="text-[10px] text-muted-foreground mt-0.5">
-                            Verzonden {new Date(box.shippedAt).toLocaleString('nl-NL', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}
+                            {t.packing.shippedAt} {new Date(box.shippedAt).toLocaleString('nl-NL', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}
                           </p>
                         )}
                       </div>
@@ -2655,7 +2654,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
           {/* Compact progress bar + select controls on mobile */}
           <div className="px-4 pb-2 space-y-2">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span className="flex-shrink-0">{assignedProductsCount}/{totalProductsCount} toegewezen</span>
+              <span className="flex-shrink-0">{assignedProductsCount}/{totalProductsCount} {t.packing.assigned}</span>
               <div className="flex-1 bg-muted rounded-full h-1.5">
                 <div
                   className="h-1.5 rounded-full bg-primary transition-all duration-300"
@@ -2669,7 +2668,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                   onClick={handleSelectAll}
                   className="text-xs text-primary hover:underline"
                 >
-                  {allUnassignedSelected ? 'Deselecteren' : 'Alles selecteren'}
+                  {allUnassignedSelected ? t.packing.deselectAll : t.packing.selectAll}
                 </button>
                 {selectedCount > 0 && (
                   <div className="relative">
@@ -2683,7 +2682,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                       ) : (
                         <Box className="w-3 h-3" />
                       )}
-                      {selectedCount} toewijzen
+                      {selectedCount} {t.packing.assign}
                       <ChevronDown className="w-3 h-3" />
                     </button>
                     {showBulkAssignMenu && (
@@ -2695,7 +2694,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                         <div className="absolute right-0 top-full mt-1 bg-card border border-border rounded-lg shadow-lg z-20 min-w-[220px]">
                           <div className="p-1">
                             <p className="px-2 py-1 text-xs text-muted-foreground font-medium">
-                              Toewijzen aan doos
+                              {t.packing.assignToBox}
                             </p>
                             {boxRefs.filter((b) => !b.isClosed).map((box) => (
                               <button
@@ -2704,12 +2703,12 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                                 className="w-full flex items-center gap-2 px-2 py-2 text-sm rounded-lg hover:bg-muted transition-colors text-left"
                               >
                                 <Box className="w-4 h-4 text-muted-foreground" />
-                                <span>Doos {box.index}: {box.name}</span>
+                                <span>{t.packing.boxNumber} {box.index}: {box.name}</span>
                               </button>
                             ))}
                             {boxRefs.filter((b) => !b.isClosed).length === 0 && (
                               <p className="px-2 py-2 text-xs text-muted-foreground">
-                                Geen open dozen beschikbaar
+                                {t.packing.noOpenBoxes}
                               </p>
                             )}
                           </div>
@@ -2748,7 +2747,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                           onClick={handleSelectAll}
                           className="text-xs text-primary hover:underline"
                         >
-                          {allUnassignedSelected ? 'Deselecteren' : 'Alles selecteren'}
+                          {allUnassignedSelected ? t.packing.deselectAll : t.packing.selectAll}
                         </button>
                         {selectedCount > 0 && (
                           <div className="relative">
@@ -2762,7 +2761,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                               ) : (
                                 <Box className="w-3 h-3" />
                               )}
-                              {selectedCount} toewijzen
+                              {selectedCount} {t.packing.assign}
                               <ChevronDown className="w-3 h-3" />
                             </button>
                             {showBulkAssignMenu && (
@@ -2774,7 +2773,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                                 <div className="absolute right-0 top-full mt-1 bg-card border border-border rounded-lg shadow-lg z-20 min-w-[220px]">
                                   <div className="p-1">
                                     <p className="px-2 py-1 text-xs text-muted-foreground font-medium">
-                                      Toewijzen aan doos
+                                      {t.packing.assignToBox}
                                     </p>
                                     {boxRefs.filter((b) => !b.isClosed).map((box) => (
                                       <button
@@ -2783,12 +2782,12 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                                         className="w-full flex items-center gap-2 px-2 py-2 text-sm rounded-lg hover:bg-muted transition-colors text-left"
                                       >
                                         <Box className="w-4 h-4 text-muted-foreground" />
-                                        <span>Doos {box.index}: {box.name}</span>
+                                        <span>{t.packing.boxNumber} {box.index}: {box.name}</span>
                                       </button>
                                     ))}
                                     {boxRefs.filter((b) => !b.isClosed).length === 0 && (
                                       <p className="px-2 py-2 text-xs text-muted-foreground">
-                                        Geen open dozen beschikbaar
+                                        {t.packing.noOpenBoxes}
                                       </p>
                                     )}
                                   </div>
@@ -2805,7 +2804,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                   {picklistLoading ? (
                     <div className="flex items-center justify-center py-8">
                       <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                      <span className="ml-2 text-sm text-muted-foreground">Producten laden...</span>
+                      <span className="ml-2 text-sm text-muted-foreground">{t.packing.loadingProducts}</span>
                     </div>
                   ) : picklistError ? (
                     <div className="flex items-center justify-center py-8 text-red-500">
@@ -3075,13 +3074,13 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                 </div>
                 {picklist && (
                   <div>
-                    <p className="text-xs text-muted-foreground">Producten</p>
-                    <p>{picklist.totalproducts} ({picklist.totalpicked} gepickt)</p>
+                    <p className="text-xs text-muted-foreground">{t.packing.productsLabel}</p>
+                    <p>{picklist.totalproducts} ({picklist.totalpicked} {t.packing.picked})</p>
                   </div>
                 )}
                 {picklist?.tags && picklist.tags.length > 0 && (
                   <div>
-                    <p className="text-xs text-muted-foreground mb-1">Tags</p>
+                    <p className="text-xs text-muted-foreground mb-1">{t.packing.tagsLabel}</p>
                     <div className="flex flex-wrap gap-1">
                       {picklist.tags.map((tag) => (
                         <span
@@ -3100,13 +3099,13 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                   </div>
                 )}
                 <div>
-                  <p className="text-xs text-muted-foreground">Aangemaakt</p>
+                  <p className="text-xs text-muted-foreground">{t.packing.createdAt}</p>
                   <p className="text-xs">
                     {new Date(session.createdAt).toLocaleString('nl-NL')}
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">Dozen</p>
+                  <p className="text-xs text-muted-foreground">{t.packing.boxesLabel}</p>
                   <p>{session.boxes.length}</p>
                 </div>
               </div>
@@ -3132,13 +3131,13 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                     return (
                       <div key={box.id} className="text-sm">
                         <div className="flex items-center gap-2">
-                          <span className="font-medium">Doos {i + 1}</span>
+                          <span className="font-medium">{t.packing.boxNumber} {i + 1}</span>
                           <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium leading-none ${statusBadge}`}>
                             {translateStatus(box.status, t.status)}
                           </span>
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          {box.packagingName} · {box.products.length} product{box.products.length !== 1 ? 'en' : ''}
+                          {box.packagingName} · {box.products.length} {box.products.length !== 1 ? t.common.products : t.common.product}
                         </p>
                         {box.trackingCode && (
                           <p className="text-xs font-mono text-muted-foreground mt-0.5">
@@ -3169,7 +3168,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                         )}
                         {box.shippedAt && (
                           <p className="text-[10px] text-muted-foreground mt-0.5">
-                            Verzonden {new Date(box.shippedAt).toLocaleString('nl-NL', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}
+                            {t.packing.shippedAt} {new Date(box.shippedAt).toLocaleString('nl-NL', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}
                           </p>
                         )}
                       </div>
@@ -3245,7 +3244,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                   <Sparkles className="w-3.5 h-3.5" />
                   Engine advies
                   {engineAdvice.advice_boxes.length > 1 && (
-                    <span className="text-green-600 normal-case">— {engineAdvice.advice_boxes.length} dozen aanbevolen</span>
+                    <span className="text-green-600 normal-case">— {engineAdvice.advice_boxes.length} {t.packing.boxesRecommended}</span>
                   )}
                 </h4>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
@@ -3259,7 +3258,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                         className="flex flex-col items-center p-3 rounded-lg border-2 border-green-300 bg-green-50 hover:bg-green-100 active:bg-green-200 transition-colors text-center min-h-[140px]"
                       >
                         {engineAdvice.advice_boxes.length > 1 && (
-                          <span className="text-[10px] font-medium text-green-600 mb-1">Doos {idx + 1} van {engineAdvice.advice_boxes.length}</span>
+                          <span className="text-[10px] font-medium text-green-600 mb-1">{t.packing.boxNumber} {idx + 1} {t.common.of} {engineAdvice.advice_boxes.length}</span>
                         )}
                         <div className="w-16 h-16 bg-green-100 rounded-lg flex items-center justify-center mb-2">
                           {packagingImageMap.get(adviceBox.idpackaging) ? (
@@ -3333,7 +3332,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
               {packagingsLoading ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                  <span className="ml-2 text-sm text-muted-foreground">Verpakkingen laden...</span>
+                  <span className="ml-2 text-sm text-muted-foreground">{t.packing.loadingPackagings}</span>
                 </div>
               ) : boxSearchQuery.trim() ? (
                 /* When searching: always show results in grid, no collapsible */
@@ -3379,7 +3378,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                   </div>
                   {filteredPackagings.length === 0 && (
                     <p className="text-sm text-muted-foreground text-center py-4">
-                      Geen verpakkingen gevonden
+                      {t.packing.noPackagings}
                     </p>
                   )}
                 </>
@@ -3394,15 +3393,15 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                       <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${showAllPackagings ? 'rotate-180' : '-rotate-90'}`} />
                       <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         {tagFilter
-                          ? `${tagFilter.label} verpakkingen (${tagFilteredPackagings.length})`
-                          : `Alle verpakkingen (${activePackagings.length})`}
+                          ? `${tagFilter.label} ${t.packing.packagingsLabel} (${tagFilteredPackagings.length})`
+                          : `${t.packing.allPackagings} (${activePackagings.length})`}
                       </h4>
                     </button>
                   ) : (
                     <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
                       {tagFilter
-                        ? `${tagFilter.label} verpakkingen (${tagFilteredPackagings.length})`
-                        : `Alle verpakkingen (${activePackagings.length})`}
+                        ? `${tagFilter.label} ${t.packing.packagingsLabel} (${tagFilteredPackagings.length})`
+                        : `${t.packing.allPackagings} (${activePackagings.length})`}
                     </h4>
                   )}
                   {(showAllPackagings || !hasSuggestions) && (
@@ -3438,14 +3437,14 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                           {(!pkg.idpackaging || pkg.idpackaging < 0) && (
                             <p className="text-[10px] text-amber-600 flex items-center gap-1 mt-1">
                               <AlertTriangle className="w-3 h-3" />
-                              Geen Picqer ID
+                              {t.packing.noPicqerId}
                             </p>
                           )}
                         </button>
                       ))}
                       {filteredPackagings.filter((pkg) => !suggestedPackagingIds.has(pkg.idpackaging) && !engineAdviceIds.has(pkg.idpackaging)).length === 0 && (
                         <p className="text-sm text-muted-foreground text-center py-4 col-span-full">
-                          Geen verpakkingen gevonden
+                          {t.packing.noPackagings}
                         </p>
                       )}
                     </div>
@@ -3461,12 +3460,12 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
       <Dialog
         open={showStationPicker}
         onClose={() => setShowStationPicker(false)}
-        title="Werkstation"
+        title={t.packing.station}
         className="max-w-md"
       >
         <div className="p-4">
           <p className="text-sm text-muted-foreground mb-4">
-            Kies een werkstation. Labels worden automatisch op de gekoppelde printer geprint.
+            {t.packing.stationDescription}
           </p>
           <div className="space-y-2">
             <button
@@ -3482,8 +3481,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
             >
               <X className="w-5 h-5 text-muted-foreground flex-shrink-0" />
               <div>
-                <p className="text-sm font-medium">Geen</p>
-                <p className="text-xs text-muted-foreground">Labels openen in browser</p>
+                <p className="text-sm font-medium">{t.common.no}</p>
+                <p className="text-xs text-muted-foreground">{t.packing.labelsInBrowser}</p>
               </div>
               {!selectedStation && <Check className="w-4 h-4 text-primary ml-auto flex-shrink-0" />}
             </button>
@@ -3552,7 +3551,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
             </div>
             <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-border">
               <button onClick={() => setEditingAddress(false)} disabled={addressSaving} className="px-4 py-2 min-h-[44px] text-sm rounded-lg hover:bg-muted transition-colors">
-                Annuleren
+                {t.common.cancel}
               </button>
               <button onClick={saveAddress} disabled={addressSaving} className="px-4 py-2 min-h-[44px] bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50">
                 {addressSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : t.common.save}
@@ -3575,14 +3574,14 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                 onClick={() => setShowClosePicklistConfirm(false)}
                 className="px-4 py-2 min-h-[44px] text-sm rounded-lg hover:bg-muted transition-colors"
               >
-                Annuleren
+                {t.common.cancel}
               </button>
               <button
                 onClick={handleClosePicklist}
                 disabled={isClosingPicklist}
                 className="px-4 py-2 min-h-[44px] bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
               >
-                {isClosingPicklist ? 'Bezig...' : 'Sluiten'}
+                {isClosingPicklist ? t.common.loading : t.common.close}
               </button>
             </div>
           </div>
@@ -3612,7 +3611,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
       {quantityPickerState && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setQuantityPickerState(null)}>
           <div className="bg-card rounded-xl shadow-xl p-6 mx-4 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold mb-1">Hoeveel stuks?</h3>
+            <h3 className="text-lg font-semibold mb-1">{t.packing.howMany}</h3>
             <p className="text-sm text-muted-foreground mb-4 truncate">{quantityPickerState.productName}</p>
             <div className="grid grid-cols-3 gap-3">
               {(quantityPickerState.maxAmount > 12
@@ -3636,7 +3635,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
               onClick={() => setQuantityPickerState(null)}
               className="w-full mt-4 py-3 min-h-[48px] text-sm text-muted-foreground hover:text-foreground transition-colors"
             >
-              Annuleren
+              {t.common.cancel}
             </button>
           </div>
         </div>
@@ -3698,6 +3697,7 @@ function BottomComments({
   users: { iduser: number; fullName: string }[]
   currentUserName: string
 }) {
+  const { t } = useTranslation()
   const [newComment, setNewComment] = useState('')
   const [isSending, setIsSending] = useState(false)
   const [deletingId, setDeletingId] = useState<number | null>(null)
@@ -3715,7 +3715,7 @@ function BottomComments({
       if (result.success) {
         setNewComment('')
       } else {
-        setSendError(result.error || 'Kon opmerking niet versturen')
+        setSendError(result.error || t.packing.commentSendFailed)
       }
     } finally {
       setIsSending(false)
@@ -3735,7 +3735,7 @@ function BottomComments({
     try {
       const result = await onDeleteComment(idcomment)
       if (!result.success) {
-        setSendError(result.error || 'Kon opmerking niet verwijderen')
+        setSendError(result.error || t.packing.commentDeleteFailed)
       }
     } finally {
       setDeletingId(null)
@@ -3771,7 +3771,7 @@ function BottomComments({
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
         <h3 className="font-semibold text-sm flex items-center gap-2">
           <MessageSquare className="w-4 h-4" />
-          Opmerkingen
+          {t.comments.title}
           {comments.length > 0 && (
             <span className="text-xs text-muted-foreground font-normal">({comments.length})</span>
           )}
@@ -3789,7 +3789,7 @@ function BottomComments({
       {isLoading && comments.length === 0 ? (
         <div className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground">
           <Loader2 className="w-4 h-4 animate-spin" />
-          Opmerkingen laden...
+          {t.packing.loadingComments}
         </div>
       ) : comments.length > 0 ? (
         <div className="divide-y divide-border max-h-[200px] overflow-y-auto">
@@ -3805,7 +3805,7 @@ function BottomComments({
                     onClick={() => handleReply(comment.authorName)}
                     className="px-2 py-0.5 text-xs border border-border rounded hover:bg-muted transition-colors"
                   >
-                    Reageer
+                    {t.comments.reply}
                   </button>
                   {isOwnComment(comment.authorName) && (
                     <button
@@ -3813,7 +3813,7 @@ function BottomComments({
                       disabled={deletingId === comment.idcomment}
                       className="px-2 py-0.5 text-xs border border-border rounded hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition-colors disabled:opacity-50"
                     >
-                      {deletingId === comment.idcomment ? 'Bezig...' : 'Verwijder'}
+                      {deletingId === comment.idcomment ? t.common.loading : t.common.delete}
                     </button>
                   )}
                 </div>
@@ -3824,7 +3824,7 @@ function BottomComments({
         </div>
       ) : (
         <div className="px-4 py-3 text-sm text-muted-foreground">
-          Nog geen opmerkingen.
+          {t.comments.noComments}
         </div>
       )}
 
@@ -3839,7 +3839,7 @@ function BottomComments({
             value={newComment}
             onChange={setNewComment}
             onKeyDown={handleKeyDown}
-            placeholder="Schrijf een opmerking... (@mention)"
+            placeholder={t.packing.commentPlaceholder}
             disabled={isSending}
             users={users}
           />

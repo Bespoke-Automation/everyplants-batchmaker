@@ -17,6 +17,7 @@ import {
   ArrowRight,
   Package,
 } from 'lucide-react'
+import { useTranslation } from '@/i18n/LanguageContext'
 import { useCompartmentRules, useShippingUnits } from '@/hooks/useCompartmentRules'
 import type { CompartmentRule, ShippingUnit } from '@/hooks/useCompartmentRules'
 import { useLocalPackagings } from '@/hooks/useLocalPackagings'
@@ -24,9 +25,9 @@ import { useLocalPackagings } from '@/hooks/useLocalPackagings'
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 const OPERATORS = [
-  { value: 'EN', label: 'EN', description: 'Alle regels moeten voldoen' },
-  { value: 'OF', label: 'OF', description: 'Minstens één moet voldoen' },
-  { value: 'ALTERNATIEF', label: 'ALTERNATIEF', description: 'Alternatief voor een EN-regel' },
+  { value: 'EN', label: 'EN' },
+  { value: 'OF', label: 'OF' },
+  { value: 'ALTERNATIEF', label: 'ALTERNATIEF' },
 ] as const
 
 function getOperatorColor(operator: string) {
@@ -90,6 +91,7 @@ function AddRuleForm({
   onCancel,
   nextSortOrder,
 }: AddRuleFormProps) {
+  const { t } = useTranslation()
   const [shippingUnitId, setShippingUnitId] = useState('')
   const [quantity, setQuantity] = useState(1)
   const [operator, setOperator] = useState('EN')
@@ -110,11 +112,11 @@ function AddRuleForm({
 
   const handleSubmit = async () => {
     if (!shippingUnitId) {
-      setError('Selecteer een shipping unit')
+      setError(t.settings.selectShippingUnit)
       return
     }
     if (operator === 'ALTERNATIEF' && !alternativeForId) {
-      setError('Selecteer de EN-regel waarvoor dit een alternatief is')
+      setError(t.settings.selectEnRuleForAlt)
       return
     }
 
@@ -132,7 +134,7 @@ function AddRuleForm({
         sortOrder: nextSortOrder,
       })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Fout bij opslaan')
+      setError(err instanceof Error ? err.message : t.settings.saveFailed)
       setIsSaving(false)
     }
   }
@@ -141,13 +143,13 @@ function AddRuleForm({
     <div className="mt-2 p-3 bg-muted/50 rounded-lg border border-border">
       <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
         <div className="sm:col-span-5">
-          <label className="block text-xs font-medium mb-1 text-muted-foreground">Shipping unit</label>
+          <label className="block text-xs font-medium mb-1 text-muted-foreground">{t.settings.shippingUnit}</label>
           <select
             value={shippingUnitId}
             onChange={(e) => setShippingUnitId(e.target.value)}
             className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[44px]"
           >
-            <option value="">Selecteer...</option>
+            <option value="">{t.settings.select}</option>
             {Object.entries(groupedUnits).map(([type, units]) => (
               <optgroup key={type} label={type}>
                 {units.map((unit) => (
@@ -158,14 +160,14 @@ function AddRuleForm({
           </select>
         </div>
         <div className="sm:col-span-2">
-          <label className="block text-xs font-medium mb-1 text-muted-foreground">Aantal</label>
+          <label className="block text-xs font-medium mb-1 text-muted-foreground">{t.settings.quantity}</label>
           <input type="number" min={1} value={quantity}
             onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
             className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[44px]"
           />
         </div>
         <div className="sm:col-span-3">
-          <label className="block text-xs font-medium mb-1 text-muted-foreground">Operator</label>
+          <label className="block text-xs font-medium mb-1 text-muted-foreground">{t.settings.operator}</label>
           <select value={operator}
             onChange={(e) => { setOperator(e.target.value); if (e.target.value !== 'ALTERNATIEF') setAlternativeForId(null) }}
             className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[44px]"
@@ -186,10 +188,10 @@ function AddRuleForm({
       </div>
       {operator === 'ALTERNATIEF' && (
         <div className="mt-3">
-          <label className="block text-xs font-medium mb-1 text-muted-foreground">Alternatief voor (EN-regel)</label>
+          <label className="block text-xs font-medium mb-1 text-muted-foreground">{t.settings.alternativeFor}</label>
           <select value={alternativeForId ?? ''} onChange={(e) => setAlternativeForId(e.target.value || null)}
             className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm min-h-[44px]">
-            <option value="">Selecteer EN-regel...</option>
+            <option value="">{t.settings.selectEnRule}</option>
             {enRulesInGroup.map((rule) => (
               <option key={rule.id} value={rule.id}>{rule.quantity}x {rule.shippingUnitName}</option>
             ))}
@@ -226,6 +228,7 @@ function RuleGroupCard({
   groupNumber, groupIndex, totalGroups, rules, packagingId, shippingUnits,
   onAddRule, onDeleteRule, onDeleteGroup,
 }: RuleGroupCardProps) {
+  const { t } = useTranslation()
   const [showAddForm, setShowAddForm] = useState(false)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [deleteGroupConfirm, setDeleteGroupConfirm] = useState(false)
@@ -254,12 +257,12 @@ function RuleGroupCard({
             <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold shrink-0">
               {groupIndex + 1}
             </span>
-            <span className="text-sm font-semibold">Combinatie {groupIndex + 1}</span>
+            <span className="text-sm font-semibold">{t.settings.combination} {groupIndex + 1}</span>
           </div>
           <div className="flex items-center gap-1">
             {deleteGroupConfirm ? (
               <div className="flex items-center gap-1">
-                <span className="text-xs text-destructive mr-1">Verwijderen?</span>
+                <span className="text-xs text-destructive mr-1">{t.common.delete}?</span>
                 <button onClick={() => { onDeleteGroup(); setDeleteGroupConfirm(false) }}
                   className="p-1.5 rounded-lg bg-destructive text-destructive-foreground hover:bg-destructive/90">
                   <Check className="w-3.5 h-3.5" />
@@ -271,7 +274,7 @@ function RuleGroupCard({
               </div>
             ) : (
               <button onClick={() => setDeleteGroupConfirm(true)}
-                className="p-1.5 rounded-lg hover:bg-destructive/10" title="Combinatie verwijderen">
+                className="p-1.5 rounded-lg hover:bg-destructive/10" title={t.settings.deleteCombination}>
                 <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
               </button>
             )}
@@ -291,7 +294,7 @@ function RuleGroupCard({
         <div className="divide-y divide-border">
           {rules.length === 0 && !showAddForm && (
             <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-              Geen regels in deze combinatie. Voeg een regel toe.
+              {t.settings.noRulesInCombination}
             </div>
           )}
 
@@ -389,7 +392,7 @@ function RuleGroupCard({
           ) : (
             <button onClick={() => setShowAddForm(true)}
               className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
-              <Plus className="w-4 h-4" />Regel toevoegen
+              <Plus className="w-4 h-4" />{t.settings.addRule}
             </button>
           )}
         </div>
@@ -409,17 +412,18 @@ interface PackagingOverviewProps {
 }
 
 function PackagingOverviewCard({ packaging, ruleCount, groupCount, isSelected, onClick }: PackagingOverviewProps) {
+  const { t } = useTranslation()
   const hasRules = ruleCount > 0
   const inAutoAdvice = packaging.useInAutoAdvice
 
   let statusColor = 'bg-gray-100 text-gray-600 border-gray-200'
-  let statusText = 'Niet in auto-advies'
+  let statusText = t.settings.notInAutoAdvice
   if (inAutoAdvice && hasRules) {
     statusColor = 'bg-emerald-50 text-emerald-700 border-emerald-200'
-    statusText = `${groupCount} combinatie${groupCount !== 1 ? 's' : ''}`
+    statusText = `${groupCount} ${groupCount !== 1 ? t.settings.combinations : t.settings.combination}`
   } else if (inAutoAdvice && !hasRules) {
     statusColor = 'bg-amber-50 text-amber-700 border-amber-200'
-    statusText = 'Geen regels'
+    statusText = t.settings.noRules
   }
 
   return (
@@ -447,6 +451,7 @@ function PackagingOverviewCard({ packaging, ruleCount, groupCount, isSelected, o
 // ── Main Component ───────────────────────────────────────────────────────────
 
 export default function CompartmentRules() {
+  const { t } = useTranslation()
   const { packagings, isLoading: packagingsLoading } = useLocalPackagings(true)
   const [selectedPackagingId, setSelectedPackagingId] = useState<string>('')
 
@@ -534,7 +539,7 @@ export default function CompartmentRules() {
     return (
       <div className="flex flex-col items-center justify-center p-12">
         <Loader2 className="w-10 h-10 text-primary animate-spin mb-4" />
-        <p className="text-lg text-muted-foreground">Gegevens laden...</p>
+        <p className="text-lg text-muted-foreground">{t.settings.loadingData}</p>
       </div>
     )
   }
@@ -559,13 +564,13 @@ export default function CompartmentRules() {
             <Box className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <h2 className="text-xl font-bold">Compartiment Regels</h2>
+            <h2 className="text-xl font-bold">{t.settings.compartmentRules}</h2>
             <p className="text-sm text-muted-foreground">
-              Welke combinaties van producten passen in welke doos
+              {t.settings.compartmentRulesDescription}
             </p>
           </div>
         </div>
-        <button onClick={refresh} className="p-2 rounded-lg hover:bg-muted transition-colors" title="Vernieuwen">
+        <button onClick={refresh} className="p-2 rounded-lg hover:bg-muted transition-colors" title={t.settings.refresh}>
           <RefreshCw className="w-4 h-4 text-muted-foreground" />
         </button>
       </div>
@@ -574,19 +579,19 @@ export default function CompartmentRules() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
         <div className="p-3 bg-card border border-border rounded-lg text-center">
           <div className="text-2xl font-bold">{kpis.total}</div>
-          <div className="text-xs text-muted-foreground">In auto-advies</div>
+          <div className="text-xs text-muted-foreground">{t.settings.inAutoAdvice}</div>
         </div>
         <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-center">
           <div className="text-2xl font-bold text-emerald-700">{kpis.withRules}</div>
-          <div className="text-xs text-emerald-600">Dozen met regels</div>
+          <div className="text-xs text-emerald-600">{t.settings.boxesWithRules}</div>
         </div>
         <div className={`p-3 rounded-lg text-center border ${kpis.withoutRules > 0 ? 'bg-amber-50 border-amber-200' : 'bg-card border-border'}`}>
           <div className={`text-2xl font-bold ${kpis.withoutRules > 0 ? 'text-amber-700' : ''}`}>{kpis.withoutRules}</div>
-          <div className={`text-xs ${kpis.withoutRules > 0 ? 'text-amber-600' : 'text-muted-foreground'}`}>Dozen zonder regels</div>
+          <div className={`text-xs ${kpis.withoutRules > 0 ? 'text-amber-600' : 'text-muted-foreground'}`}>{t.settings.boxesWithoutRules}</div>
         </div>
         <div className={`p-3 rounded-lg text-center border ${uncoveredUnits.length > 0 ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'}`}>
           <div className={`text-2xl font-bold ${uncoveredUnits.length > 0 ? 'text-red-700' : 'text-emerald-700'}`}>{uncoveredUnits.length}</div>
-          <div className={`text-xs ${uncoveredUnits.length > 0 ? 'text-red-600' : 'text-emerald-600'}`}>Ongedekte eenheden</div>
+          <div className={`text-xs ${uncoveredUnits.length > 0 ? 'text-red-600' : 'text-emerald-600'}`}>{t.settings.uncoveredUnits}</div>
         </div>
       </div>
 
@@ -597,10 +602,10 @@ export default function CompartmentRules() {
             <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-amber-900">
-                {uncoveredUnits.length} verzendeenhe{uncoveredUnits.length === 1 ? 'id' : 'den'} zonder compartimentregels
+                {uncoveredUnits.length} {uncoveredUnits.length === 1 ? t.settings.shippingUnit : t.settings.shippingUnits} {t.settings.withoutCompartmentRules}
               </p>
               <p className="text-xs text-amber-700 mt-0.5 mb-2">
-                Producten in deze eenheden kunnen niet automatisch aan een doos worden gekoppeld.
+                {t.settings.uncoveredUnitsHint}
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {uncoveredUnits.map(u => (
@@ -618,7 +623,7 @@ export default function CompartmentRules() {
       <div className="flex flex-col lg:flex-row gap-6">
         {/* Left: Packaging list */}
         <div className="w-full lg:w-[280px] shrink-0 space-y-1.5">
-          <div className="text-xs font-medium text-muted-foreground uppercase mb-2">Verpakkingen</div>
+          <div className="text-xs font-medium text-muted-foreground uppercase mb-2">{t.settings.packagings}</div>
           {sortedPackagings.map(pkg => (
             <PackagingOverviewCard
               key={pkg.id}
@@ -646,9 +651,9 @@ export default function CompartmentRules() {
               <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
                 <Box className="w-8 h-8 text-muted-foreground" />
               </div>
-              <h3 className="text-lg font-semibold mb-1">Selecteer een verpakking</h3>
+              <h3 className="text-lg font-semibold mb-1">{t.settings.selectPackaging}</h3>
               <p className="text-sm text-muted-foreground">
-                Kies links een verpakking om de compartiment regels te bekijken en bewerken.
+                {t.settings.selectPackagingHint}
               </p>
             </div>
           )}
@@ -657,7 +662,7 @@ export default function CompartmentRules() {
           {selectedPackagingId && rulesLoading && (
             <div className="flex items-center justify-center p-8">
               <Loader2 className="w-6 h-6 text-primary animate-spin" />
-              <span className="ml-2 text-sm text-muted-foreground">Regels laden...</span>
+              <span className="ml-2 text-sm text-muted-foreground">{t.settings.loadingRules}</span>
             </div>
           )}
 
@@ -677,7 +682,7 @@ export default function CompartmentRules() {
                     )}
                   </div>
                   <span className="text-xs text-muted-foreground shrink-0">
-                    {groupNumbers.length} combinatie{groupNumbers.length !== 1 ? 's' : ''}
+                    {groupNumbers.length} {groupNumbers.length !== 1 ? t.settings.combinations : t.settings.combination}
                   </span>
                 </div>
               )}
@@ -687,8 +692,7 @@ export default function CompartmentRules() {
                 <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
                   <p className="text-sm text-amber-800">
-                    Deze verpakking staat in auto-advies maar heeft nog geen regels.
-                    Voeg combinaties toe zodat de engine deze doos kan adviseren.
+                    {t.settings.noRulesAutoAdviceWarning}
                   </p>
                 </div>
               )}
@@ -697,7 +701,7 @@ export default function CompartmentRules() {
               {groupNumbers.length === 0 && (
                 <div className="text-center py-8 mb-4">
                   <p className="text-sm text-muted-foreground mb-4">
-                    Nog geen combinaties. Voeg er een toe om te beginnen.
+                    {t.settings.noCombinationsYet}
                   </p>
                 </div>
               )}
@@ -724,7 +728,7 @@ export default function CompartmentRules() {
               <button onClick={handleAddRuleGroup}
                 className="w-full flex items-center justify-center gap-2 p-3 border-2 border-dashed border-border rounded-lg text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors">
                 <Plus className="w-4 h-4" />
-                Nieuwe combinatie toevoegen
+                {t.settings.addCombination}
               </button>
             </>
           )}

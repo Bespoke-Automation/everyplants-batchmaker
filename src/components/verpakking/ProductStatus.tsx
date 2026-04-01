@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Loader2, AlertCircle, RefreshCw, Package, CheckCircle, AlertTriangle, XCircle, Search, ChevronLeft, ChevronRight, Database } from 'lucide-react'
+import { useTranslation } from '@/i18n/LanguageContext'
 
 interface Product {
   id: string
@@ -38,25 +39,26 @@ interface StatusResponse {
 
 type StatusFilter = 'all' | 'classified' | 'unclassified' | 'missing_data' | 'no_match' | 'error'
 
-const STATUS_TABS: { id: StatusFilter; label: string; countKey: keyof Counts; color: string }[] = [
-  { id: 'all', label: 'Alle', countKey: 'total', color: 'text-foreground' },
-  { id: 'classified', label: 'Geclassificeerd', countKey: 'classified', color: 'text-emerald-600' },
-  { id: 'unclassified', label: 'Ongeclassificeerd', countKey: 'unclassified', color: 'text-amber-600' },
-  { id: 'missing_data', label: 'Geen maten', countKey: 'missing_data', color: 'text-orange-600' },
-  { id: 'no_match', label: 'Geen match', countKey: 'no_match', color: 'text-red-600' },
+const STATUS_TAB_DEFS: { id: StatusFilter; countKey: keyof Counts; color: string }[] = [
+  { id: 'all', countKey: 'total', color: 'text-foreground' },
+  { id: 'classified', countKey: 'classified', color: 'text-emerald-600' },
+  { id: 'unclassified', countKey: 'unclassified', color: 'text-amber-600' },
+  { id: 'missing_data', countKey: 'missing_data', color: 'text-orange-600' },
+  { id: 'no_match', countKey: 'no_match', color: 'text-red-600' },
 ]
 
-const STATUS_BADGES: Record<string, { label: string; className: string }> = {
-  classified: { label: 'Geclassificeerd', className: 'bg-emerald-100 text-emerald-700' },
-  unclassified: { label: 'Ongeclassificeerd', className: 'bg-amber-100 text-amber-700' },
-  missing_data: { label: 'Geen maten', className: 'bg-orange-100 text-orange-700' },
-  no_match: { label: 'Geen match', className: 'bg-red-100 text-red-700' },
-  error: { label: 'Fout', className: 'bg-red-100 text-red-700' },
+const BADGE_CLASSES: Record<string, string> = {
+  classified: 'bg-emerald-100 text-emerald-700',
+  unclassified: 'bg-amber-100 text-amber-700',
+  missing_data: 'bg-orange-100 text-orange-700',
+  no_match: 'bg-red-100 text-red-700',
+  error: 'bg-red-100 text-red-700',
 }
 
 const PER_PAGE = 50
 
 export default function ProductStatus() {
+  const { t } = useTranslation()
   const [data, setData] = useState<StatusResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
@@ -138,7 +140,7 @@ export default function ProductStatus() {
   }
 
   const formatDate = (dateString: string | null) => {
-    if (!dateString) return 'Nooit'
+    if (!dateString) return t.settings.never
     const date = new Date(dateString)
     return date.toLocaleString('nl-NL', {
       day: '2-digit',
@@ -155,7 +157,7 @@ export default function ProductStatus() {
       <div className="max-w-4xl mx-auto">
         <div className="flex flex-col items-center justify-center p-12">
           <Loader2 className="w-10 h-10 text-primary animate-spin mb-4" />
-          <p className="text-lg text-muted-foreground">Gegevens laden...</p>
+          <p className="text-lg text-muted-foreground">{t.settings.loadingData}</p>
         </div>
       </div>
     )
@@ -167,7 +169,7 @@ export default function ProductStatus() {
         <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg flex items-center gap-2 text-destructive">
           <AlertCircle className="w-5 h-5 shrink-0" />
           <div>
-            <p className="font-medium">Fout bij laden</p>
+            <p className="font-medium">{t.settings.loadError}</p>
             <p className="text-sm">{error.message}</p>
           </div>
         </div>
@@ -188,16 +190,16 @@ export default function ProductStatus() {
             <Package className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <h2 className="text-xl font-bold">Product Status</h2>
+            <h2 className="text-xl font-bold">{t.settings.productStatus}</h2>
             <p className="text-sm text-muted-foreground">
-              Overzicht van product classificatie
+              {t.settings.productStatusDescription}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
           {data.lastSyncedAt && (
             <span className="text-xs text-muted-foreground">
-              Laatste sync: {formatDate(data.lastSyncedAt)}
+              {t.settings.lastSync}: {formatDate(data.lastSyncedAt)}
             </span>
           )}
           <button
@@ -208,12 +210,12 @@ export default function ProductStatus() {
             {isSyncing ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Synchroniseren...
+                {t.settings.syncing}
               </>
             ) : (
               <>
                 <RefreshCw className="w-4 h-4" />
-                Sync van Picqer
+                {t.settings.syncFromPicqer}
               </>
             )}
           </button>
@@ -233,28 +235,28 @@ export default function ProductStatus() {
         <div className="p-4 bg-card border border-border rounded-lg">
           <div className="flex items-center gap-2 mb-2">
             <Package className="w-4 h-4 text-muted-foreground" />
-            <span className="text-xs font-medium text-muted-foreground uppercase">Totaal</span>
+            <span className="text-xs font-medium text-muted-foreground uppercase">{t.settings.total}</span>
           </div>
           <p className="text-3xl font-bold">{counts.total}</p>
         </div>
         <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
           <div className="flex items-center gap-2 mb-2">
             <CheckCircle className="w-4 h-4 text-emerald-600" />
-            <span className="text-xs font-medium text-emerald-700 uppercase">Geclassificeerd</span>
+            <span className="text-xs font-medium text-emerald-700 uppercase">{t.settings.classified}</span>
           </div>
           <p className="text-3xl font-bold text-emerald-600">{counts.classified}</p>
         </div>
         <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
           <div className="flex items-center gap-2 mb-2">
             <AlertTriangle className="w-4 h-4 text-amber-600" />
-            <span className="text-xs font-medium text-amber-700 uppercase">Ongeclassificeerd</span>
+            <span className="text-xs font-medium text-amber-700 uppercase">{t.settings.unclassified}</span>
           </div>
           <p className="text-3xl font-bold text-amber-600">{counts.unclassified}</p>
         </div>
         <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
           <div className="flex items-center gap-2 mb-2">
             <Database className="w-4 h-4 text-orange-600" />
-            <span className="text-xs font-medium text-orange-700 uppercase">Geen maten</span>
+            <span className="text-xs font-medium text-orange-700 uppercase">{t.settings.noData}</span>
           </div>
           <p className="text-3xl font-bold text-orange-600">{counts.missing_data + counts.no_match}</p>
         </div>
@@ -262,8 +264,16 @@ export default function ProductStatus() {
 
       {/* Status tabs */}
       <div className="flex flex-wrap gap-1 p-1 bg-muted rounded-lg mb-4">
-        {STATUS_TABS.map((tab) => {
+        {STATUS_TAB_DEFS.map((tab) => {
           const count = counts[tab.countKey]
+          const tabLabels: Record<StatusFilter, string> = {
+            all: t.settings.all,
+            classified: t.settings.classified,
+            unclassified: t.settings.unclassified,
+            missing_data: t.settings.noData,
+            no_match: t.settings.noMatch,
+            error: t.common.error,
+          }
           return (
             <button
               key={tab.id}
@@ -274,7 +284,7 @@ export default function ProductStatus() {
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              {tab.label}
+              {tabLabels[tab.id]}
               <span className={`ml-1.5 ${statusFilter === tab.id ? tab.color : ''}`}>
                 {count}
               </span>
@@ -289,7 +299,7 @@ export default function ProductStatus() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Zoeken op naam of productcode..."
+            placeholder={t.settings.searchByNameOrCode}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-9 pr-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[44px]"
@@ -300,9 +310,9 @@ export default function ProductStatus() {
           onChange={(e) => setProductType(e.target.value)}
           className="px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[44px]"
         >
-          <option value="">Alle types</option>
-          {productTypes.map((t) => (
-            <option key={t} value={t}>{t}</option>
+          <option value="">{t.settings.allTypes}</option>
+          {productTypes.map((pt) => (
+            <option key={pt} value={pt}>{pt}</option>
           ))}
         </select>
       </div>
@@ -310,12 +320,12 @@ export default function ProductStatus() {
       {/* Results count + pagination info */}
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs text-muted-foreground">
-          {filteredCount} {filteredCount === 1 ? 'product' : 'producten'} gevonden
+          {filteredCount} {filteredCount === 1 ? t.common.product : t.common.products} {t.settings.found}
           {isLoading && <Loader2 className="inline w-3 h-3 animate-spin ml-2" />}
         </span>
         {totalPages > 1 && (
           <span className="text-xs text-muted-foreground">
-            Pagina {page} van {totalPages}
+            {t.settings.page} {page} {t.common.of} {totalPages}
           </span>
         )}
       </div>
@@ -327,12 +337,12 @@ export default function ProductStatus() {
             {statusFilter === 'unclassified' && !search && !productType ? (
               <>
                 <CheckCircle className="w-12 h-12 text-emerald-500 mx-auto mb-3" />
-                <p className="text-sm font-medium text-emerald-600">Alle producten zijn geclassificeerd</p>
+                <p className="text-sm font-medium text-emerald-600">{t.settings.allClassified}</p>
               </>
             ) : (
               <>
                 <XCircle className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
-                <p className="text-sm text-muted-foreground">Geen producten gevonden</p>
+                <p className="text-sm text-muted-foreground">{t.settings.noProductsFound}</p>
               </>
             )}
           </div>
@@ -340,17 +350,25 @@ export default function ProductStatus() {
           <table className="w-full table-fixed">
             <thead>
               <tr className="bg-muted/20 border-b border-border text-left">
-                <th className="w-[18%] px-4 py-2 text-xs font-medium text-muted-foreground">Productcode</th>
-                <th className="w-[32%] px-4 py-2 text-xs font-medium text-muted-foreground">Naam</th>
-                <th className="w-[10%] px-4 py-2 text-xs font-medium text-muted-foreground">Potmaat</th>
-                <th className="w-[10%] px-4 py-2 text-xs font-medium text-muted-foreground">Hoogte</th>
-                <th className="w-[14%] px-4 py-2 text-xs font-medium text-muted-foreground">Type</th>
-                <th className="w-[16%] px-4 py-2 text-xs font-medium text-muted-foreground">Status</th>
+                <th className="w-[18%] px-4 py-2 text-xs font-medium text-muted-foreground">{t.settings.productCode}</th>
+                <th className="w-[32%] px-4 py-2 text-xs font-medium text-muted-foreground">{t.settings.name}</th>
+                <th className="w-[10%] px-4 py-2 text-xs font-medium text-muted-foreground">{t.settings.potSize}</th>
+                <th className="w-[10%] px-4 py-2 text-xs font-medium text-muted-foreground">{t.settings.plantHeight}</th>
+                <th className="w-[14%] px-4 py-2 text-xs font-medium text-muted-foreground">{t.settings.type}</th>
+                <th className="w-[16%] px-4 py-2 text-xs font-medium text-muted-foreground">{t.settings.status}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {products.map((product) => {
-                const badge = STATUS_BADGES[product.classification_status] || STATUS_BADGES.error
+                const badgeLabels: Record<string, string> = {
+                  classified: t.settings.classified,
+                  unclassified: t.settings.unclassified,
+                  missing_data: t.settings.noData,
+                  no_match: t.settings.noMatch,
+                  error: t.common.error,
+                }
+                const badgeClass = BADGE_CLASSES[product.classification_status] || BADGE_CLASSES.error
+                const badgeLabel = badgeLabels[product.classification_status] || t.common.error
                 return (
                   <tr key={product.id} className="hover:bg-muted/10 transition-colors">
                     <td className="px-4 py-2.5 text-sm font-mono truncate">{product.productcode}</td>
@@ -363,8 +381,8 @@ export default function ProductStatus() {
                     </td>
                     <td className="px-4 py-2.5 text-sm truncate">{product.product_type || '—'}</td>
                     <td className="px-4 py-2.5">
-                      <span className={`inline-block px-2 py-0.5 text-[11px] font-medium rounded-full ${badge.className}`}>
-                        {badge.label}
+                      <span className={`inline-block px-2 py-0.5 text-[11px] font-medium rounded-full ${badgeClass}`}>
+                        {badgeLabel}
                       </span>
                     </td>
                   </tr>
@@ -384,7 +402,7 @@ export default function ProductStatus() {
             className="flex items-center gap-1 px-3 py-2 text-sm font-medium border border-border rounded-lg hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed min-h-[44px]"
           >
             <ChevronLeft className="w-4 h-4" />
-            Vorige
+            {t.settings.previous}
           </button>
 
           <div className="flex items-center gap-1">
@@ -412,7 +430,7 @@ export default function ProductStatus() {
             disabled={page >= totalPages}
             className="flex items-center gap-1 px-3 py-2 text-sm font-medium border border-border rounded-lg hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed min-h-[44px]"
           >
-            Volgende
+            {t.common.next}
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
