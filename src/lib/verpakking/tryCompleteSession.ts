@@ -183,6 +183,14 @@ export async function tryCompleteSession(
     console.error('[tryCompleteSession] Error analyzing session:', e)
   }
 
+  // Learn packing pattern (non-blocking)
+  try {
+    const { recordPackingPatternFromSession } = await import('@/lib/engine/patternLearner')
+    await recordPackingPatternFromSession(sessionId)
+  } catch (err) {
+    console.error('[tryCompleteSession] Error recording packing pattern:', err)
+  }
+
   return {
     sessionCompleted: true,
     productsIncomplete: false,

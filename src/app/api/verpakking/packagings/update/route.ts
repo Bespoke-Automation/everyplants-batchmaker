@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { updatePackaging as picqerUpdatePackaging } from '@/lib/picqer/client'
 import { updateLocalPackaging, deleteLocalPackaging } from '@/lib/supabase/localPackagings'
 import { supabase } from '@/lib/supabase/client'
+import { invalidatePatternsForPackaging } from '@/lib/engine/patternLearner'
 
 export const dynamic = 'force-dynamic'
 
@@ -9,7 +10,7 @@ export const dynamic = 'force-dynamic'
 const PICQER_FIELDS = ['name', 'barcode', 'length', 'width', 'height'] as const
 
 // Fields that only exist in our local Supabase DB (engine-specific)
-const ENGINE_FIELDS = ['max_weight', 'box_category', 'specificity_score', 'handling_cost', 'material_cost', 'use_in_auto_advice', 'image_url', 'picqer_tag_name', 'num_shipping_labels', 'facturatie_box_sku', 'strapped_variant_id'] as const
+const ENGINE_FIELDS = ['max_weight', 'box_category', 'specificity_score', 'handling_cost', 'material_cost', 'use_in_auto_advice', 'image_url', 'picqer_tag_name', 'num_shipping_labels', 'facturatie_box_sku', 'strapped_variant_id', 'active'] as const
 
 /**
  * PUT /api/verpakking/packagings/update
@@ -87,6 +88,26 @@ export async function PUT(request: NextRequest) {
 
     // Update all fields in local DB
     await updateLocalPackaging(idpackaging, allLocalUpdates as Record<string, string | number | boolean | null>)
+
+    // Invalidate learned patterns if packaging was deactivated
+    if (body.active === false) {
+      try {
+        const { data: pkg } = await supabase
+          .schema('batchmaker')
+          .from('packagings')
+          .select('id')
+          .eq('idpackaging', idpackaging)
+          .maybeSingle()
+        if (pkg) {
+          const count = await invalidatePatternsForPackaging(pkg.id, 'packaging_deactivated')
+          if (count > 0) {
+            console.log(`[verpakking/update] Invalidated ${count} learned patterns for deactivated packaging ${idpackaging}`)
+          }
+        }
+      } catch (err) {
+        console.error('[verpakking/update] Error invalidating learned patterns:', err)
+      }
+    }
 
     return NextResponse.json({ packaging: updated })
   } catch (error) {

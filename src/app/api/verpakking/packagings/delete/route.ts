@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { deactivatePackaging } from '@/lib/picqer/client'
 import { deleteLocalPackaging } from '@/lib/supabase/localPackagings'
 import { supabase } from '@/lib/supabase/client'
+import { invalidatePatternsForPackaging } from '@/lib/engine/patternLearner'
 
 export const dynamic = 'force-dynamic'
 
@@ -93,7 +94,17 @@ export async function POST(request: NextRequest) {
         .eq('packaging_id', packaging.id)
     }
 
-    // 2. Deactivate packaging in Picqer (skip for local-only packagings with negative IDs)
+    // 2. Invalidate learned patterns referencing this packaging
+    try {
+      const count = await invalidatePatternsForPackaging(packaging.id, 'packaging_deleted')
+      if (count > 0) {
+        console.log(`[verpakking/delete] Invalidated ${count} learned patterns for deleted packaging ${idpackaging}`)
+      }
+    } catch (err) {
+      console.error('[verpakking/delete] Error invalidating learned patterns:', err)
+    }
+
+    // 3. Deactivate packaging in Picqer (skip for local-only packagings with negative IDs)
     // Note: tags are intentionally kept in Picqer — never delete them
     if (idpackaging > 0) {
       try {

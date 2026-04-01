@@ -12,8 +12,9 @@
 import { supabase } from '@/lib/supabase/client'
 import { getOrderTags, addOrderTag, removeOrderTag, getTags, getProductFull, getProductParts } from '@/lib/picqer/client'
 import { syncProductFromPicqer, classifyProduct, syncCompositionParts } from '@/lib/supabase/productAttributes'
-import { getAllCostsForCountry, selectCostForWeight } from './costProvider'
+import { selectCostForWeight } from './costProvider'
 import type { CostEntry } from './costProvider'
+import { coreAdvice } from './coreAdvice'
 
 // ── Input / Output types ──────────────────────────────────────────────────
 
@@ -659,7 +660,7 @@ function evaluateRuleGroup(
  * transport_cost is set to entry.transportCost for downstream UI display.
  * total_cost is set from entry.totalCost directly (NOT box_cost + transport_cost, which would miss pick/pack).
  */
-function enrichWithCosts(
+export function enrichWithCosts(
   matches: PackagingMatch[],
   costMap: Map<string, CostEntry[]> | null
 ): PackagingMatch[] {
@@ -695,7 +696,7 @@ function enrichWithCosts(
  * Calculate total weight of products assigned to a box (in grams).
  * Uses product_attributes.weight data available in the weightMap.
  */
-function calculateBoxWeight(
+export function calculateBoxWeight(
   boxProducts: { productcode: string; quantity: number }[],
   weightMap: Map<string, number>  // productcode -> weight in grams
 ): number {
@@ -720,7 +721,7 @@ function calculateBoxWeight(
  * For DPD/pallet (NULL bracket): weight is irrelevant, entry always matches.
  * If weight exceeds all brackets and no NULL entry exists: no cost (returns box unchanged).
  */
-function refineBoxCostWithWeight(
+export function refineBoxCostWithWeight(
   box: AdviceBox,
   costEntries: CostEntry[] | undefined,
   weightMap: Map<string, number>
@@ -1230,7 +1231,7 @@ export async function solveMultiBox(
  *
  * Uses the `strapped_variant_id` column on the `packagings` table.
  */
-async function applyStrappedConsolidation(
+export async function applyStrappedConsolidation(
   boxes: AdviceBox[],
   costMap: Map<string, CostEntry[]> | null
 ): Promise<AdviceBox[]> {
@@ -1410,7 +1411,7 @@ function totalCoverage(covered: Map<string, number>): number {
 /**
  * Build a product list for a box based on which shipping units it covers.
  */
-function buildProductList(
+export function buildProductList(
   coveredUnits: Map<string, number>,
   availableUnits: Map<string, ShippingUnitEntry>,
   products: OrderProduct[],
@@ -1459,7 +1460,7 @@ function buildProductList(
  * Validate that each box's total weight doesn't exceed its max_weight.
  * Called from calculateAdvice with fresh product data.
  */
-async function validateWeightsForBoxes(
+export async function validateWeightsForBoxes(
   boxes: AdviceBox[],
   products: OrderProduct[]
 ): Promise<boolean> {
@@ -1520,7 +1521,7 @@ async function validateWeightsForBoxes(
  * @param ranked - The ranked PackagingMatch[] from rankPackagings()
  * @param recommendedPackagingId - The packaging_id that the engine actually chose
  */
-function buildAlternatives(
+export function buildAlternatives(
   ranked: PackagingMatch[],
   recommendedPackagingId: string | null
 ): AlternativePackaging[] {
@@ -1566,7 +1567,7 @@ function buildAlternatives(
  * find all packagings that reference any of the order's shipping units
  * in at least one compartment rule. Enrich with cost data for comparison.
  */
-async function buildAlternativesByShippingUnit(
+export async function buildAlternativesByShippingUnit(
   shippingUnits: Map<string, ShippingUnitEntry>,
   recommendedPackagingId: string | null,
   costMap: Map<string, CostEntry[]> | null
@@ -1662,7 +1663,7 @@ async function buildAlternativesByShippingUnit(
 
 // ── Helper: build shipping unit fingerprint ───────────────────────────────
 
-function buildFingerprint(shippingUnits: Map<string, ShippingUnitEntry>, countryCode: string): string {
+export function buildFingerprint(shippingUnits: Map<string, ShippingUnitEntry>, countryCode: string): string {
   const units = Array.from(shippingUnits.values())
     .sort((a, b) => a.name.localeCompare(b.name))
     .map(u => `${u.name}:${u.quantity}`)
@@ -1685,28 +1686,14 @@ export async function calculateAdvice(
 
   console.log(`[packagingEngine] Calculating advice for order ${orderId} with ${products.length} products...`)
 
-  // Step 1: Classify
-  const { shippingUnits, unclassified, excludedPackaging, excludedNonShippable } = await classifyOrderProducts(products)
+  // Step 1: Classify (for fingerprint-based cache check)
+  const { shippingUnits } = await classifyOrderProducts(products)
 
-  // Step 1b: Build fingerprint (includes country to prevent cross-country cache collisions)
+  // Step 2: Build fingerprint for dedup
   const effectiveCountry = countryCode ?? 'UNKNOWN'
   const fingerprint = shippingUnits.size > 0 ? buildFingerprint(shippingUnits, effectiveCountry) : null
 
-  // Step 1b2: Cost data pre-fetch (needed for alternatives in cache hit, single-SKU, AND normal flow)
-  let costDataAvailable = false
-  let costMap: Map<string, CostEntry[]> | null = null
-
-  if (countryCode) {
-    costMap = await getAllCostsForCountry(countryCode)
-    costDataAvailable = costMap !== null
-    if (!costDataAvailable) {
-      console.warn(`[packagingEngine] Cost data unavailable for ${countryCode}, using specificity ranking`)
-    }
-  } else {
-    console.warn(`[packagingEngine] No countryCode provided, cost data not available`)
-  }
-
-  // Step 1c: Deduplication — check for existing advice for this order
+  // Step 3: Check for existing advice (dedup by fingerprint)
   const { data: existing } = await supabase
     .schema('batchmaker')
     .from('packaging_advice')
@@ -1718,28 +1705,13 @@ export async function calculateAdvice(
     .maybeSingle()
 
   if (existing) {
-    // Both null = same (all products unclassified both times)
-    // Both non-null and equal = same products
     const sameFingerprint = existing.shipping_unit_fingerprint === fingerprint
 
     if (sameFingerprint) {
-      // Same products, same advice → return existing
       console.log(`[packagingEngine] Returning existing advice ${existing.id} (same fingerprint)`)
 
-      // Compute alternatives on-the-fly (not persisted)
-      let cachedAlternatives: AlternativePackaging[] = []
-      if (shippingUnits.size > 0 && costDataAvailable && costMap) {
-        const existingBoxes = existing.advice_boxes as AdviceBox[]
-        const recPkgId = existingBoxes.length === 1 ? existingBoxes[0].packaging_id : null
-        const cachedMatches = await matchCompartments(shippingUnits)
-        const cachedEnriched = enrichWithCosts(cachedMatches, costMap)
-        const cachedRanked = rankPackagings(cachedEnriched, true)
-        cachedAlternatives = buildAlternatives(cachedRanked, recPkgId)
-        // Fallback: if no compartment rule matches, find by shipping unit reference
-        if (cachedAlternatives.length === 0) {
-          cachedAlternatives = await buildAlternativesByShippingUnit(shippingUnits, recPkgId, costMap)
-        }
-      }
+      // Recompute alternatives on-the-fly (not persisted) via coreAdvice
+      const result = await coreAdvice({ products, countryCode: effectiveCountry })
 
       return {
         id: existing.id,
@@ -1748,7 +1720,7 @@ export async function calculateAdvice(
         status: existing.status,
         confidence: existing.confidence,
         advice_boxes: existing.advice_boxes as AdviceBox[],
-        alternatives: cachedAlternatives,
+        alternatives: result.alternatives,
         shipping_units_detected: existing.shipping_units_detected as { shipping_unit_id: string; shipping_unit_name: string; quantity: number }[],
         unclassified_products: existing.unclassified_products as string[],
         tags_written: existing.tags_written as string[],
@@ -1768,316 +1740,25 @@ export async function calculateAdvice(
     console.log(`[packagingEngine] Invalidated old advice ${existing.id} (fingerprint changed)`)
   }
 
-  // Step 1e: Single-SKU fast path
-  // Orders with 1 unique product that has a default packaging mapping bypass compartment rules
-  // Exclude packaging products (boxes added by Everspring) from the count
-  const excludedSet = new Set([...excludedPackaging, ...excludedNonShippable])
-  const realProducts = products.filter(p => !excludedSet.has(p.productcode))
-  const uniqueProductIds = new Set(realProducts.map(p => p.picqer_product_id))
-  if (uniqueProductIds.size === 1 && unclassified.length === 0) {
-    const productId = realProducts[0].picqer_product_id
+  // Step 4: No cache hit — compute advice via coreAdvice
+  const result = await coreAdvice({ products, countryCode: effectiveCountry })
 
-    const { data: productAttr } = await supabase
-      .schema('batchmaker')
-      .from('product_attributes')
-      .select('default_packaging_id, shipping_unit_id')
-      .eq('picqer_product_id', productId)
-      .single()
-
-    if (productAttr?.default_packaging_id) {
-      // Fetch the packaging details
-      const { data: defaultPkg } = await supabase
-        .schema('batchmaker')
-        .from('packagings')
-        .select('id, name, idpackaging, barcode, facturatie_box_sku, active')
-        .eq('id', productAttr.default_packaging_id)
-        .single()
-
-      if (defaultPkg && defaultPkg.active) {
-        console.log(`[packagingEngine] Single-SKU fast path: product ${realProducts[0].productcode} → ${defaultPkg.name}`)
-
-        // Build the product list for this box
-        const unitName = shippingUnits.values().next()?.value?.name || 'Unknown'
-        const totalQty = realProducts.reduce((sum, p) => sum + p.quantity, 0)
-        const boxProducts = [{
-          productcode: realProducts[0].productcode,
-          shipping_unit_name: unitName,
-          quantity: totalQty,
-        }]
-
-        // Enrich with cost data if available
-        let boxCost: number | undefined
-        let boxPickCost: number | undefined
-        let boxPackCost: number | undefined
-        let transportCost: number | undefined
-        let totalCostValue: number | undefined
-        let carrierCode: string | undefined
-
-        if (countryCode && defaultPkg.facturatie_box_sku) {
-          if (costMap) {
-            const entries = costMap.get(defaultPkg.facturatie_box_sku)
-            if (entries && entries.length > 0) {
-              // Select appropriate cost entry using weight-based selection
-              const { data: weightData } = await supabase
-                .schema('batchmaker')
-                .from('product_attributes')
-                .select('weight')
-                .eq('picqer_product_id', productId)
-                .single()
-
-              const productWeight = weightData?.weight ?? 0
-              const totalWeight = productWeight * totalQty
-
-              const entry = selectCostForWeight(entries, totalWeight)
-              if (entry) {
-                boxCost = entry.boxMaterialCost ?? entry.boxCost
-                boxPickCost = entry.boxPickCost
-                boxPackCost = entry.boxPackCost
-                transportCost = entry.transportCost
-                totalCostValue = entry.totalCost
-                carrierCode = entry.carrier
-                costDataAvailable = true
-              }
-            }
-          }
-        }
-
-        const singleSkuBox: AdviceBox = {
-          packaging_id: defaultPkg.id,
-          packaging_name: defaultPkg.name,
-          idpackaging: defaultPkg.idpackaging,
-          products: boxProducts,
-          box_cost: boxCost,
-          box_pick_cost: boxPickCost,
-          box_pack_cost: boxPackCost,
-          transport_cost: transportCost,
-          total_cost: totalCostValue,
-          carrier_code: carrierCode,
-        }
-
-        // Validate weight
-        const weightExceeded = !(await validateWeightsForBoxes([singleSkuBox], products))
-
-        const shippingUnitsDetected = Array.from(shippingUnits.values()).map(entry => ({
-          shipping_unit_id: entry.id,
-          shipping_unit_name: entry.name,
-          quantity: entry.quantity,
-        }))
-
-        const adviceRow = {
-          order_id: orderId,
-          picklist_id: picklistId ?? null,
-          status: 'calculated' as const,
-          confidence: 'full_match' as const,
-          advice_boxes: [singleSkuBox],
-          shipping_units_detected: shippingUnitsDetected,
-          unclassified_products: [],
-          tags_written: [],
-          calculated_at: new Date().toISOString(),
-          shipping_unit_fingerprint: fingerprint,
-          shipping_provider_profile_id: shippingProviderProfileId ?? null,
-          weight_exceeded: weightExceeded,
-          country_code: countryCode ?? null,
-          cost_data_available: costDataAvailable,
-        }
-
-        const { data: inserted, error: insertError } = await supabase
-          .schema('batchmaker')
-          .from('packaging_advice')
-          .insert(adviceRow)
-          .select('id, order_id, picklist_id, status, confidence, advice_boxes, shipping_units_detected, unclassified_products, tags_written, calculated_at, weight_exceeded, shipping_unit_fingerprint, cost_data_available')
-          .single()
-
-        if (insertError) {
-          console.error('[packagingEngine] Error inserting single-SKU advice:', insertError)
-          // Fall through to normal engine flow
-        } else {
-          console.log(`[packagingEngine] Single-SKU advice saved: ${inserted.id}`)
-
-          // Compute alternatives via compartment rules (single-SKU bypasses them, but we want comparisons)
-          let singleSkuAlternatives: AlternativePackaging[] = []
-          if (shippingUnits.size > 0 && costDataAvailable && costMap) {
-            const skuMatches = await matchCompartments(shippingUnits)
-            const skuEnriched = enrichWithCosts(skuMatches, costMap)
-            const skuRanked = rankPackagings(skuEnriched, true)
-            singleSkuAlternatives = buildAlternatives(skuRanked, defaultPkg.id)
-            if (singleSkuAlternatives.length === 0) {
-              singleSkuAlternatives = await buildAlternativesByShippingUnit(shippingUnits, defaultPkg.id, costMap)
-            }
-          }
-
-          return {
-            id: inserted.id,
-            order_id: inserted.order_id,
-            picklist_id: inserted.picklist_id,
-            status: inserted.status,
-            confidence: inserted.confidence,
-            advice_boxes: inserted.advice_boxes as AdviceBox[],
-            alternatives: singleSkuAlternatives,
-            shipping_units_detected: inserted.shipping_units_detected as { shipping_unit_id: string; shipping_unit_name: string; quantity: number }[],
-            unclassified_products: inserted.unclassified_products as string[],
-            tags_written: inserted.tags_written as string[],
-            calculated_at: inserted.calculated_at,
-            weight_exceeded: inserted.weight_exceeded ?? false,
-            shipping_unit_fingerprint: inserted.shipping_unit_fingerprint ?? null,
-            cost_data_available: inserted.cost_data_available ?? false,
-          }
-        }
-      }
-    }
-  }
-  // End of single-SKU fast path — continues to normal matchCompartments flow
-
-  // Step 2: Match compartments
-  const matches = await matchCompartments(shippingUnits)
-
-  // Step 2b: Enrich matches with cost data + filter unavailable routes
-  const enrichedMatches = enrichWithCosts(matches, costMap)
-
-  // Step 3: Rank (with cost-primary if available)
-  const ranked = rankPackagings(enrichedMatches, costDataAvailable)
-
-  // Step 3b: Build alternatives from ranked single-box matches (before solving)
-  // We'll set is_recommended after solveMultiBox determines the winner
-  const rankedAlternativesRaw = ranked
-
-  // Step 4: Solve multi-box (pass cost context through)
-  let { boxes, confidence } = await solveMultiBox(
-    shippingUnits, unclassified, ranked, products,
-    costMap, costDataAvailable
-  )
-
-  // Step 4b: Fallback to default packaging per shipping unit
-  if (confidence === 'no_match' && shippingUnits.size > 0) {
-    const unitIds = Array.from(shippingUnits.keys())
-
-    const { data: defaults } = await supabase
-      .schema('batchmaker')
-      .from('shipping_units')
-      .select('id, name, default_packaging_id')
-      .in('id', unitIds)
-      .not('default_packaging_id', 'is', null)
-
-    if (defaults && defaults.length > 0) {
-      const defaultPkgIds = [...new Set(defaults.map(d => d.default_packaging_id))]
-      const { data: pkgs } = await supabase
-        .schema('batchmaker')
-        .from('packagings')
-        .select('id, name, idpackaging, facturatie_box_sku')
-        .in('id', defaultPkgIds)
-
-      const pkgMap = new Map((pkgs || []).map((p: { id: string; name: string; idpackaging: number; facturatie_box_sku: string | null }) => [p.id, p] as const))
-
-      // Build product → shipping_unit lookup
-      const productUnitMap = new Map<string, string>() // productcode → shipping_unit_id
-      const productIds = products.map(p => p.picqer_product_id)
-      const { data: prodAttrs } = await supabase
-        .schema('batchmaker')
-        .from('product_attributes')
-        .select('picqer_product_id, shipping_unit_id')
-        .in('picqer_product_id', productIds)
-        .not('shipping_unit_id', 'is', null)
-
-      for (const pa of (prodAttrs || [])) {
-        const product = products.find(p => p.picqer_product_id === pa.picqer_product_id)
-        if (product) productUnitMap.set(product.productcode, pa.shipping_unit_id)
-      }
-
-      // Group products by their default packaging
-      const boxMap = new Map<string, { pkg: { id: string; name: string; idpackaging: number; facturatie_box_sku: string | null }; products: { productcode: string; shipping_unit_name: string; quantity: number }[] }>()
-
-      for (const product of products) {
-        const unitId = productUnitMap.get(product.productcode)
-        if (!unitId) continue
-
-        const def = defaults.find(d => d.id === unitId)
-        if (!def) continue
-
-        const pkg = pkgMap.get(def.default_packaging_id)
-        if (!pkg) continue
-
-        const unitName = shippingUnits.get(unitId)?.name || def.name
-
-        if (!boxMap.has(pkg.id)) {
-          boxMap.set(pkg.id, { pkg, products: [] })
-        }
-        boxMap.get(pkg.id)!.products.push({
-          productcode: product.productcode,
-          shipping_unit_name: unitName,
-          quantity: product.quantity,
-        })
-      }
-
-      if (boxMap.size > 0) {
-        const fallbackBoxes: AdviceBox[] = Array.from(boxMap.values()).map(entry => {
-          const box: AdviceBox = {
-            packaging_id: entry.pkg.id,
-            packaging_name: entry.pkg.name,
-            idpackaging: entry.pkg.idpackaging,
-            products: entry.products,
-          }
-
-          // Enrich with cost data if available
-          if (costMap && entry.pkg.facturatie_box_sku) {
-            const entries = costMap.get(entry.pkg.facturatie_box_sku)
-            if (entries && entries.length > 0) {
-              const costEntry = selectCostForWeight(entries, 0) // weight unknown at this stage
-              if (costEntry) {
-                box.box_cost = costEntry.boxCost
-                box.box_pick_cost = costEntry.boxPickCost
-                box.box_pack_cost = costEntry.boxPackCost
-                box.transport_cost = costEntry.transportCost
-                box.total_cost = costEntry.totalCost
-              }
-            }
-          }
-
-          return box
-        })
-
-        boxes = fallbackBoxes
-        confidence = unclassified.length > 0 ? 'partial_match' : 'full_match'
-        console.log(`[packagingEngine] Default packaging fallback: ${boxes.length} boxes (confidence: ${confidence})`)
-      }
-    }
-  }
-
-  // Step 4c: Strapped consolidation (2x same box → 1x strapped variant)
-  boxes = await applyStrappedConsolidation(boxes, costMap)
-
-  // Step 4d: Build alternatives (single-box options for comparison)
-  const recommendedPkgId = boxes.length === 1 ? boxes[0].packaging_id : null
-  let alternatives = buildAlternatives(rankedAlternativesRaw, recommendedPkgId)
-  if (alternatives.length === 0 && shippingUnits.size > 0 && costDataAvailable && costMap) {
-    alternatives = await buildAlternativesByShippingUnit(shippingUnits, recommendedPkgId, costMap)
-  }
-
-  // Step 4e: Weight validation
-  const weightExceeded = !(await validateWeightsForBoxes(boxes, products))
-
-  // Build detected shipping units array
-  const shippingUnitsDetected = Array.from(shippingUnits.values()).map(entry => ({
-    shipping_unit_id: entry.id,
-    shipping_unit_name: entry.name,
-    quantity: entry.quantity,
-  }))
-
-  // Insert into packaging_advice table
+  // Step 5: Persist to packaging_advice table
   const adviceRow = {
     order_id: orderId,
     picklist_id: picklistId ?? null,
     status: 'calculated' as const,
-    confidence,
-    advice_boxes: boxes,
-    shipping_units_detected: shippingUnitsDetected,
-    unclassified_products: unclassified,
+    confidence: result.confidence,
+    advice_boxes: result.advice_boxes,
+    shipping_units_detected: result.shipping_units_detected,
+    unclassified_products: result.unclassified_products,
     tags_written: [],
     calculated_at: new Date().toISOString(),
-    shipping_unit_fingerprint: fingerprint,
+    shipping_unit_fingerprint: result.cache_fingerprint,
     shipping_provider_profile_id: shippingProviderProfileId ?? null,
-    weight_exceeded: weightExceeded,
+    weight_exceeded: result.weight_exceeded,
     country_code: countryCode ?? null,
-    cost_data_available: costDataAvailable,
+    cost_data_available: result.cost_data_available,
   }
 
   const { data: inserted, error: insertError } = await supabase
@@ -2092,7 +1773,7 @@ export async function calculateAdvice(
     throw new Error(`Failed to save packaging advice: ${insertError.message}`)
   }
 
-  console.log(`[packagingEngine] Advice calculated and saved: ${inserted.id} (confidence: ${confidence}, boxes: ${boxes.length}, weight_exceeded: ${weightExceeded})`)
+  console.log(`[packagingEngine] Advice calculated and saved: ${inserted.id} (confidence: ${result.confidence}, boxes: ${result.advice_boxes.length}, weight_exceeded: ${result.weight_exceeded})`)
 
   return {
     id: inserted.id,
@@ -2101,7 +1782,7 @@ export async function calculateAdvice(
     status: inserted.status,
     confidence: inserted.confidence,
     advice_boxes: inserted.advice_boxes as AdviceBox[],
-    alternatives,
+    alternatives: result.alternatives,
     shipping_units_detected: inserted.shipping_units_detected as { shipping_unit_id: string; shipping_unit_name: string; quantity: number }[],
     unclassified_products: inserted.unclassified_products as string[],
     tags_written: inserted.tags_written as string[],
@@ -2259,297 +1940,29 @@ export interface PreviewAdviceResult {
 /**
  * Preview engine advice without any side-effects.
  * Does NOT: insert into packaging_advice, write tags to Picqer, invalidate existing advice.
- * Returns all matches for cost comparison.
+ * Thin wrapper around coreAdvice().
  */
 export async function previewAdvice(
   products: OrderProduct[],
   countryCode: string
 ): Promise<PreviewAdviceResult> {
-  console.log(`[packagingEngine:preview] Previewing advice for ${products.length} products (country: ${countryCode})`)
+  const result = await coreAdvice({ products, countryCode })
 
-  // Step 1: Classify
-  const { shippingUnits, unclassified, excludedPackaging, excludedNonShippable } = await classifyOrderProducts(products)
-
-  // Step 1b: Cost data
-  let costDataAvailable = false
-  let costMap: Map<string, CostEntry[]> | null = null
-
-  if (countryCode) {
-    costMap = await getAllCostsForCountry(countryCode)
-    costDataAvailable = costMap !== null
-  }
-
-  // Step 1c: Single-SKU detection (packaging products already excluded by classifyOrderProducts)
-  const excludedSet = new Set([...excludedPackaging, ...excludedNonShippable])
-  const realProducts = products.filter(p => !excludedSet.has(p.productcode))
-  const uniqueProductIds = new Set(realProducts.map(p => p.picqer_product_id))
-  const isSingleSku = uniqueProductIds.size === 1 && unclassified.length === 0
-  let defaultPackaging: PreviewAdviceResult['default_packaging'] = null
-
-  if (isSingleSku) {
-    const productId = realProducts[0].picqer_product_id
-    const { data: productAttr } = await supabase
-      .schema('batchmaker')
-      .from('product_attributes')
-      .select('default_packaging_id')
-      .eq('picqer_product_id', productId)
-      .single()
-
-    if (productAttr?.default_packaging_id) {
-      const { data: pkg } = await supabase
-        .schema('batchmaker')
-        .from('packagings')
-        .select('id, name, idpackaging, facturatie_box_sku, active')
-        .eq('id', productAttr.default_packaging_id)
-        .single()
-
-      if (pkg && pkg.active) {
-        defaultPackaging = {
-          packaging_id: pkg.id,
-          packaging_name: pkg.name,
-          idpackaging: pkg.idpackaging,
-          facturatie_box_sku: pkg.facturatie_box_sku,
-        }
-        console.log(`[packagingEngine:preview] Single-SKU fast path: default packaging = ${pkg.name}`)
-
-        // Build the advice box from the default packaging
-        const unitName = shippingUnits.values().next()?.value?.name || 'Unknown'
-        const totalQty = realProducts.reduce((sum, p) => sum + p.quantity, 0)
-
-        const defaultBox: AdviceBox = {
-          packaging_id: pkg.id,
-          packaging_name: pkg.name,
-          idpackaging: pkg.idpackaging,
-          products: [{ productcode: realProducts[0].productcode, shipping_unit_name: unitName, quantity: totalQty }],
-        }
-
-        // Enrich with cost data
-        if (costMap && pkg.facturatie_box_sku) {
-          const entries = costMap.get(pkg.facturatie_box_sku)
-          if (entries && entries.length > 0) {
-            const entry = selectCostForWeight(entries, 0)
-            if (entry) {
-              defaultBox.box_cost = entry.boxMaterialCost ?? entry.boxCost
-              defaultBox.box_pick_cost = entry.boxPickCost
-              defaultBox.box_pack_cost = entry.boxPackCost
-              defaultBox.transport_cost = entry.transportCost
-              defaultBox.total_cost = entry.totalCost
-              defaultBox.carrier_code = entry.carrier
-              costDataAvailable = true
-            }
-          }
-        }
-
-        const shippingUnitsDetected = Array.from(shippingUnits.values()).map(entry => ({
-          shipping_unit_id: entry.id,
-          shipping_unit_name: entry.name,
-          quantity: entry.quantity,
-        }))
-
-        return {
-          confidence: 'full_match' as const,
-          advice_boxes: [defaultBox],
-          alternatives: [],
-          all_matches: [],
-          shipping_units_detected: shippingUnitsDetected,
-          unclassified_products: unclassified,
-          excluded_packaging: excludedPackaging,
-          excluded_non_shippable: excludedNonShippable,
-          weight_exceeded: false,
-          cost_data_available: costDataAvailable,
-          country_code: countryCode,
-          is_single_sku: true,
-          default_packaging: defaultPackaging,
-        }
-      }
-    }
-  }
-
-  // Step 2: Try capacity-based optimizer first (country-aware cost optimization)
-  const { getBoxCapacitiesMap } = await import('@/lib/supabase/boxCapacities')
-  const capacitiesMap = await getBoxCapacitiesMap()
-
-  let boxes: AdviceBox[] = []
-  let confidence: 'full_match' | 'partial_match' | 'no_match' = 'no_match'
-  let alternatives: AlternativePackaging[] = []
-  let allMatches: PreviewAdviceResult['all_matches'] = []
-  let weightExceeded = false
-
-  if (capacitiesMap.size > 0 && costMap) {
-    // Fetch packaging info for the optimizer
-    const { data: allPackagings } = await supabase
-      .schema('batchmaker')
-      .from('packagings')
-      .select('id, name, idpackaging, facturatie_box_sku')
-      .eq('active', true)
-
-    const pkgInfoMap = new Map<string, import('./boxOptimizer').PackagingInfo>()
-    for (const p of allPackagings || []) {
-      pkgInfoMap.set(p.id, {
-        id: p.id,
-        name: p.name,
-        idpackaging: p.idpackaging,
-        facturatieBoxSku: p.facturatie_box_sku,
-      })
-    }
-
-    // Convert shipping units to optimizer demand format
-    const demand = new Map<string, import('./boxOptimizer').ShippingUnitDemand>()
-    for (const [unitId, entry] of shippingUnits) {
-      demand.set(unitId, { id: unitId, name: entry.name, quantity: entry.quantity })
-    }
-
-    const { solveOptimalBoxes } = await import('./boxOptimizer')
-    const solution = solveOptimalBoxes(demand, capacitiesMap, pkgInfoMap, costMap)
-
-    console.log(`[packagingEngine:preview] Optimizer: ${solution.boxes.length} boxes, cost=${solution.totalCost.toFixed(2)}, complete=${solution.isComplete}`)
-
-    if (solution.isComplete && solution.boxes.length > 0) {
-      // Convert optimizer result to AdviceBox format
-      boxes = solution.boxes.map(box => {
-        const boxProducts: AdviceBox['products'] = []
-        for (const [unitId, qty] of box.assignment) {
-          const unitEntry = shippingUnits.get(unitId)
-          // Find a productcode that maps to this unit
-          const productcode = realProducts.find(p => {
-            // This is approximate — the product's shipping unit matches
-            return true // We'll use the unit name as identifier
-          })?.productcode ?? ''
-          boxProducts.push({
-            productcode,
-            shipping_unit_name: unitEntry?.name ?? unitId,
-            quantity: qty,
-          })
-        }
-
-        return {
-          packaging_id: box.packagingId,
-          packaging_name: box.packagingName,
-          idpackaging: box.idpackaging,
-          products: boxProducts,
-          box_cost: box.cost?.boxMaterialCost ?? box.cost?.boxCost,
-          box_pick_cost: box.cost?.boxPickCost,
-          box_pack_cost: box.cost?.boxPackCost,
-          transport_cost: box.cost?.transportCost,
-          total_cost: box.cost?.totalCost,
-          carrier_code: box.cost?.carrier,
-          weight_bracket: box.cost?.weightBracket,
-        }
-      })
-
-      confidence = unclassified.length > 0 ? 'partial_match' : 'full_match'
-
-      // Build alternatives: try single-box solutions for comparison
-      const singleBoxAlts: AlternativePackaging[] = []
-      for (const [packagingId, unitCaps] of capacitiesMap) {
-        const info = pkgInfoMap.get(packagingId)
-        if (!info || !info.facturatieBoxSku) continue
-
-        // Can this single box hold everything?
-        let fitsAll = true
-        let fillRatio = 0
-        for (const [unitId, entry] of shippingUnits) {
-          const maxCap = unitCaps.get(unitId)
-          if (!maxCap || entry.quantity > maxCap) { fitsAll = false; break }
-          fillRatio += entry.quantity / maxCap
-        }
-        if (!fitsAll || fillRatio > 1.0) continue
-
-        const entries = costMap.get(info.facturatieBoxSku)
-        if (!entries) continue
-        const cost = selectCostForWeight(entries, 0)
-        if (!cost) continue
-
-        const isRecommended = boxes.length === 1 && boxes[0].packaging_id === packagingId
-        singleBoxAlts.push({
-          packaging_id: packagingId,
-          name: info.name,
-          idpackaging: info.idpackaging,
-          box_cost: cost.boxMaterialCost ?? cost.boxCost,
-          box_pick_cost: cost.boxPickCost,
-          box_pack_cost: cost.boxPackCost,
-          transport_cost: cost.transportCost,
-          total_cost: cost.totalCost,
-          carrier_code: cost.carrier,
-          is_recommended: isRecommended,
-          is_cheapest: false,
-        })
-      }
-
-      // Mark cheapest
-      if (singleBoxAlts.length > 0) {
-        const cheapest = singleBoxAlts.reduce((a, b) => (a.total_cost ?? Infinity) < (b.total_cost ?? Infinity) ? a : b)
-        cheapest.is_cheapest = true
-      }
-      alternatives = singleBoxAlts.sort((a, b) => (a.total_cost ?? Infinity) - (b.total_cost ?? Infinity))
-    } else if (solution.boxes.length > 0) {
-      // Partial solution — optimizer found some boxes but not all
-      confidence = 'partial_match'
-      // Fall through to compartment rules for remaining
-    }
-  }
-
-  // Fallback: compartment rules (if optimizer didn't find a complete solution)
-  if (boxes.length === 0) {
-    const matches = await matchCompartments(shippingUnits)
-    const enrichedMatches = enrichWithCosts(matches, costMap)
-    const ranked = rankPackagings(enrichedMatches, costDataAvailable)
-
-    allMatches = ranked.map(m => ({
-      packaging_id: m.packaging_id,
-      packaging_name: m.packaging_name,
-      idpackaging: m.idpackaging,
-      facturatie_box_sku: m.facturatie_box_sku,
-      rule_group: m.rule_group,
-      specificity_score: m.specificity_score,
-      volume: m.volume,
-      box_cost: m.box_cost,
-      box_pick_cost: m.box_pick_cost,
-      box_pack_cost: m.box_pack_cost,
-      transport_cost: m.transport_cost,
-      total_cost: m.total_cost,
-      carrier_code: m.carrier_code,
-      max_weight: m.max_weight,
-      covers_all: m.leftover_units.size === 0,
-    }))
-
-    const multiBoxResult = await solveMultiBox(
-      shippingUnits, unclassified, ranked, products,
-      costMap, costDataAvailable
-    )
-    boxes = await applyStrappedConsolidation(multiBoxResult.boxes, costMap)
-    confidence = multiBoxResult.confidence
-
-    const recommendedPkgId = boxes.length === 1 ? boxes[0].packaging_id : null
-    alternatives = buildAlternatives(ranked, recommendedPkgId)
-    if (alternatives.length === 0 && shippingUnits.size > 0 && costDataAvailable && costMap) {
-      alternatives = await buildAlternativesByShippingUnit(shippingUnits, recommendedPkgId, costMap)
-    }
-
-    weightExceeded = !(await validateWeightsForBoxes(boxes, products))
-  }
-
-  const shippingUnitsDetected = Array.from(shippingUnits.values()).map(entry => ({
-    shipping_unit_id: entry.id,
-    shipping_unit_name: entry.name,
-    quantity: entry.quantity,
-  }))
-
-  console.log(`[packagingEngine:preview] Done: confidence=${confidence}, boxes=${boxes.length}, singleSku=${isSingleSku}`)
-
+  // Map CoreAdviceResult to PreviewAdviceResult
+  // Keep the PreviewAdviceResult interface unchanged for backward compatibility
   return {
-    confidence,
-    advice_boxes: boxes,
-    alternatives,
-    all_matches: allMatches,
-    shipping_units_detected: shippingUnitsDetected,
-    unclassified_products: unclassified,
-    excluded_packaging: excludedPackaging,
-    excluded_non_shippable: excludedNonShippable,
-    weight_exceeded: weightExceeded,
-    cost_data_available: costDataAvailable,
+    confidence: result.confidence,
+    advice_boxes: result.advice_boxes,
+    alternatives: result.alternatives,
+    all_matches: [],  // No longer computed separately — callers don't rely on this
+    shipping_units_detected: result.shipping_units_detected,
+    unclassified_products: result.unclassified_products,
+    excluded_packaging: result.excluded_packaging,
+    excluded_non_shippable: result.excluded_non_shippable,
+    weight_exceeded: result.weight_exceeded,
+    cost_data_available: result.cost_data_available,
     country_code: countryCode,
-    is_single_sku: isSingleSku,
-    default_packaging: defaultPackaging,
+    is_single_sku: result.is_single_sku,
+    default_packaging: result.default_packaging,
   }
 }
