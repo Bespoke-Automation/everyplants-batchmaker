@@ -230,33 +230,13 @@ export default function ShipmentProgress({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen])
 
-  // Auto-print labels as they become available
+  // Track which labels have been processed (auto-print via PrintNode handles printing)
   useEffect(() => {
     if (!isOpen) return
     for (const box of boxes) {
       const progress = shipProgress.get(box.id)
       if (progress?.labelUrl && !openedLabelsRef.current.has(box.id)) {
         openedLabelsRef.current.add(box.id)
-        // Open in new tab and trigger print dialog
-        const printWindow = window.open(progress.labelUrl, '_blank')
-        if (printWindow) {
-          // Wait for PDF to load, then trigger print
-          printWindow.addEventListener('load', () => {
-            try {
-              printWindow.print()
-            } catch {
-              // If print fails (e.g. cross-origin), the tab is already open
-            }
-          })
-          // Fallback: try print after a delay if load event doesn't fire
-          setTimeout(() => {
-            try {
-              printWindow.print()
-            } catch {
-              // Silent fallback — tab is open for manual print
-            }
-          }, 1500)
-        }
       }
     }
   }, [isOpen, boxes, shipProgress])

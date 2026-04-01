@@ -870,14 +870,14 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     })
   }, [session, closedBoxes, picklist, packagingImageMap, compositionMap])
 
-  // Filtered packagings for the add box modal (Picqer + local-only)
+  // Filtered packagings for the add box modal — only packagings with a Picqer ID (required for shipments)
   const activePackagings = useMemo(() => {
-    const picqerActive = packagings.filter((p) => p.active)
+    const picqerActive = packagings.filter((p) => p.active && p.idpackaging && p.idpackaging > 0)
     const picqerIds = new Set(picqerActive.map((p) => p.idpackaging))
 
-    // Include local-only packagings that don't exist in Picqer
+    // Include local-only packagings that have a valid Picqer ID but don't exist in Picqer's active list
     const localOnly: PicqerPackaging[] = localPackagings
-      .filter((lp) => !picqerIds.has(lp.idpackaging))
+      .filter((lp) => lp.idpackaging > 0 && !picqerIds.has(lp.idpackaging))
       .map((lp) => ({
         idpackaging: lp.idpackaging,
         name: lp.name,
