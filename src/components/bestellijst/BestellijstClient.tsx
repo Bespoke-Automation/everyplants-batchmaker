@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useRef } from 'react'
 import {
   useReactTable,
   getCoreRowModel,
@@ -13,11 +13,14 @@ import {
 } from '@tanstack/react-table'
 import {
   DndContext,
+  DragOverlay,
   closestCenter,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
+  type DragStartEvent,
+  type DragOverEvent,
   type DragEndEvent,
 } from '@dnd-kit/core'
 import {
@@ -25,7 +28,7 @@ import {
   horizontalListSortingStrategy,
   arrayMove,
 } from '@dnd-kit/sortable'
-import { RefreshCw, ShoppingCart, Search, X, RotateCcw } from 'lucide-react'
+import { RefreshCw, ShoppingCart, Search, X, RotateCcw, GripVertical } from 'lucide-react'
 import type { BestellijstRow } from '@/app/api/bestellijst/route'
 import { useTablePreferences } from '@/hooks/useTablePreferences'
 import DraggableColumnHeader from './DraggableColumnHeader'
@@ -190,9 +193,12 @@ export default function BestellijstClient() {
     resetPreferences,
   } = useTablePreferences('bestellijst')
 
-  // Dnd sensors
+  // Dnd state
+  const [activeColumnId, setActiveColumnId] = useState<string | null>(null)
+  const columnOrderBeforeDrag = useRef<string[]>([])
+
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor)
   )
 
@@ -259,17 +265,45 @@ export default function BestellijstClient() {
     meta: { picqerBaseUrl },
   })
 
+  function getColumnOrder() {
+    const current = table.getState().columnOrder
+    return current.length > 0
+      ? current
+      : table.getAllLeafColumns().map((c) => c.id)
+  }
+
+  function handleDragStart(event: DragStartEvent) {
+    setActiveColumnId(event.active.id as string)
+    columnOrderBeforeDrag.current = getColumnOrder()
+  }
+
+  function handleDragOver(event: DragOverEvent) {
+    const { active, over } = event
+    if (active && over && active.id !== over.id) {
+      // Reorder columns live during drag so header + body stay in sync
+      const currentOrder = getColumnOrder()
+      const oldIndex = currentOrder.indexOf(active.id as string)
+      const newIndex = currentOrder.indexOf(over.id as string)
+      setColumnOrder(arrayMove(currentOrder, oldIndex, newIndex))
+    }
+  }
+
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
     if (active && over && active.id !== over.id) {
-      const currentOrder = table.getState().columnOrder.length > 0
-        ? table.getState().columnOrder
-        : table.getAllLeafColumns().map((c) => c.id)
-      const oldIndex = currentOrder.indexOf(active.id as string)
-      const newIndex = currentOrder.indexOf(over.id as string)
-      const newOrder = arrayMove(currentOrder, oldIndex, newIndex)
-      setColumnOrder(newOrder)
+      // Final order already applied by handleDragOver — just persist
+      const currentOrder = getColumnOrder()
+      setColumnOrder(currentOrder)
+    } else {
+      // Cancelled or dropped in place — restore original order
+      setColumnOrder(columnOrderBeforeDrag.current)
     }
+    setActiveColumnId(null)
+  }
+
+  function handleDragCancel() {
+    setColumnOrder(columnOrderBeforeDrag.current)
+    setActiveColumnId(null)
   }
 
   const hasCustomPreferences = columnOrder.length > 0 || Object.keys(columnSizing).length > 0
@@ -396,7 +430,10 @@ export default function BestellijstClient() {
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
                 onDragEnd={handleDragEnd}
+                onDragCancel={handleDragCancel}
               >
                 <table
                   className="w-full text-sm"
@@ -437,6 +474,14 @@ export default function BestellijstClient() {
                     ))}
                   </tbody>
                 </table>
+                <DragOverlay>
+                  {activeColumnId ? (
+                    <div className="flex items-center gap-1.5 px-3 py-2 bg-card border border-border rounded-md shadow-lg text-sm font-medium whitespace-nowrap">
+                      <GripVertical className="w-3.5 h-3.5 text-muted-foreground" />
+                      {columns.find((c) => c.id === activeColumnId)?.header as string}
+                    </div>
+                  ) : null}
+                </DragOverlay>
               </DndContext>
             </div>
           </>

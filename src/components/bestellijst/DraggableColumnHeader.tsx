@@ -3,7 +3,6 @@
 import { type CSSProperties } from 'react'
 import { type Header, flexRender } from '@tanstack/react-table'
 import { useSortable } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import type { BestellijstRow } from '@/app/api/bestellijst/route'
 
@@ -20,16 +19,12 @@ export default function DraggableColumnHeader({ header }: Props) {
     attributes,
     listeners,
     setNodeRef,
-    transform,
-    transition,
     isDragging,
   } = useSortable({ id: column.id })
 
   const style: CSSProperties = {
     width: header.getSize(),
-    transform: CSS.Translate.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
+    opacity: isDragging ? 0.4 : 1,
     position: 'relative',
     whiteSpace: 'nowrap',
     userSelect: 'none',
