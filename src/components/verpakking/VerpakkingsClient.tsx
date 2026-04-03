@@ -296,10 +296,10 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     return batchContext.picklists.every((pl) => pl.status === 'closed')
   }, [batchContext])
 
-  const handleExtraShipment = useCallback(async () => {
-    await addBox(t.completed.extraShipment)
-    setShowShipmentModal(true)
-  }, [addBox, t.completed.extraShipment])
+  const handleExtraShipment = useCallback(() => {
+    setExtraShipmentMode(true)
+    setShowAddBoxModal(true)
+  }, [])
 
   // Build a lookup: packaging barcode -> packaging info (for identifying packaging-as-product items)
   const packagingBarcodeMap = useMemo(() => {
@@ -428,6 +428,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
   const [activeProduct, setActiveProduct] = useState<ProductCardItem | null>(null)
   const [showAddBoxModal, setShowAddBoxModal] = useState(false)
   const [showShipmentModal, setShowShipmentModal] = useState(false)
+  const [extraShipmentMode, setExtraShipmentMode] = useState(false)
   const [showClosePicklistConfirm, setShowClosePicklistConfirm] = useState(false)
   const [isClosingPicklist, setIsClosingPicklist] = useState(false)
   const [shipmentModalBoxId, setShipmentModalBoxId] = useState<string | null>(null)
@@ -1427,8 +1428,14 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
       setShowAddBoxModal(false)
       setBoxSearchQuery('')
       setShowAllPackagings(false)
+
+      // Extra zending mode: automatically open shipment dialog after box creation
+      if (extraShipmentMode) {
+        setExtraShipmentMode(false)
+        setShowShipmentModal(true)
+      }
     },
-    [addBox, engineAdvice]
+    [addBox, engineAdvice, extraShipmentMode]
   )
 
   const handleRemoveBox = useCallback(
@@ -2657,6 +2664,19 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
             </SidebarPanel>
           </div>
         </div>
+        {/* Comments section — full width below columns, also in completed view */}
+        <div className="border-t border-border">
+          <BottomComments
+            comments={picklistComments}
+            isLoading={isLoadingComments}
+            onAddComment={addPicklistComment}
+            onDeleteComment={deletePicklistComment}
+            onRefresh={fetchComments}
+            users={picqerUsers}
+            currentUserName={workerName}
+          />
+        </div>
+        </div>
           </>
         ) : (<>
         {/* Tab bar - mobile/tablet only (below lg breakpoint) */}
@@ -3242,7 +3262,6 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
             currentUserName={workerName}
           />
         </div>
-        </div>
         </>)}
       </div>
 
@@ -3270,8 +3289,9 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
           setShowAddBoxModal(false)
           setBoxSearchQuery('')
           setShowAllPackagings(false)
+          setExtraShipmentMode(false)
         }}
-        title="{t.packing.addBox}"
+        title={extraShipmentMode ? t.completed.extraShipment : t.packing.addBox}
         className="max-w-5xl max-h-[90vh] flex flex-col"
       >
         <div className="flex flex-col overflow-hidden">
