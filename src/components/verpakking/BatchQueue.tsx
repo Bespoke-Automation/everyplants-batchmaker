@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback } from 'react'
+import { useCallback, useState, useRef } from 'react'
 import {
   Layers,
   RefreshCw,
@@ -15,6 +15,7 @@ import { useBatchQueue } from '@/hooks/useBatchQueue'
 import { usePicqerUsers } from '@/hooks/usePicqerUsers'
 import { useTranslation } from '@/i18n/LanguageContext'
 import type { Worker, QueueBatch } from '@/types/verpakking'
+import BatchCommentsPopup from './BatchCommentsPopup'
 
 // Relative time helper — returns translated string via dictionary
 function timeAgo(
@@ -81,6 +82,11 @@ export default function BatchQueue({
 
   const { users: picqerUsers } = usePicqerUsers()
 
+  // Comments popup state
+  const [commentsPopup, setCommentsPopup] = useState<{ batchId: number; displayId: string } | null>(null)
+  const commentAnchorRef = useRef<HTMLSpanElement>(null)
+  const [activeCommentAnchor, setActiveCommentAnchor] = useState<HTMLSpanElement | null>(null)
+
   const handleOpen = useCallback(
     (batch: QueueBatch) => {
       // Already claimed by me → go directly to batch overview
@@ -105,7 +111,7 @@ export default function BatchQueue({
     daysAgo: t.queue.timeDaysAgo,
   }
 
-  return (
+  return (<>
     <div className="flex-1 flex flex-col">
       {/* Worker header bar */}
       <div className="bg-card border-b border-border px-5 py-3 flex items-center justify-between">
@@ -285,13 +291,19 @@ export default function BatchQueue({
                       <span className="font-semibold text-base">Batch #{batch.batchDisplayId}</span>
                       {batch.totalComments > 0 && (
                         <span
-                          className="relative group inline-flex items-center text-muted-foreground"
-                          onClick={(e) => e.stopPropagation()}
+                          className="relative inline-flex items-center gap-0.5 text-muted-foreground hover:text-primary cursor-pointer transition-colors"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            const target = e.currentTarget as HTMLSpanElement
+                            setActiveCommentAnchor(target)
+                            setCommentsPopup({
+                              batchId: batch.idpicklistBatch,
+                              displayId: batch.batchDisplayId,
+                            })
+                          }}
                         >
                           <MessageSquare className="w-4 h-4" />
-                          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 bg-gray-800 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                            {batch.totalComments} {batch.totalComments === 1 ? t.queue.commentSingular : t.queue.commentPlural}
-                          </span>
+                          <span className="text-xs font-medium">{batch.totalComments}</span>
                         </span>
                       )}
                       {batch.type === 'singles' && (
@@ -355,5 +367,19 @@ export default function BatchQueue({
         {t.queue.autoRefresh}
       </div>
     </div>
+
+    {/* Comments popup */}
+    {commentsPopup && activeCommentAnchor && (
+      <BatchCommentsPopup
+        batchId={commentsPopup.batchId}
+        batchDisplayId={commentsPopup.displayId}
+        anchorRef={{ current: activeCommentAnchor }}
+        onClose={() => {
+          setCommentsPopup(null)
+          setActiveCommentAnchor(null)
+        }}
+      />
+    )}
+    </>
   )
 }
