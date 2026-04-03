@@ -55,11 +55,13 @@ import MentionTextarea from '@/components/verpakking/MentionTextarea'
 import type { PicqerPicklistWithProducts, PicqerPicklistProduct, PicqerPackaging, PicqerOrder, PicqerOrderfield } from '@/lib/picqer/types'
 import { ORDERFIELD_IDS } from '@/lib/picqer/types'
 import { getTagPackagingFilter } from '@/lib/verpakking/tag-packaging-filter'
+import { sortPicklistsByProduct } from '@/lib/verpakking/picklist-sort'
 import BatchNavigationBar from './BatchNavigationBar'
 import BarcodeListener from './BarcodeListener'
 import ProductCard, { type ProductCardItem, type BoxRef, type ProductCustomFields } from './ProductCard'
 import BoxCard, { type BoxCardItem, type BoxProduct } from './BoxCard'
 import ShipmentProgress from './ShipmentProgress'
+import CompletedView from './CompletedView'
 import { useTranslation } from '@/i18n/LanguageContext'
 
 // Engine advice response type
@@ -160,10 +162,16 @@ function translateStatus(status: string, statusDict?: Record<string, string>): s
   return status
 }
 
+interface BatchContextProduct {
+  productcode: string
+  picklistAllocations: { idpicklist: number; amount: number }[]
+}
+
 interface BatchContextProps {
   batchSessionId: string
   batchDisplayId: string
   picklists: import('@/types/verpakking').BatchPicklistItem[]
+  products?: BatchContextProduct[]
 }
 
 interface VerpakkingsClientProps {
@@ -198,21 +206,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     dismissWarning,
   } = usePackingSession(sessionId)
 
-  // Batch navigation: derive next picklist for ShipmentProgress
-  const nextPicklistInBatch = useMemo(() => {
-    if (!batchContext) return null
-    const currentIndex = batchContext.picklists.findIndex((pl) => pl.sessionId === sessionId)
-    if (currentIndex === -1) return null
-    for (let i = currentIndex + 1; i < batchContext.picklists.length; i++) {
-      const pl = batchContext.picklists[i]
-      if (pl.sessionStatus !== 'completed' && pl.status !== 'closed') return pl
-    }
-    for (let i = 0; i < currentIndex; i++) {
-      const pl = batchContext.picklists[i]
-      if (pl.sessionStatus !== 'completed' && pl.status !== 'closed') return pl
-    }
-    return null
-  }, [batchContext, sessionId])
+  // Batch navigation: computed after localPackagings hook below
 
   const [isNavCreatingSession, setIsNavCreatingSession] = useState(false)
 
@@ -265,6 +259,47 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     }
     return map
   }, [localPackagings])
+
+  // Packaging productcodes set (used to filter box products from sort)
+  const packagingProductcodes = useMemo(() => {
+    const set = new Set<string>()
+    for (const lp of localPackagings) {
+      if (lp.barcode) set.add(lp.barcode)
+    }
+    return set
+  }, [localPackagings])
+
+  const sortedBatchPicklists = useMemo(() => {
+    if (!batchContext) return []
+    return sortPicklistsByProduct(batchContext.products, batchContext.picklists, packagingProductcodes)
+  }, [batchContext, packagingProductcodes])
+
+  const nextPicklistInBatch = useMemo(() => {
+    if (!batchContext || sortedBatchPicklists.length === 0) return null
+    const currentPicklistId = session?.picklistId
+    if (!currentPicklistId) return null
+    const currentIndex = sortedBatchPicklists.findIndex((pl) => pl.idpicklist === currentPicklistId)
+    if (currentIndex === -1) {
+      return sortedBatchPicklists.find((pl) => pl.status !== 'closed') ?? null
+    }
+    for (let i = currentIndex + 1; i < sortedBatchPicklists.length; i++) {
+      if (sortedBatchPicklists[i].status !== 'closed') return sortedBatchPicklists[i]
+    }
+    for (let i = 0; i < currentIndex; i++) {
+      if (sortedBatchPicklists[i].status !== 'closed') return sortedBatchPicklists[i]
+    }
+    return null
+  }, [batchContext, sortedBatchPicklists, session?.picklistId])
+
+  const isBatchCompleted = useMemo(() => {
+    if (!batchContext || batchContext.picklists.length === 0) return false
+    return batchContext.picklists.every((pl) => pl.status === 'closed')
+  }, [batchContext])
+
+  const handleExtraShipment = useCallback(async () => {
+    await addBox(t.completed.extraShipment)
+    setShowShipmentModal(true)
+  }, [addBox, t.completed.extraShipment])
 
   // Build a lookup: packaging barcode -> packaging info (for identifying packaging-as-product items)
   const packagingBarcodeMap = useMemo(() => {
@@ -663,8 +698,10 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
 
   // Auto-box state (refs + state declared early, effect runs after suggestedPackagings)
   // Track with BOTH ref (for effect guard) and state (survives React 18 batching)
+  // userModifiedBoxes: set to true when user manually removes a box — prevents auto-recreate
   const autoBoxCreatedRef = useRef(false)
   const [adviceApplied, setAdviceApplied] = useState(false)
+  const userModifiedBoxesRef = useRef(false)
   const [autoBoxMessage, setAutoBoxMessage] = useState<string | null>(null)
 
   // Auto-dismiss warnings after 8 seconds
@@ -703,6 +740,19 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
   // Products with multiple pick_locations are split into separate lines per location.
   // Helper: is the picklist in a terminal state (no further actions possible)?
   const isPicklistTerminal = picklist?.status === 'closed' || picklist?.status === 'cancelled'
+
+  // Build remarks lookup from order products (PPS plant numbers)
+  const orderRemarksMap = useMemo(() => {
+    const map = new Map<number, string>()
+    if (order?.products) {
+      for (const op of order.products) {
+        if (op.remarks && op.idproduct) {
+          map.set(op.idproduct, op.remarks)
+        }
+      }
+    }
+    return map
+  }, [order])
 
   const productItems: ProductCardItem[] = useMemo(() => {
     if (!picklist?.products || picklist.products.length === 0) {
@@ -824,6 +874,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
           productCode: compInfo.parentProductCode,
           idproduct: compInfo.parentIdProduct,
         } : undefined,
+        remarks: orderRemarksMap.get(pp.idproduct) ?? null,
       }
     }
 
@@ -895,7 +946,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     }
 
     return items
-  }, [picklist, session, productCustomFields, packagingBarcodeMap, compositionMap, compositionParentIds])
+  }, [picklist, session, productCustomFields, packagingBarcodeMap, compositionMap, compositionParentIds, orderRemarksMap])
 
   // Group products by composition parent for rendering
   const productGroups: ProductGroup[] = useMemo(() => {
@@ -1093,7 +1144,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
   // Auto-create boxes: prefer engine advice, fall back to tag mappings
   // Only runs ONCE per session — adviceApplied prevents re-triggering after all boxes are removed
   useEffect(() => {
-    if (autoBoxCreatedRef.current || adviceApplied) return
+    if (autoBoxCreatedRef.current || adviceApplied || userModifiedBoxesRef.current) return
     if (!session || !picklist) return
     if (session.boxes.length > 0) return
     if (packagingsLoading) return
@@ -1173,7 +1224,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
       }
       createBoxes()
     }
-  }, [session, picklist, suggestedPackagings, packagingsLoading, engineAdvice, engineLoading, activePackagings, addBox, assignProduct, adviceApplied])
+  // eslint-disable-next-line react-hooks/exhaustive-deps — addBox/assignProduct excluded: they update state which re-triggers the effect
+  }, [session?.boxes?.length, session?.id, picklist, suggestedPackagings, packagingsLoading, engineAdvice, engineLoading, activePackagings, adviceApplied])
 
   // Auto-dismiss auto-box message
   useEffect(() => {
@@ -1231,6 +1283,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
   useEffect(() => {
     autoShipTriggeredRef.current = false
     autoBoxCreatedRef.current = false
+    userModifiedBoxesRef.current = false
     setAdviceApplied(false)
   }, [sessionId])
 
@@ -1380,6 +1433,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
 
   const handleRemoveBox = useCallback(
     async (boxId: string) => {
+      userModifiedBoxesRef.current = true
       await removeBox(boxId)
     },
     [removeBox]
@@ -1672,7 +1726,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
             onClick={onBack}
             className="mt-2 px-4 py-2 min-h-[48px] text-sm text-primary hover:bg-primary/10 rounded-lg transition-colors"
           >
-            {t.packing.backToQueue}
+            {t.packing.backToBatches}
           </button>
         </div>
       </div>
@@ -1700,8 +1754,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         {batchContext && batchContext.picklists.length > 1 && (
           <BatchNavigationBar
             batchDisplayId={batchContext.batchDisplayId}
-            picklists={batchContext.picklists}
-            currentSessionId={sessionId}
+            picklists={sortedBatchPicklists}
+            currentPicklistId={session?.picklistId ?? 0}
             onNavigate={handleBatchNavigate}
             onBatchClick={onBack}
             isNavigating={isNavCreatingSession}
@@ -1745,7 +1799,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                     <button
                       onClick={() => setShowLeaveConfirm(true)}
                       className="p-2 -ml-1 rounded-lg hover:bg-muted transition-colors flex-shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center border border-border"
-                      title={t.packing.backToQueue}
+                      title={t.packing.backToBatches}
                     >
                       <ArrowLeft className="w-5 h-5" />
                     </button>
@@ -1921,6 +1975,18 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {/* PPS plant number banner */}
+        {orderRemarksMap.size > 0 && (
+          <div className="px-3 pt-2 lg:px-4">
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-50 border-2 border-orange-300 text-orange-800">
+              <span className="px-2 py-0.5 text-xs font-bold bg-orange-500 text-white rounded flex-shrink-0">PPS</span>
+              <span className="text-sm font-semibold">
+                {[...orderRemarksMap.values()].join(' · ')}
+              </span>
+            </div>
           </div>
         )}
 
@@ -2223,38 +2289,21 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
           </div>
         )}
 
-        {/* Completed banner — shown when picklist is closed or session completed */}
+        {/* Completed banner + quick actions — shown when picklist is closed or session completed */}
         {(isPicklistTerminal || session.status === 'completed') && (
-          <div className={`px-3 py-2 lg:px-4 border-b ${
-            picklist?.status === 'cancelled'
-              ? 'bg-red-50 border-red-200'
-              : 'bg-emerald-50 border-emerald-200'
-          }`}>
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                {picklist?.status === 'cancelled' ? (
-                  <>
-                    <XCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
-                    <span className="text-sm font-semibold text-red-800">{t.packing.cancelledBanner}</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
-                    <span className="text-sm font-semibold text-emerald-800">{t.packing.completedBanner}</span>
-                  </>
-                )}
-              </div>
-              {batchContext && nextPicklistInBatch && (
-                <button
-                  onClick={() => handleBatchNavigate(nextPicklistInBatch)}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors min-h-[44px] flex-shrink-0"
-                >
-                  {t.packing.nextOrder}
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-          </div>
+          <CompletedView
+            session={session}
+            nextPicklist={nextPicklistInBatch}
+            isBatchCompleted={isBatchCompleted}
+            batchProgress={batchContext ? {
+              completed: batchContext.picklists.filter(pl => pl.status === 'closed').length,
+              total: batchContext.picklists.length,
+            } : undefined}
+            onNextPicklist={() => nextPicklistInBatch && handleBatchNavigate(nextPicklistInBatch)}
+            onBackToBatches={onBack}
+            onExtraShipment={handleExtraShipment}
+            sessionId={sessionId}
+          />
         )}
 
         {/* Feedback toast for completed view */}
@@ -3602,6 +3651,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         boxWeights={boxWeights}
         onNextPicklist={nextPicklistInBatch ? () => handleBatchNavigate(nextPicklistInBatch) : undefined}
         hasNextPicklist={!!nextPicklistInBatch}
+        isBatchCompleted={isBatchCompleted}
+        onBackToBatches={isBatchCompleted && !nextPicklistInBatch ? onBack : undefined}
         defaultWeight={picklist?.weight ?? undefined}
         hasPackingStation={!!packingStationId}
         activeBoxId={shipmentModalBoxId}

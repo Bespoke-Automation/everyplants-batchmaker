@@ -180,6 +180,7 @@ export interface BatchProduct {
   stockLocation: string | null
   amount: number
   amountPicked: number
+  picklistAllocations?: { idpicklist: number; amount: number }[]
 }
 
 // Queue item (batch in the batch queue view)

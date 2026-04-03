@@ -93,6 +93,7 @@ export function useBatchSession(batchSessionId: string | null, previewBatchId?: 
         stockLocation: p.stock_location ?? null,
         amount: totalAmount,
         amountPicked: totalPicked,
+        picklistAllocations: plArray.map(pl => ({ idpicklist: pl.idpicklist, amount: pl.amount ?? 0 })),
       }
     })
 

@@ -37,6 +37,8 @@ interface ShipmentProgressProps {
   boxWeights?: Map<string, number>
   onNextPicklist?: () => void
   hasNextPicklist?: boolean
+  isBatchCompleted?: boolean
+  onBackToBatches?: () => void
   defaultWeight?: number
   hasPackingStation?: boolean
   activeBoxId?: string | null
@@ -87,6 +89,8 @@ export default function ShipmentProgress({
   boxWeights,
   onNextPicklist,
   hasNextPicklist,
+  isBatchCompleted,
+  onBackToBatches,
   defaultWeight,
   hasPackingStation,
   activeBoxId,
@@ -703,6 +707,17 @@ export default function ShipmentProgress({
               </div>
             )}
 
+            {/* Batch completed banner */}
+            {allDone && isBatchCompleted && (
+              <div className="mb-4 flex items-start gap-2 px-3 py-3 bg-emerald-50 border border-emerald-300 rounded-lg text-sm text-emerald-800">
+                <CheckCircle2 className="w-5 h-5 mt-0.5 flex-shrink-0 text-emerald-600" />
+                <div className="flex-1">
+                  <p className="font-bold text-base">{t.completed.batchCompleted}</p>
+                  <p className="mt-0.5 text-emerald-700">{t.completed.batchCompletedDesc}</p>
+                </div>
+              </div>
+            )}
+
             {/* Actions */}
             <div className="flex items-center justify-between pt-4 border-t border-border">
               {/* Left side: label actions + reconfigure */}
@@ -726,7 +741,7 @@ export default function ShipmentProgress({
                 )}
               </div>
 
-              {/* Right side: next or close */}
+              {/* Right side: next, back to batches, or close */}
               <div className="flex items-center gap-2">
                 {allDone && hasNextPicklist && onNextPicklist ? (
                   <>
@@ -734,13 +749,29 @@ export default function ShipmentProgress({
                       onClick={onClose}
                       className="px-4 py-2 min-h-[48px] text-sm rounded-lg hover:bg-muted transition-colors"
                     >
-                      Sluiten
+                      {t.common.close}
                     </button>
                     <button
                       onClick={onNextPicklist}
                       className="flex items-center gap-2 px-5 py-2.5 min-h-[48px] bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors"
                     >
                       {t.shipment.nextOrder}
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </>
+                ) : allDone && isBatchCompleted && onBackToBatches ? (
+                  <>
+                    <button
+                      onClick={onClose}
+                      className="px-4 py-2 min-h-[48px] text-sm rounded-lg hover:bg-muted transition-colors"
+                    >
+                      {t.common.close}
+                    </button>
+                    <button
+                      onClick={onBackToBatches}
+                      className="flex items-center gap-2 px-5 py-2.5 min-h-[48px] bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 transition-colors"
+                    >
+                      {t.completed.backToBatches}
                       <ChevronRight className="w-4 h-4" />
                     </button>
                   </>

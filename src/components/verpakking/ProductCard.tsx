@@ -47,6 +47,8 @@ export interface ProductCardItem {
     productCode: string
     idproduct: number
   }
+  // PPS plant number (from order product remarks)
+  remarks?: string | null
 }
 
 // Lightweight box reference for the dropdown
@@ -139,15 +141,19 @@ export default function ProductCard({
       ref={setNodeRef}
       style={style}
       className={`bg-card border rounded-lg p-3 transition-all ${
-        isHighlighted
-          ? 'border-green-400 bg-green-50 ring-2 ring-green-300 animate-pulse'
-          : isFullyAssigned
-            ? 'border-green-300 bg-green-100/50'
-            : isPartiallyAssigned
-              ? 'border-amber-300 bg-amber-50/30'
-              : isSelected
-                ? 'border-blue-400 bg-blue-50/50 ring-1 ring-blue-300'
-                : 'border-border hover:border-primary/50 hover:shadow-sm'
+        product.remarks
+          ? isFullyAssigned
+            ? 'border-orange-400 bg-orange-50/30 ring-2 ring-orange-300'
+            : 'border-orange-400 bg-orange-50/30 ring-2 ring-orange-300'
+          : isHighlighted
+            ? 'border-green-400 bg-green-50 ring-2 ring-green-300 animate-pulse'
+            : isFullyAssigned
+              ? 'border-green-300 bg-green-100/50'
+              : isPartiallyAssigned
+                ? 'border-amber-300 bg-amber-50/30'
+                : isSelected
+                  ? 'border-blue-400 bg-blue-50/50 ring-1 ring-blue-300'
+                  : 'border-border hover:border-primary/50 hover:shadow-sm'
       } ${isDragging ? 'shadow-lg ring-2 ring-primary' : ''}`}
     >
       <div className="flex items-center gap-3">
@@ -212,6 +218,14 @@ export default function ProductCard({
             {product.productCode}
           </span>
           <p className="text-sm">{product.name}</p>
+          {product.remarks && (
+            <div className="flex items-center gap-1.5 mt-1">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-bold bg-orange-500 text-white rounded">
+                PPS
+              </span>
+              <span className="text-sm font-semibold text-orange-700">{product.remarks}</span>
+            </div>
+          )}
           {product.location && (
             <span className="inline-block px-2 py-0.5 text-[10px] bg-muted rounded mt-1">
               {product.location}

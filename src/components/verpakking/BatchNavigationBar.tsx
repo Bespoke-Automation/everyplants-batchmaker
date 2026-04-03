@@ -7,7 +7,7 @@ import type { BatchPicklistItem } from '@/types/verpakking'
 interface BatchNavigationBarProps {
   batchDisplayId: string
   picklists: BatchPicklistItem[]
-  currentSessionId: string
+  currentPicklistId: number
   onNavigate: (picklist: BatchPicklistItem) => void
   onBatchClick: () => void
   isNavigating?: boolean
@@ -17,23 +17,21 @@ interface BatchNavigationBarProps {
 export default function BatchNavigationBar({
   batchDisplayId,
   picklists,
-  currentSessionId,
+  currentPicklistId,
   onNavigate,
   onBatchClick,
   isNavigating,
   sessionCompleted,
 }: BatchNavigationBarProps) {
   const { t } = useTranslation()
-  const currentIndex = picklists.findIndex((pl) => pl.sessionId === currentSessionId)
+  const currentIndex = picklists.findIndex((pl) => pl.idpicklist === currentPicklistId)
   if (currentIndex === -1) return null
 
   const current = picklists[currentIndex]
-  const completedCount = picklists.filter(
-    (pl) => pl.sessionStatus === 'completed' || pl.status === 'closed'
-  ).length
+  const completedCount = picklists.filter((pl) => pl.status === 'closed').length
 
-  // Auto-skip completed picklists (closed in Picqer or session completed)
-  const isCompleted = (pl: BatchPicklistItem) => pl.sessionStatus === 'completed' || pl.status === 'closed'
+  // Auto-skip completed picklists (closed in Picqer)
+  const isCompleted = (pl: BatchPicklistItem) => pl.status === 'closed'
 
   let prevPicklist: BatchPicklistItem | null = null
   for (let i = currentIndex - 1; i >= 0; i--) {

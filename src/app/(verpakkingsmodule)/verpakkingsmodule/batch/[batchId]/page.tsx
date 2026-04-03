@@ -39,19 +39,49 @@ export default function BatchPage({ params }: { params: Promise<{ batchId: strin
 
     const checkExistingSession = async () => {
       try {
+        // Step 1: Check if worker already has a batch session
         const res = await fetch('/api/verpakking/batch-sessions?active=true')
-        if (!res.ok) {
-          setIsLoadingSession(false)
-          return
+        if (res.ok) {
+          const data = await res.json()
+          const sessions = data.sessions ?? []
+          const existing = sessions.find(
+            (s: { batch_id: number; assigned_to: number; status: string }) =>
+              s.batch_id === batchId && s.assigned_to === selectedWorker.iduser
+          )
+          if (existing) {
+            setBatchSessionId(existing.id)
+            return
+          }
         }
-        const data = await res.json()
-        const sessions = data.sessions ?? []
-        const existing = sessions.find(
-          (s: { batch_id: number; assigned_to: number; status: string }) =>
-            s.batch_id === batchId && s.assigned_to === selectedWorker.iduser
-        )
-        if (existing) {
-          setBatchSessionId(existing.id)
+
+        // Step 2: No session — check if Picqer batch is assigned to this worker → auto-claim
+        try {
+          const picqerRes = await fetch(`/api/picqer/picklist-batches/${batchId}`)
+          if (picqerRes.ok) {
+            const picqerData = await picqerRes.json()
+            const assignedUserId = picqerData.assigned_to?.iduser
+            if (assignedUserId === selectedWorker.iduser) {
+              // Picqer batch is assigned to this worker — auto-create batch session
+              const claimRes = await fetch('/api/verpakking/batch-sessions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  batchId,
+                  batchDisplayId: picqerData.picklist_batchid || String(batchId),
+                  totalPicklists: picqerData.total_picklists ?? 0,
+                  assignedTo: selectedWorker.iduser,
+                  assignedToName: selectedWorker.fullName,
+                }),
+              })
+              if (claimRes.ok) {
+                const claimData = await claimRes.json()
+                setBatchSessionId(claimData.id)
+                return
+              }
+            }
+          }
+        } catch {
+          // Non-critical — fall through to preview mode
         }
       } catch {
         // Ignore — preview mode is fine

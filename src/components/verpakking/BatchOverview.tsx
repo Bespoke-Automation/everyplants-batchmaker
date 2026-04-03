@@ -27,6 +27,8 @@ import { useBatchSession, type BatchComment } from '@/hooks/useBatchSession'
 import { usePicqerUsers, type PicqerUserItem } from '@/hooks/usePicqerUsers'
 import MentionTextarea from '@/components/verpakking/MentionTextarea'
 import { useTranslation } from '@/i18n/LanguageContext'
+import { useLocalPackagings } from '@/hooks/useLocalPackagings'
+import { sortPicklistsByProduct } from '@/lib/verpakking/picklist-sort'
 import type { Worker, BatchPicklistItem, BatchProduct } from '@/types/verpakking'
 
 interface BatchOverviewProps {
@@ -78,6 +80,21 @@ export default function BatchOverview({
   const [claimError, setClaimError] = useState<string | null>(null)
 
   const { users: picqerUsers } = usePicqerUsers()
+  const { packagings: localPackagings } = useLocalPackagings(true)
+
+  // Sort picklists by product popularity (most-ordered product first)
+  const packagingProductcodes = useMemo(() => {
+    const set = new Set<string>()
+    for (const lp of localPackagings) {
+      if (lp.barcode) set.add(lp.barcode)
+    }
+    return set
+  }, [localPackagings])
+
+  const sortedPicklists = useMemo(() => {
+    if (!batchSession) return []
+    return sortPicklistsByProduct(batchSession.products, batchSession.picklists, packagingProductcodes)
+  }, [batchSession, packagingProductcodes])
 
   const [startError, setStartError] = useState<string | null>(null)
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false)
@@ -250,15 +267,16 @@ export default function BatchOverview({
 
   if (!batchSession) return null
 
-  // Count completed from actual Picqer status + session status (not just Supabase counter)
+  // Count completed from Picqer status (source of truth)
   const actualCompleted = batchSession.picklists.filter(
-    (pl) => pl.sessionStatus === 'completed' || pl.status === 'closed'
+    (pl) => pl.status === 'closed'
   ).length
   const progressPercent = batchSession.totalPicklists > 0
     ? Math.round((actualCompleted / batchSession.totalPicklists) * 100)
     : 0
 
-  const isCompleted = batchSession.status === 'completed'
+  const isCompleted = batchSession.picklists.length > 0 &&
+    batchSession.picklists.every((pl) => pl.status === 'closed')
 
   // Use totalProducts from Picqer API (reliable), fallback to computed from products array
   const computedProductAmount = batchSession.products.reduce((sum, p) => sum + (p.amount || 0), 0)
@@ -547,7 +565,7 @@ export default function BatchOverview({
             </div>
           ) : (
             <div className="divide-y divide-border">
-              {batchSession.picklists.map((item) => (
+              {sortedPicklists.map((item) => (
                 <PicklistRow
                   key={item.idpicklist}
                   item={item}
@@ -572,18 +590,23 @@ export default function BatchOverview({
         </div>
 
         {/* Card 2: Products */}
-        {batchSession.products.length > 0 && (
+        {batchSession.products.length > 0 && (() => {
+          const plantProducts = batchSession.products
+            .filter((p) => !packagingProductcodes.has(p.productcode))
+            .sort((a, b) => b.amount - a.amount)
+          return plantProducts.length > 0 && (
           <div className="bg-card border border-border rounded-lg overflow-hidden">
             <div className="px-5 py-4 border-b border-border bg-muted/30">
               <h3 className="font-semibold text-lg">{t.batch.products}</h3>
             </div>
             <div className="divide-y divide-border">
-              {batchSession.products.map((product) => (
+              {plantProducts.map((product) => (
                 <ProductRow key={product.idproduct} product={product} batchId={batchSession.batchId} picklistAliases={batchSession.picklists} />
               ))}
             </div>
           </div>
-        )}
+          )
+        })()}
 
         {/* Card 3: Comments */}
         <CommentsCard
@@ -1009,10 +1032,10 @@ function PicklistRow({
   onPicklistPreview?: (picklistId: number, displayId: string) => void
 }) {
   const { t } = useTranslation()
-  const isItemCompleted = item.sessionStatus === 'completed'
   const isClosed = item.status === 'closed'
-  const isDone = isItemCompleted || (isClosed && !(item.sessionId && item.sessionStatus && item.sessionStatus !== 'completed'))
-  const hasActiveSession = !!(item.sessionId && item.sessionStatus && item.sessionStatus !== 'completed')
+  // Picqer status is source of truth: if closed in Picqer, it's done regardless of session status
+  const isDone = isClosed || item.sessionStatus === 'completed'
+  const hasActiveSession = !isDone && !!(item.sessionId && item.sessionStatus && item.sessionStatus !== 'completed')
 
   // Combine all comment bodies into a single string (like Picqer does)
   const combinedComments = comments.map((c) => c.body).join(' ')
@@ -1127,7 +1150,7 @@ function PicklistRow({
             picklistId={item.idpicklist}
             batchId={batchId}
             onRemove={() => onRemove(item.idpicklist)}
-            isCompleted={isItemCompleted || isClosed}
+            isCompleted={isDone}
             isPreview={isPreview}
           />
         </div>
@@ -1263,6 +1286,7 @@ interface PicklistProductItem {
   name: string
   amount: number
   amount_picked: number
+  image?: string | null
 }
 
 function PicklistProductsModal({
@@ -1344,8 +1368,13 @@ function PicklistProductsModal({
             <div className="divide-y divide-border">
               {products.map((product) => (
                 <div key={product.idproduct} className="flex items-center gap-3 px-5 py-3">
-                  <div className="w-10 h-10 rounded border border-border bg-muted/30 flex items-center justify-center shrink-0">
-                    <Package className="w-4 h-4 text-muted-foreground" />
+                  <div className="w-10 h-10 rounded border border-border bg-muted/30 flex items-center justify-center shrink-0 overflow-hidden">
+                    {product.image ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <Package className="w-4 h-4 text-muted-foreground" />
+                    )}
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-xs text-muted-foreground font-mono">{product.productcode}</p>

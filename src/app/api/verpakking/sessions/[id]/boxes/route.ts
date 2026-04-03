@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { addBox, updateBox, removeBox } from '@/lib/supabase/packingSessions'
+import { supabase } from '@/lib/supabase/client'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,6 +22,24 @@ export async function POST(
         { error: 'Missing required fields: packagingName, boxIndex' },
         { status: 400 }
       )
+    }
+
+    // Idempotency: check if a box with this packaging already exists in the session
+    // Prevents duplicate creation from React StrictMode double-firing or race conditions
+    if (packagingAdviceId) {
+      const { data: existing } = await supabase
+        .schema('batchmaker')
+        .from('packing_session_boxes')
+        .select('id')
+        .eq('session_id', sessionId)
+        .eq('packaging_name', packagingName)
+        .eq('box_index', boxIndex)
+        .limit(1)
+        .maybeSingle()
+
+      if (existing) {
+        return NextResponse.json(existing)
+      }
     }
 
     const box = await addBox(sessionId, {

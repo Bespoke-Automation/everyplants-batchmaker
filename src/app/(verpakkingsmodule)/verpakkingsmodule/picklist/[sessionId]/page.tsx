@@ -9,11 +9,17 @@ import VerpakkingsClient from '@/components/verpakking/VerpakkingsClient'
 import WorkerSelector from '@/components/verpakking/WorkerSelector'
 import type { BatchPicklistItem } from '@/types/verpakking'
 
+interface BatchContextProduct {
+  productcode: string
+  picklistAllocations: { idpicklist: number; amount: number }[]
+}
+
 interface BatchContext {
   batchSessionId: string
   batchDisplayId: string
   picqerBatchId: number | null
   picklists: BatchPicklistItem[]
+  products?: BatchContextProduct[]
 }
 
 type PicqerPicklistRaw = {
@@ -27,6 +33,20 @@ type PicqerPicklistRaw = {
   has_notes: boolean
   has_customer_remarks: boolean
   customer_remarks: string | null
+}
+
+type PicqerBatchProductRaw = {
+  productcode: string
+  picklists?: { idpicklist: number; amount: number }[]
+}
+
+function mapBatchProducts(rawProducts: PicqerBatchProductRaw[]): BatchContextProduct[] {
+  return (rawProducts ?? [])
+    .filter((p) => p.picklists?.length)
+    .map((p) => ({
+      productcode: p.productcode,
+      picklistAllocations: p.picklists!.map((pl) => ({ idpicklist: pl.idpicklist, amount: pl.amount ?? 0 })),
+    }))
 }
 
 function mapPicqerPicklists(
@@ -139,12 +159,14 @@ export default function PicklistPage({ params }: { params: Promise<{ sessionId: 
       if (picqerRes.ok) {
         const picqerData = await picqerRes.json()
         const picklists = mapPicqerPicklists(picqerData.picklists ?? [], packingSessionMap)
+        const products = mapBatchProducts(picqerData.products ?? [])
 
         setBatchContext({
           batchSessionId,
           batchDisplayId: batchData.batch_display_id || String(batchId),
           picqerBatchId: batchId,
           picklists,
+          products,
         })
       } else {
         // Fallback: use minimal data from Supabase only
@@ -217,11 +239,14 @@ export default function PicklistPage({ params }: { params: Promise<{ sessionId: 
 
       if (isCancelled) return
 
+      const products = mapBatchProducts(picqerData.products ?? [])
+
       setBatchContext({
         batchSessionId: '',
         batchDisplayId: picqerData.picklist_batchid || String(batchId),
         picqerBatchId: batchId,
         picklists,
+        products,
       })
     }
 
