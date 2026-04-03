@@ -2,7 +2,8 @@
 
 import { type CSSProperties } from 'react'
 import { type Header, flexRender } from '@tanstack/react-table'
-import { useDraggable, useDroppable } from '@dnd-kit/core'
+import { useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { ArrowUpDown, ArrowUp, ArrowDown, GripVertical } from 'lucide-react'
 import type { BestellijstRow } from '@/app/api/bestellijst/route'
 
@@ -16,27 +17,30 @@ export default function DraggableColumnHeader({ header }: Props) {
   const align = column.columnDef.meta?.align
   const pinned = column.columnDef.meta?.pinned
 
-  const { setNodeRef: setDraggableRef, listeners, attributes, isDragging } = useDraggable({
-    id: `drag-${column.id}`,
-    data: { columnId: column.id },
-    disabled: !!pinned,
-  })
-
-  const { setNodeRef: setDroppableRef, isOver } = useDroppable({
-    id: `drop-${column.id}`,
-    data: { columnId: column.id },
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+    isOver,
+  } = useSortable({
+    id: column.id,
     disabled: !!pinned,
   })
 
   const style: CSSProperties = {
     width: header.getSize(),
-    opacity: isDragging ? 0.4 : 1,
     position: pinned ? 'sticky' : 'relative',
     left: pinned ? 0 : undefined,
-    zIndex: pinned ? 20 : undefined,
+    zIndex: isDragging ? 50 : pinned ? 20 : undefined,
     whiteSpace: 'nowrap',
     userSelect: 'none',
-    background: isOver ? 'var(--color-muted)' : undefined,
+    transform: CSS.Translate.toString(transform),
+    transition: transition || undefined,
+    opacity: isDragging ? 0.5 : 1,
   }
 
   const SortIcon = () => {
@@ -48,19 +52,23 @@ export default function DraggableColumnHeader({ header }: Props) {
 
   return (
     <th
-      ref={setDroppableRef}
+      ref={setNodeRef}
       style={style}
-      className={`px-3 py-2.5 font-medium hover:bg-muted/80 transition-colors ${
+      className={`px-3 py-2.5 font-medium transition-colors ${
         pinned ? 'bg-muted/50' : ''
-      } ${align === 'right' ? 'text-right' : 'text-left'}`}
+      } ${align === 'right' ? 'text-right' : 'text-left'} ${
+        isDragging ? 'bg-primary/10 shadow-md rounded-sm' : ''
+      } ${isOver && !isDragging ? 'bg-accent' : ''} ${
+        !isDragging && !pinned ? 'hover:bg-muted/80' : ''
+      }`}
     >
       <span className="inline-flex items-center gap-1">
         {!pinned && (
           <button
-            ref={setDraggableRef}
+            ref={setActivatorNodeRef}
             {...listeners}
             {...attributes}
-            className="cursor-grab active:cursor-grabbing p-0.5 -ml-1 rounded hover:bg-muted text-muted-foreground/40 hover:text-muted-foreground"
+            className="cursor-grab active:cursor-grabbing p-0.5 -ml-1 rounded hover:bg-muted text-muted-foreground/40 hover:text-muted-foreground transition-colors"
             type="button"
           >
             <GripVertical className="w-3.5 h-3.5" />
@@ -89,6 +97,11 @@ export default function DraggableColumnHeader({ header }: Props) {
           header.column.getIsResizing() ? 'bg-primary' : 'hover:bg-primary/50'
         }`}
       />
+
+      {/* Drop indicator line */}
+      {isOver && !isDragging && (
+        <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-primary rounded-full" />
+      )}
     </th>
   )
 }
