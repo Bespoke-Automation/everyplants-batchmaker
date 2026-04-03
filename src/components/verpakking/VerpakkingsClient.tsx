@@ -3672,7 +3672,10 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
 
       {/* Shipment Progress Modal */}
       <ShipmentProgress
-        boxes={session.boxes.filter((b) => b.status !== 'cancelled')}
+        boxes={shipmentModalBoxId
+          ? session.boxes.filter((b) => b.id === shipmentModalBoxId)
+          : session.boxes.filter((b) => b.status !== 'cancelled')
+        }
         shipProgress={shipProgress}
         isOpen={showShipmentModal}
         onClose={() => { setShowShipmentModal(false); setShipmentModalBoxId(null) }}
