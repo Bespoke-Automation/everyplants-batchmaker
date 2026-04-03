@@ -3227,19 +3227,19 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
               )}
             </SidebarPanel>
 
-            {/* Comments section — also available in completed view */}
-            <div className="border-t border-border">
-              <BottomComments
-                comments={picklistComments}
-                isLoading={isLoadingComments}
-                onAddComment={addPicklistComment}
-                onDeleteComment={deletePicklistComment}
-                onRefresh={fetchComments}
-                users={picqerUsers}
-                currentUserName={workerName}
-              />
-            </div>
           </div>
+        </div>
+        {/* Comments section — full width below columns, also in completed view */}
+        <div className="border-t border-border">
+          <BottomComments
+            comments={picklistComments}
+            isLoading={isLoadingComments}
+            onAddComment={addPicklistComment}
+            onDeleteComment={deletePicklistComment}
+            onRefresh={fetchComments}
+            users={picqerUsers}
+            currentUserName={workerName}
+          />
         </div>
         </>)}
       </div>
