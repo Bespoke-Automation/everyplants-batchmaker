@@ -2,7 +2,7 @@ import { inngest } from '@/inngest/client'
 import { fetchOrder, getTags, addOrderTag } from '@/lib/picqer/client'
 import { previewAdvice } from '@/lib/engine/packagingEngine'
 import { supabase } from '@/lib/supabase/client'
-import { isBoxTagDisabled, PLANTURA_TAG_ID } from '@/lib/verpakking/box-tag-config'
+import { isBoxTagDisabled, EXCLUDED_TAG_IDS } from '@/lib/verpakking/box-tag-config'
 import type { OrderProduct } from '@/lib/engine/packagingEngine'
 
 // ── In-memory caches (best-effort in serverless, helps with warm instances) ──
@@ -152,12 +152,13 @@ export const autoAssignBoxTags = inngest.createFunction(
         return { eligible: false, reason: 'skipped_not_processing' }
       }
 
-      // Check 2: Skip Plantura orders (they get box tags from their own system)
+      // Check 2: Skip orders with excluded tags (Plantura, Floriday — handled separately)
       const orderTagIds = Object.values(order.tags).map(t => t.idtag)
-      if (orderTagIds.includes(PLANTURA_TAG_ID)) {
-        console.log(`[autoAssignBoxTags] Order ${orderId} has Plantura tag — skipping`)
-        await logResult(orderId, 'skipped_plantura')
-        return { eligible: false, reason: 'skipped_plantura' }
+      const matchedExcludedTag = EXCLUDED_TAG_IDS.find(id => orderTagIds.includes(id))
+      if (matchedExcludedTag) {
+        console.log(`[autoAssignBoxTags] Order ${orderId} has excluded tag ${matchedExcludedTag} — skipping`)
+        await logResult(orderId, 'skipped_excluded_tag')
+        return { eligible: false, reason: 'skipped_excluded_tag' }
       }
 
       // Check 3: Skip if order already has a known box tag

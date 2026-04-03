@@ -14,10 +14,13 @@ export function isBoxTagDisabled(): boolean {
 }
 
 /**
- * Plantura tag ID in Picqer — orders with this tag already get box tags
- * from Plantura's own system, so we skip them.
+ * Tag IDs for orders that should be excluded from automatic box tag assignment.
+ * - Plantura (252919): manages their own box tags
+ * - Floriday (235531): orders from Floriday marketplace, handled separately
  */
 export const PLANTURA_TAG_ID = 252919
+export const FLORIDAY_TAG_ID = 235531
+export const EXCLUDED_TAG_IDS = [PLANTURA_TAG_ID, FLORIDAY_TAG_ID] as const
 
 /**
  * Picqer webhook events for order status changes.
