@@ -3,7 +3,7 @@
 import { type CSSProperties } from 'react'
 import { type Header, flexRender } from '@tanstack/react-table'
 import { useSortable } from '@dnd-kit/sortable'
-import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { ArrowUpDown, ArrowUp, ArrowDown, GripVertical } from 'lucide-react'
 import type { BestellijstRow } from '@/app/api/bestellijst/route'
 
 interface Props {
@@ -20,8 +20,9 @@ export default function DraggableColumnHeader({ header }: Props) {
     attributes,
     listeners,
     setNodeRef,
+    setActivatorNodeRef,
     isDragging,
-  } = useSortable({ id: column.id, disabled: pinned })
+  } = useSortable({ id: column.id, disabled: !!pinned })
 
   const style: CSSProperties = {
     width: header.getSize(),
@@ -45,16 +46,29 @@ export default function DraggableColumnHeader({ header }: Props) {
       ref={setNodeRef}
       style={style}
       className={`px-3 py-2.5 font-medium hover:bg-muted/80 transition-colors ${
-        pinned ? 'bg-muted/50 cursor-default' : 'cursor-grab'
+        pinned ? 'bg-muted/50' : ''
       } ${align === 'right' ? 'text-right' : 'text-left'}`}
-      {...(pinned ? {} : { ...attributes, ...listeners })}
+      {...attributes}
     >
-      <span
-        className="inline-flex items-center gap-1 cursor-pointer"
-        onClick={column.getToggleSortingHandler()}
-      >
-        {flexRender(column.columnDef.header, header.getContext())}
-        <SortIcon />
+      <span className="inline-flex items-center gap-1">
+        {/* Drag handle — separate from sort click */}
+        {!pinned && (
+          <button
+            ref={setActivatorNodeRef}
+            {...listeners}
+            className="cursor-grab active:cursor-grabbing p-0.5 -ml-1 rounded hover:bg-muted text-muted-foreground/40 hover:text-muted-foreground"
+            type="button"
+          >
+            <GripVertical className="w-3.5 h-3.5" />
+          </button>
+        )}
+        <span
+          className="inline-flex items-center gap-1 cursor-pointer"
+          onClick={column.getToggleSortingHandler()}
+        >
+          {flexRender(column.columnDef.header, header.getContext())}
+          <SortIcon />
+        </span>
       </span>
 
       {/* Resize handle */}

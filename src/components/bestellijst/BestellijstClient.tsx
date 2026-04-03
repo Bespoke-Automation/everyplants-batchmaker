@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useMemo, useRef } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import {
   useReactTable,
   getCoreRowModel,
@@ -15,12 +15,11 @@ import {
   DndContext,
   DragOverlay,
   closestCenter,
-  KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
   type DragStartEvent,
-  type DragOverEvent,
+  type DragEndEvent,
 } from '@dnd-kit/core'
 import {
   SortableContext,
@@ -195,11 +194,9 @@ export default function BestellijstClient() {
 
   // Dnd state
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null)
-  const columnOrderBeforeDrag = useRef<string[]>([])
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(KeyboardSensor)
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   )
 
   const fetchData = useCallback(async () => {
@@ -265,36 +262,20 @@ export default function BestellijstClient() {
     meta: { picqerBaseUrl },
   })
 
-  function getColumnOrder() {
-    const current = table.getState().columnOrder
-    return current.length > 0
-      ? current
-      : table.getAllLeafColumns().map((c) => c.id)
-  }
-
   function handleDragStart(event: DragStartEvent) {
     setActiveColumnId(event.active.id as string)
-    columnOrderBeforeDrag.current = getColumnOrder()
   }
 
-  function handleDragOver(event: DragOverEvent) {
+  function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
     if (active && over && active.id !== over.id) {
-      // Reorder columns live during drag so header + body stay in sync
-      const currentOrder = getColumnOrder()
+      const currentOrder = table.getState().columnOrder.length > 0
+        ? table.getState().columnOrder
+        : table.getAllLeafColumns().map((c) => c.id)
       const oldIndex = currentOrder.indexOf(active.id as string)
       const newIndex = currentOrder.indexOf(over.id as string)
       setColumnOrder(arrayMove(currentOrder, oldIndex, newIndex))
     }
-  }
-
-  function handleDragEnd() {
-    // handleDragOver already applied the new order — just persist it
-    setActiveColumnId(null)
-  }
-
-  function handleDragCancel() {
-    setColumnOrder(columnOrderBeforeDrag.current)
     setActiveColumnId(null)
   }
 
@@ -423,9 +404,7 @@ export default function BestellijstClient() {
                 sensors={sensors}
                 collisionDetection={closestCenter}
                 onDragStart={handleDragStart}
-                onDragOver={handleDragOver}
                 onDragEnd={handleDragEnd}
-                onDragCancel={handleDragCancel}
               >
                 <table
                   className="w-full text-sm"
