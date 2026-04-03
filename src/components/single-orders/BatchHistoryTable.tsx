@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState, useCallback } from 'react'
-import { RefreshCw, Download, FileText, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, RotateCcw, FileDown, AlertCircle, Clock, Loader2 } from 'lucide-react'
+import { RefreshCw, Download, FileText, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, RotateCcw, FileDown, AlertCircle, Clock, Loader2, ClipboardList } from 'lucide-react'
 import { EnrichedBatch } from '@/lib/supabase/shipmentLabels'
 import { useTableSearch } from '@/hooks/useTableSearch'
 import TableSearch from '@/components/ui/TableSearch'
@@ -14,6 +14,14 @@ interface BatchHistoryTableProps {
   totalPages: number
   totalCount: number
   onPageChange: (page: number) => void
+  selectedBatches: EnrichedBatch[]
+  onSelectionChange: (batches: EnrichedBatch[]) => void
+  onCreatePicklist: () => void
+  isCreatingPicklist: boolean
+}
+
+function hasPicqerBatchId(batch: EnrichedBatch): boolean {
+  return (batch.picqer_batch_ids && batch.picqer_batch_ids.length > 0) || batch.picqer_batch_id !== null
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -73,6 +81,10 @@ export default function BatchHistoryTable({
   totalPages,
   totalCount,
   onPageChange,
+  selectedBatches,
+  onSelectionChange,
+  onCreatePicklist,
+  isCreatingPicklist,
 }: BatchHistoryTableProps) {
   const [expandedBatchId, setExpandedBatchId] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState<Record<string, string>>({})
@@ -89,6 +101,26 @@ export default function BatchHistoryTable({
     batches,
     searchableFields
   )
+
+  const selectableBatches = useMemo(() => searchedBatches.filter(hasPicqerBatchId), [searchedBatches])
+
+  const isSelected = useCallback((batch: EnrichedBatch) => {
+    return selectedBatches.some(b => b.batch_id === batch.batch_id)
+  }, [selectedBatches])
+
+  const toggleBatchSelection = useCallback((batch: EnrichedBatch) => {
+    const selected = selectedBatches.some(b => b.batch_id === batch.batch_id)
+    onSelectionChange(
+      selected
+        ? selectedBatches.filter(b => b.batch_id !== batch.batch_id)
+        : [...selectedBatches, batch]
+    )
+  }, [selectedBatches, onSelectionChange])
+
+  const toggleSelectAll = useCallback(() => {
+    const allSelected = selectableBatches.length > 0 && selectableBatches.every(b => selectedBatches.some(s => s.batch_id === b.batch_id))
+    onSelectionChange(allSelected ? [] : [...selectableBatches])
+  }, [selectableBatches, selectedBatches, onSelectionChange])
 
   const toggleExpanded = useCallback((batchId: string) => {
     setExpandedBatchId(prev => prev === batchId ? null : batchId)
@@ -152,6 +184,25 @@ export default function BatchHistoryTable({
           </span>
         </div>
         <div className="flex items-center gap-2">
+          {selectedBatches.length > 0 && (
+            <>
+              <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-1 rounded">
+                {selectedBatches.length} geselecteerd
+              </span>
+              <button
+                onClick={onCreatePicklist}
+                disabled={isCreatingPicklist}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-md hover:bg-primary/90 transition-colors text-xs font-medium disabled:opacity-50"
+              >
+                {isCreatingPicklist ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <ClipboardList className="w-3.5 h-3.5" />
+                )}
+                Picklijst(en) aanmaken
+              </button>
+            </>
+          )}
           <TableSearch
             value={searchQuery}
             onChange={setSearchQuery}
@@ -190,6 +241,14 @@ export default function BatchHistoryTable({
           <table className="text-sm text-left w-full">
             <thead className="bg-muted text-muted-foreground uppercase text-xs font-bold sticky top-0 z-10">
               <tr>
+                <th className="px-2 py-3 w-[40px] text-center">
+                  <input
+                    type="checkbox"
+                    checked={selectableBatches.length > 0 && selectableBatches.every(b => selectedBatches.some(s => s.batch_id === b.batch_id))}
+                    onChange={toggleSelectAll}
+                    className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                  />
+                </th>
                 <th className="px-4 py-3 w-[32px]"></th>
                 <th className="px-4 py-3 min-w-[100px]">Picqer #</th>
                 <th className="px-4 py-3 min-w-[150px]">Naam</th>
@@ -218,6 +277,9 @@ export default function BatchHistoryTable({
                     retailersDisplay={retailersDisplay}
                     isExpanded={isExpanded}
                     hasIssues={hasIssues}
+                    isSelected={isSelected(batch)}
+                    isSelectable={hasPicqerBatchId(batch)}
+                    onToggleSelection={toggleBatchSelection}
                     actionLoading={actionLoading[batch.batch_id]}
                     onToggleExpanded={toggleExpanded}
                     onRetry={handleRetry}
@@ -262,6 +324,9 @@ interface BatchRowProps {
   retailersDisplay: { text: string; hasMore: boolean }
   isExpanded: boolean
   hasIssues: boolean
+  isSelected: boolean
+  isSelectable: boolean
+  onToggleSelection: (batch: EnrichedBatch) => void
   actionLoading?: string
   onToggleExpanded: (batchId: string) => void
   onRetry: (batchId: string) => void
@@ -274,6 +339,9 @@ function BatchRow({
   retailersDisplay,
   isExpanded,
   hasIssues,
+  isSelected,
+  isSelectable,
+  onToggleSelection,
   actionLoading,
   onToggleExpanded,
   onRetry,
@@ -285,9 +353,18 @@ function BatchRow({
   return (
     <>
       <tr
-        className={`hover:bg-muted/50 transition-colors cursor-pointer ${isExpanded ? 'bg-muted/30' : ''}`}
+        className={`hover:bg-muted/50 transition-colors cursor-pointer ${isExpanded ? 'bg-muted/30' : ''} ${isSelected ? 'bg-primary/5' : ''}`}
         onClick={() => onToggleExpanded(batch.batch_id)}
       >
+        <td className="px-2 py-4 text-center" onClick={e => e.stopPropagation()}>
+          <input
+            type="checkbox"
+            checked={isSelected}
+            disabled={!isSelectable}
+            onChange={() => onToggleSelection(batch)}
+            className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary disabled:opacity-30"
+          />
+        </td>
         <td className="px-2 py-4 text-center">
           {isExpanded ? (
             <ChevronUp className="w-4 h-4 text-muted-foreground" />
@@ -380,7 +457,7 @@ function BatchRow({
       {/* Expanded details row */}
       {isExpanded && (
         <tr className="bg-muted/20">
-          <td colSpan={11} className="px-6 py-4">
+          <td colSpan={12} className="px-6 py-4">
             <div className="space-y-4">
               {/* Batch metadata */}
               <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
