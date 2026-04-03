@@ -66,6 +66,7 @@ export default function BatchCommentsPopup({
 
   // Fetch comments
   const fetchComments = useCallback(async () => {
+    setIsLoading(true)
     try {
       const res = await fetch(`/api/picqer/picklist-batches/${batchId}/comments`)
       if (res.ok) {
@@ -133,7 +134,7 @@ export default function BatchCommentsPopup({
   return createPortal(
     <div
       ref={popupRef}
-      className="fixed z-[100] bg-card border border-border rounded-xl shadow-xl w-[380px] max-h-[480px] flex flex-col"
+      className="fixed z-[100] bg-card border border-border rounded-xl shadow-xl w-[760px] max-h-[90vh] flex flex-col"
       style={{ top: position.top, left: position.left }}
     >
       {/* Header */}
@@ -160,7 +161,7 @@ export default function BatchCommentsPopup({
       </div>
 
       {/* Comments list */}
-      <div className="flex-1 overflow-y-auto max-h-[300px]">
+      <div className="flex-1 overflow-y-auto">
         {isLoading ? (
           <div className="flex items-center gap-2 px-4 py-6 text-sm text-muted-foreground justify-center">
             <Loader2 className="w-4 h-4 animate-spin" />
