@@ -2,7 +2,7 @@
 
 import { type CSSProperties } from 'react'
 import { type Header, flexRender } from '@tanstack/react-table'
-import { useSortable } from '@dnd-kit/sortable'
+import { useDraggable, useDroppable } from '@dnd-kit/core'
 import { ArrowUpDown, ArrowUp, ArrowDown, GripVertical } from 'lucide-react'
 import type { BestellijstRow } from '@/app/api/bestellijst/route'
 
@@ -16,13 +16,17 @@ export default function DraggableColumnHeader({ header }: Props) {
   const align = column.columnDef.meta?.align
   const pinned = column.columnDef.meta?.pinned
 
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    setActivatorNodeRef,
-    isDragging,
-  } = useSortable({ id: column.id, disabled: !!pinned })
+  const { setNodeRef: setDraggableRef, listeners, attributes, isDragging } = useDraggable({
+    id: `drag-${column.id}`,
+    data: { columnId: column.id },
+    disabled: !!pinned,
+  })
+
+  const { setNodeRef: setDroppableRef, isOver } = useDroppable({
+    id: `drop-${column.id}`,
+    data: { columnId: column.id },
+    disabled: !!pinned,
+  })
 
   const style: CSSProperties = {
     width: header.getSize(),
@@ -32,6 +36,7 @@ export default function DraggableColumnHeader({ header }: Props) {
     zIndex: pinned ? 20 : undefined,
     whiteSpace: 'nowrap',
     userSelect: 'none',
+    background: isOver ? 'var(--color-muted)' : undefined,
   }
 
   const SortIcon = () => {
@@ -43,19 +48,18 @@ export default function DraggableColumnHeader({ header }: Props) {
 
   return (
     <th
-      ref={setNodeRef}
+      ref={setDroppableRef}
       style={style}
       className={`px-3 py-2.5 font-medium hover:bg-muted/80 transition-colors ${
         pinned ? 'bg-muted/50' : ''
       } ${align === 'right' ? 'text-right' : 'text-left'}`}
-      {...attributes}
     >
       <span className="inline-flex items-center gap-1">
-        {/* Drag handle — separate from sort click */}
         {!pinned && (
           <button
-            ref={setActivatorNodeRef}
+            ref={setDraggableRef}
             {...listeners}
+            {...attributes}
             className="cursor-grab active:cursor-grabbing p-0.5 -ml-1 rounded hover:bg-muted text-muted-foreground/40 hover:text-muted-foreground"
             type="button"
           >

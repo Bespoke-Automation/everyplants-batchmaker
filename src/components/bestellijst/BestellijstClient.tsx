@@ -14,18 +14,12 @@ import {
 import {
   DndContext,
   DragOverlay,
-  closestCenter,
   PointerSensor,
   useSensor,
   useSensors,
   type DragStartEvent,
   type DragEndEvent,
 } from '@dnd-kit/core'
-import {
-  SortableContext,
-  horizontalListSortingStrategy,
-  arrayMove,
-} from '@dnd-kit/sortable'
 import { RefreshCw, ShoppingCart, Search, X, RotateCcw, GripVertical } from 'lucide-react'
 import type { BestellijstRow } from '@/app/api/bestellijst/route'
 import { useTablePreferences } from '@/hooks/useTablePreferences'
@@ -263,18 +257,28 @@ export default function BestellijstClient() {
   })
 
   function handleDragStart(event: DragStartEvent) {
-    setActiveColumnId(event.active.id as string)
+    const columnId = event.active.data.current?.columnId as string
+    setActiveColumnId(columnId)
   }
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
-    if (active && over && active.id !== over.id) {
-      const currentOrder = table.getState().columnOrder.length > 0
-        ? table.getState().columnOrder
-        : table.getAllLeafColumns().map((c) => c.id)
-      const oldIndex = currentOrder.indexOf(active.id as string)
-      const newIndex = currentOrder.indexOf(over.id as string)
-      setColumnOrder(arrayMove(currentOrder, oldIndex, newIndex))
+    if (active && over) {
+      const fromId = active.data.current?.columnId as string
+      const toId = over.data.current?.columnId as string
+      if (fromId && toId && fromId !== toId) {
+        const currentOrder = table.getState().columnOrder.length > 0
+          ? table.getState().columnOrder
+          : table.getAllLeafColumns().map((c) => c.id)
+        const oldIndex = currentOrder.indexOf(fromId)
+        const newIndex = currentOrder.indexOf(toId)
+        if (oldIndex !== -1 && newIndex !== -1) {
+          const newOrder = [...currentOrder]
+          newOrder.splice(oldIndex, 1)
+          newOrder.splice(newIndex, 0, fromId)
+          setColumnOrder(newOrder)
+        }
+      }
     }
     setActiveColumnId(null)
   }
@@ -402,7 +406,6 @@ export default function BestellijstClient() {
             <div className="border border-border rounded-lg overflow-x-auto">
               <DndContext
                 sensors={sensors}
-                collisionDetection={closestCenter}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
               >
@@ -413,16 +416,9 @@ export default function BestellijstClient() {
                   <thead>
                     {table.getHeaderGroups().map((headerGroup) => (
                       <tr key={headerGroup.id} className="bg-muted/50 text-muted-foreground">
-                        <SortableContext
-                          items={headerGroup.headers
-                            .filter((h) => !h.column.columnDef.meta?.pinned)
-                            .map((h) => h.column.id)}
-                          strategy={horizontalListSortingStrategy}
-                        >
-                          {headerGroup.headers.map((header) => (
-                            <DraggableColumnHeader key={header.id} header={header} />
-                          ))}
-                        </SortableContext>
+                        {headerGroup.headers.map((header) => (
+                          <DraggableColumnHeader key={header.id} header={header} />
+                        ))}
                       </tr>
                     ))}
                   </thead>
