@@ -14,18 +14,21 @@ export default function DraggableColumnHeader({ header }: Props) {
   const { column } = header
   const sorted = column.getIsSorted()
   const align = column.columnDef.meta?.align
+  const pinned = column.columnDef.meta?.pinned
 
   const {
     attributes,
     listeners,
     setNodeRef,
     isDragging,
-  } = useSortable({ id: column.id })
+  } = useSortable({ id: column.id, disabled: pinned })
 
   const style: CSSProperties = {
     width: header.getSize(),
     opacity: isDragging ? 0.4 : 1,
-    position: 'relative',
+    position: pinned ? 'sticky' : 'relative',
+    left: pinned ? 0 : undefined,
+    zIndex: pinned ? 20 : undefined,
     whiteSpace: 'nowrap',
     userSelect: 'none',
   }
@@ -41,11 +44,10 @@ export default function DraggableColumnHeader({ header }: Props) {
     <th
       ref={setNodeRef}
       style={style}
-      className={`px-3 py-2.5 font-medium cursor-grab hover:bg-muted/80 transition-colors ${
-        align === 'right' ? 'text-right' : 'text-left'
-      }`}
-      {...attributes}
-      {...listeners}
+      className={`px-3 py-2.5 font-medium hover:bg-muted/80 transition-colors ${
+        pinned ? 'bg-muted/50 cursor-default' : 'cursor-grab'
+      } ${align === 'right' ? 'text-right' : 'text-left'}`}
+      {...(pinned ? {} : { ...attributes, ...listeners })}
     >
       <span
         className="inline-flex items-center gap-1 cursor-pointer"

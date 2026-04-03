@@ -21,7 +21,6 @@ import {
   useSensors,
   type DragStartEvent,
   type DragOverEvent,
-  type DragEndEvent,
 } from '@dnd-kit/core'
 import {
   SortableContext,
@@ -40,6 +39,7 @@ const columns = [
     header: 'Product',
     size: 250,
     minSize: 120,
+    meta: { pinned: true },
     cell: (info) => {
       const baseUrl = info.table.options.meta?.picqerBaseUrl
       const row = info.row.original
@@ -288,16 +288,8 @@ export default function BestellijstClient() {
     }
   }
 
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event
-    if (active && over && active.id !== over.id) {
-      // Final order already applied by handleDragOver — just persist
-      const currentOrder = getColumnOrder()
-      setColumnOrder(currentOrder)
-    } else {
-      // Cancelled or dropped in place — restore original order
-      setColumnOrder(columnOrderBeforeDrag.current)
-    }
+  function handleDragEnd() {
+    // handleDragOver already applied the new order — just persist it
     setActiveColumnId(null)
   }
 
@@ -443,7 +435,9 @@ export default function BestellijstClient() {
                     {table.getHeaderGroups().map((headerGroup) => (
                       <tr key={headerGroup.id} className="bg-muted/50 text-muted-foreground">
                         <SortableContext
-                          items={headerGroup.headers.map((h) => h.column.id)}
+                          items={headerGroup.headers
+                            .filter((h) => !h.column.columnDef.meta?.pinned)
+                            .map((h) => h.column.id)}
                           strategy={horizontalListSortingStrategy}
                         >
                           {headerGroup.headers.map((header) => (
@@ -459,17 +453,20 @@ export default function BestellijstClient() {
                         key={row.id}
                         className="border-t border-border hover:bg-muted/30 transition-colors"
                       >
-                        {row.getVisibleCells().map((cell) => (
-                          <td
-                            key={cell.id}
-                            className={`px-3 py-2.5 ${
-                              cell.column.columnDef.meta?.align === 'right' ? 'text-right' : ''
-                            }`}
-                            style={{ width: cell.column.getSize() }}
-                          >
-                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                          </td>
-                        ))}
+                        {row.getVisibleCells().map((cell) => {
+                          const isPinned = cell.column.columnDef.meta?.pinned
+                          return (
+                            <td
+                              key={cell.id}
+                              className={`px-3 py-2.5 ${
+                                cell.column.columnDef.meta?.align === 'right' ? 'text-right' : ''
+                              } ${isPinned ? 'sticky left-0 z-10 bg-background' : ''}`}
+                              style={{ width: cell.column.getSize() }}
+                            >
+                              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                            </td>
+                          )
+                        })}
                       </tr>
                     ))}
                   </tbody>
