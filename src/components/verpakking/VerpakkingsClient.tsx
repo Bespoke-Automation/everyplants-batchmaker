@@ -2326,7 +2326,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         {(isPicklistTerminal || session.status === 'completed') ? (
           <>
         {/* Read-only product/box view for completed sessions */}
-        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+        <div className="flex-1 flex flex-col overflow-y-auto">
+        <div className="flex flex-col lg:flex-row flex-1 min-h-0">
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
               {/* Products column (read-only) */}
@@ -3240,6 +3241,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
             users={picqerUsers}
             currentUserName={workerName}
           />
+        </div>
         </div>
         </>)}
       </div>
