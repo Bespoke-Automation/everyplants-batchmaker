@@ -3227,7 +3227,18 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
               )}
             </SidebarPanel>
 
-            {/* Opmerkingen staan full-width in BottomComments onder de kolommen */}
+            {/* Comments section — also available in completed view */}
+            <div className="border-t border-border">
+              <BottomComments
+                comments={picklistComments}
+                isLoading={isLoadingComments}
+                onAddComment={addPicklistComment}
+                onDeleteComment={deletePicklistComment}
+                onRefresh={fetchComments}
+                users={picqerUsers}
+                currentUserName={workerName}
+              />
+            </div>
           </div>
         </div>
         </>)}
