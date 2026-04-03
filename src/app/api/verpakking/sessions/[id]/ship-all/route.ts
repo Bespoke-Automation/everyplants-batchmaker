@@ -80,14 +80,14 @@ export async function POST(
       )
     }
 
-    // Step 1: Get session and closed boxes
+    // Step 1: Get session and unshipped boxes (closed or pending — pending for extra shipments)
     const session = await getPackingSession(sessionId)
     const allBoxes = await getBoxesBySession(sessionId)
-    const closedBoxes = allBoxes.filter(b => b.status === 'closed')
+    const closedBoxes = allBoxes.filter(b => b.status !== 'shipped' && b.status !== 'error')
 
     if (closedBoxes.length === 0) {
       return NextResponse.json(
-        { error: 'Geen afgesloten dozen om te verzenden' },
+        { error: 'Geen dozen om te verzenden' },
         { status: 400 }
       )
     }

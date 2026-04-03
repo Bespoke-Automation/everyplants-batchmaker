@@ -1429,7 +1429,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
       setBoxSearchQuery('')
       setShowAllPackagings(false)
 
-      // Extra zending mode: automatically open shipment dialog after box creation
+      // Extra zending mode: open shipment dialog after box creation
       if (extraShipmentMode) {
         setExtraShipmentMode(false)
         setShowShipmentModal(true)
@@ -3249,18 +3249,6 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
             </SidebarPanel>
 
           </div>
-        </div>
-        {/* Comments section — full width below columns, also in completed view */}
-        <div className="border-t border-border">
-          <BottomComments
-            comments={picklistComments}
-            isLoading={isLoadingComments}
-            onAddComment={addPicklistComment}
-            onDeleteComment={deletePicklistComment}
-            onRefresh={fetchComments}
-            users={picqerUsers}
-            currentUserName={workerName}
-          />
         </div>
         </>)}
       </div>

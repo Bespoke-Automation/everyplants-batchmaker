@@ -405,7 +405,7 @@ export default function ShipmentProgress({
 
             {/* Per-box configuration */}
             <div className="space-y-3">
-              {boxes.filter(b => b.status === 'closed').map((box, i) => (
+              {boxes.filter(b => b.status !== 'shipped').map((box, i) => (
                 <div key={box.id} className="border border-border rounded-lg p-4">
                   <div className="flex items-center justify-between gap-4">
                     <div className="flex-1 min-w-0">
@@ -435,7 +435,7 @@ export default function ShipmentProgress({
             {/* Aantal pakketten */}
             <div className="flex items-center justify-between min-h-[48px]">
               <span className="text-lg text-muted-foreground">{t.shipment.packages}</span>
-              <span className="text-lg font-medium">{boxes.filter(b => b.status === 'closed').length}</span>
+              <span className="text-lg font-medium">{boxes.filter(b => b.status !== 'shipped').length}</span>
             </div>
 
             {/* No packing station warning */}

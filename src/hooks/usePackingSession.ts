@@ -709,7 +709,7 @@ export function usePackingSession(sessionId: string | null) {
       const currentSession = sessionRef.current
       if (!sessionId || !currentSession) return
 
-      const pendingBoxes = currentSession.boxes.filter((b) => b.status === 'closed')
+      const pendingBoxes = currentSession.boxes.filter((b) => b.status !== 'shipped' && b.status !== 'error')
       if (pendingBoxes.length === 0) return
 
       // Set all pending boxes to 'shipping' state
