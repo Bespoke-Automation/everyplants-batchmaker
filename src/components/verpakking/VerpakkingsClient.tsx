@@ -2415,6 +2415,18 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                             {t.packing.cancelShipmentBtn}
                           </button>
                         )}
+                        {!isShipped && !isCancelled && !box.trackingCode && (
+                          <button
+                            onClick={() => {
+                              setShipmentModalBoxId(box.id)
+                              setShowShipmentModal(true)
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-xs text-primary hover:text-primary/80 hover:bg-primary/10 border border-primary/30 rounded transition-colors ml-auto flex-shrink-0"
+                          >
+                            <Truck className="w-3 h-3" />
+                            {t.shipment.createSingle}
+                          </button>
+                        )}
                       </div>
                       {box.products.length > 0 && (
                         <div className="mt-2 space-y-1">
@@ -3660,7 +3672,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
 
       {/* Shipment Progress Modal */}
       <ShipmentProgress
-        boxes={session.boxes.filter((b) => b.status === 'closed' || b.status === 'shipped')}
+        boxes={session.boxes.filter((b) => b.status !== 'cancelled')}
         shipProgress={shipProgress}
         isOpen={showShipmentModal}
         onClose={() => { setShowShipmentModal(false); setShipmentModalBoxId(null) }}
