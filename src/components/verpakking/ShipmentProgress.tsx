@@ -209,7 +209,7 @@ export default function ShipmentProgress({
           return
         }
 
-        // Determine the provider to use
+        // Determine the provider to use — only pre-select if the order has one set in Picqer
         const matchingMethod = defaultShippingProviderId
           ? fetchedMethods.find((m) => m.idshippingprovider_profile === defaultShippingProviderId)
           : null
@@ -217,7 +217,8 @@ export default function ShipmentProgress({
         if (matchingMethod) {
           setSelectedProviderId(matchingMethod.idshippingprovider_profile)
         } else {
-          setSelectedProviderId(fetchedMethods[0].idshippingprovider_profile)
+          // No default on order — don't auto-select, force user to choose
+          setSelectedProviderId(null)
         }
 
         // Always show configure screen first
@@ -389,15 +390,25 @@ export default function ShipmentProgress({
             <div className="flex items-center justify-between gap-4 min-h-[56px]">
               <span className="text-lg text-muted-foreground flex-shrink-0">{t.shipment.shippingProfile}</span>
               <div className="flex items-center gap-3 min-w-0">
-                <span className="text-lg font-medium truncate">
-                  {methods.find(m => m.idshippingprovider_profile === resolvedProviderId)?.name || 'Onbekend'}
-                </span>
-                {methods.length > 1 && (
+                {resolvedProviderId ? (
+                  <span className="text-lg font-medium truncate">
+                    {methods.find(m => m.idshippingprovider_profile === resolvedProviderId)?.name || 'Onbekend'}
+                  </span>
+                ) : (
+                  <span className="text-lg font-medium text-amber-600 truncate">
+                    Geen verzendprofiel geselecteerd
+                  </span>
+                )}
+                {methods.length > 0 && (
                   <button
                     onClick={() => setPhase('select_method')}
-                    className="px-5 py-2.5 text-lg text-primary border border-primary/30 rounded-lg hover:bg-primary/5 transition-colors min-h-[52px]"
+                    className={`px-5 py-2.5 text-lg border rounded-lg hover:bg-primary/5 transition-colors min-h-[52px] ${
+                      !resolvedProviderId
+                        ? 'text-amber-700 border-amber-400 bg-amber-50 hover:bg-amber-100 font-semibold'
+                        : 'text-primary border-primary/30'
+                    }`}
                   >
-                    {t.shipment.change}
+                    {resolvedProviderId ? t.shipment.change : 'Kies verzendprofiel'}
                   </button>
                 )}
               </div>

@@ -2478,12 +2478,14 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                     {order.deliverycountry && (
                       <p className="text-muted-foreground">{order.deliverycountry}</p>
                     )}
-                    {picklist?.idshippingprovider_profile && (
-                      <div className="mt-2 pt-2 border-t border-border">
-                        <p className="text-xs text-muted-foreground">{t.packing.shippingProfile}</p>
+                    <div className="mt-2 pt-2 border-t border-border">
+                      <p className="text-xs text-muted-foreground">{t.packing.shippingProfile}</p>
+                      {picklist?.idshippingprovider_profile ? (
                         <p className="text-xs font-medium">{shippingProfileName ?? `#${picklist.idshippingprovider_profile}`}</p>
-                      </div>
-                    )}
+                      ) : (
+                        <p className="text-xs font-medium text-amber-600">Geen verzendprofiel geselecteerd</p>
+                      )}
+                    </div>
                   </div>
               ) : (
                 <p className="text-xs text-muted-foreground">{t.packing.noDeliveryInfo}</p>
@@ -3063,12 +3065,14 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                       <Pencil className="w-3 h-3" />
                       {t.packing.editAddress}
                     </button>
-                    {picklist?.idshippingprovider_profile && (
-                      <div className="mt-2 pt-2 border-t border-border">
-                        <p className="text-xs text-muted-foreground">{t.packing.shippingProfile}</p>
+                    <div className="mt-2 pt-2 border-t border-border">
+                      <p className="text-xs text-muted-foreground">{t.packing.shippingProfile}</p>
+                      {picklist?.idshippingprovider_profile ? (
                         <p className="text-xs font-medium">{shippingProfileName ?? `#${picklist.idshippingprovider_profile}`}</p>
-                      </div>
-                    )}
+                      ) : (
+                        <p className="text-xs font-medium text-amber-600">Geen verzendprofiel geselecteerd</p>
+                      )}
+                    </div>
                   </div>
               ) : (
                 <p className="text-xs text-muted-foreground">{t.packing.noDeliveryInfo}</p>

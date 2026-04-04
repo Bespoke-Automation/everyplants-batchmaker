@@ -504,18 +504,12 @@ export async function createShipment(
     // Use provided shipping provider, or fall back to picklist's provider
     let profileId = shippingProviderId || picklist.idshippingprovider_profile
 
-    // If still no provider, fetch available methods
+    // If still no provider, require explicit selection — don't auto-pick first method
     if (!profileId) {
-      console.log(`No shipping provider on picklist, fetching available methods...`)
-      const methods = await getPicklistShippingMethods(picklistId)
-      if (methods.length > 0) {
-        profileId = methods[0].idshippingprovider_profile
-        console.log(`Using first available shipping method: ${methods[0].name} (${profileId})`)
-      } else {
-        return {
-          success: false,
-          error: 'No shipping methods available for this picklist',
-        }
+      console.warn(`No shipping provider on picklist ${picklistId} and none provided — cannot create shipment`)
+      return {
+        success: false,
+        error: 'Geen verzendprofiel geselecteerd. Kies eerst een verzendprofiel.',
       }
     }
 
