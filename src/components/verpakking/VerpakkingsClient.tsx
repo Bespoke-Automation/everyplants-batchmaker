@@ -1480,8 +1480,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
   }, [session])
 
   const handleShipAll = useCallback(
-    (providerId: number, weights?: Map<string, number>) => {
-      shipAllBoxes(providerId, weights, packingStationId)
+    (providerId: number, weights?: Map<string, number>, boxIds?: string[]) => {
+      shipAllBoxes(providerId, weights, packingStationId, boxIds)
     },
     [shipAllBoxes, packingStationId]
   )

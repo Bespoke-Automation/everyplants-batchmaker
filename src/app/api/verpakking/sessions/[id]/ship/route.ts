@@ -52,9 +52,65 @@ async function uploadLabelToStorage(
 }
 
 /**
+ * Process label in background: download, upload to storage, auto-print, update box.
+ * Retries up to 2 times on failure. Box stays in 'shipment_created' if all retries fail
+ * so it can be recovered later (shipment exists in Picqer, data is not lost).
+ */
+async function processLabelInBackground(
+  sessionId: string,
+  boxId: string,
+  shipmentId: number,
+  labelPdfUrl: string | undefined,
+  packingStationId: string | undefined,
+) {
+  const MAX_RETRIES = 2
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      // Download label PDF
+      const labelResult = await getShipmentLabel(shipmentId, labelPdfUrl)
+
+      if (!labelResult.success || !labelResult.labelData) {
+        console.error(`[ship-bg] Label download failed (attempt ${attempt + 1}):`, labelResult.error)
+        if (attempt < MAX_RETRIES) continue
+        // Final attempt failed — update box with Picqer URL as fallback
+        await updateBox(boxId, { label_url: labelPdfUrl || null, status: 'label_fetched' })
+        return
+      }
+
+      // Auto-print (non-blocking, fire-and-forget)
+      tryAutoPrint(packingStationId, labelResult.labelData, shipmentId, boxId).catch((err) => {
+        console.error('[ship-bg] Auto-print failed (non-blocking):', err)
+      })
+
+      // Upload to Supabase Storage
+      let labelUrl: string
+      try {
+        labelUrl = await uploadLabelToStorage(sessionId, boxId, labelResult.labelData)
+      } catch {
+        console.error(`[ship-bg] Storage upload failed (attempt ${attempt + 1})`)
+        if (attempt < MAX_RETRIES) continue
+        // Use Picqer URL as fallback
+        labelUrl = labelPdfUrl || ''
+      }
+
+      // Update box with permanent label URL
+      await updateBox(boxId, { label_url: labelUrl || null, status: 'label_fetched' })
+      return
+    } catch (err) {
+      console.error(`[ship-bg] Unexpected error (attempt ${attempt + 1}):`, err)
+      if (attempt >= MAX_RETRIES) {
+        // Final failure — box stays in 'shipment_created', recoverable
+        console.error(`[ship-bg] All retries exhausted for box ${boxId}, shipment ${shipmentId}. Box stays in shipment_created for recovery.`)
+      }
+    }
+  }
+}
+
+/**
  * POST /api/verpakking/sessions/[id]/ship
- * Ships ONE box - creates shipment in Picqer and fetches label
- * Frontend calls this per box sequentially
+ * Ships ONE box — creates shipment in Picqer, responds immediately,
+ * then processes label download/upload/print in background.
  */
 export async function POST(
   request: NextRequest,
@@ -109,7 +165,7 @@ export async function POST(
     // Step 4: Get the session to get picklistId
     const session = await getPackingSession(sessionId)
 
-    // Step 5: Create shipment in Picqer
+    // Step 5: Create shipment in Picqer (the only blocking Picqer call)
     const shipmentResult = await createShipment(
       session.picklist_id,
       shippingProviderId,
@@ -118,70 +174,39 @@ export async function POST(
     )
 
     if (!shipmentResult.success || !shipmentResult.shipment) {
-      // Update box status to error
-      await updateBox(boxId, {
-        status: 'error',
-      })
+      await updateBox(boxId, { status: 'error' })
 
-      // Parse Picqer error for user-friendly message
       let userError = shipmentResult.error || 'Failed to create shipment'
       if (userError.includes('Packaging not found') || userError.includes('error_code":26') || userError.includes('error_code\\":26')) {
         userError = `Verpakking niet gevonden in Picqer (ID: ${packagingId}). Synchroniseer verpakkingen opnieuw via Instellingen.`
       }
 
-      return NextResponse.json(
-        {
-          success: false,
-          error: userError,
-        },
-        { status: 500 }
-      )
+      return NextResponse.json({ success: false, error: userError }, { status: 500 })
     }
 
     const shipment = shipmentResult.shipment
     const shipmentId = shipment.idshipment
     const trackingCode = shipment.trackingcode || undefined
     const trackingUrl = shipment.trackingurl || shipment.tracktraceurl || undefined
-
-    // Step 6: Fetch the shipping label
-    let labelUrl: string | undefined
     const labelPdfUrl = shipment.labelurl_pdf || shipment.labelurl || undefined
 
-    const labelResult = await getShipmentLabel(shipmentId, labelPdfUrl)
-
-    if (labelResult.success && labelResult.labelData) {
-      // Step 7: Upload label to Supabase Storage
-      try {
-        labelUrl = await uploadLabelToStorage(sessionId, boxId, labelResult.labelData)
-      } catch (uploadError) {
-        console.error('[verpakking] Failed to upload label to storage:', uploadError)
-        // Continue without storage URL - we still have the Picqer label URL
-        labelUrl = labelPdfUrl
-      }
-    } else {
-      console.error('[verpakking] Failed to fetch label:', labelResult.error)
-      // Use the Picqer label URL as fallback
-      labelUrl = labelPdfUrl
-    }
-
-    // Step 7b: Auto-print label via PrintNode (non-blocking)
-    if (labelResult.success && labelResult.labelData) {
-      tryAutoPrint(packingStationId, labelResult.labelData, shipmentId, boxId).catch((err) => {
-        console.error('[verpakking] Auto-print failed (non-blocking):', err)
-      })
-    }
-
-    // Step 8: Update box with shipment data
+    // Step 6: Save shipment data immediately (status = shipment_created)
     await updateBox(boxId, {
       shipment_id: shipmentId,
       tracking_code: trackingCode || null,
       tracking_url: trackingUrl || null,
-      label_url: labelUrl || null,
+      label_url: labelPdfUrl || null,
       shipped_at: new Date().toISOString(),
-      status: 'label_fetched',
+      status: 'shipment_created',
     })
 
-    // Step 9: Try to complete session (only if all products are packed)
+    // Step 7: Process label in background (download → storage → print → update to label_fetched)
+    // This does NOT block the response to the frontend
+    processLabelInBackground(sessionId, boxId, shipmentId, labelPdfUrl, packingStationId).catch((err) => {
+      console.error('[verpakking] Background label processing failed:', err)
+    })
+
+    // Step 8: Try to complete session
     let sessionCompleted = false
     let closeWarning: string | undefined
     let outcomeData: { outcome: string; deviationType: string } | undefined
@@ -207,47 +232,29 @@ export async function POST(
       console.error('[verpakking] Error checking session completion:', completionError)
     }
 
-    if (sessionCompleted) {
-      return NextResponse.json({
-        success: true,
-        shipmentId,
-        trackingCode: trackingCode || null,
-        trackingUrl: trackingUrl || null,
-        labelUrl: labelUrl || null,
-        sessionCompleted,
-        ...(closeWarning && { warning: closeWarning }),
-        ...(outcomeData && { outcome: outcomeData.outcome, deviationType: outcomeData.deviationType }),
-      })
-    }
-
     return NextResponse.json({
       success: true,
       shipmentId,
       trackingCode: trackingCode || null,
       trackingUrl: trackingUrl || null,
-      labelUrl: labelUrl || null,
+      labelUrl: labelPdfUrl || null,
       sessionCompleted,
       ...(closeWarning && { warning: closeWarning }),
+      ...(outcomeData && { outcome: outcomeData.outcome, deviationType: outcomeData.deviationType }),
     })
   } catch (error) {
     console.error('[verpakking] Error shipping box:', error)
 
-    // Update box status to error if we have the boxId
     if (boxId) {
       try {
-        await updateBox(boxId, {
-          status: 'error',
-        })
+        await updateBox(boxId, { status: 'error' })
       } catch (updateError) {
         console.error('[verpakking] Failed to update box error status:', updateError)
       }
     }
 
     return NextResponse.json(
-      {
-        success: false,
-        error: error instanceof Error ? error.message : 'Failed to ship box',
-      },
+      { success: false, error: error instanceof Error ? error.message : 'Failed to ship box' },
       { status: 500 }
     )
   }

@@ -492,24 +492,25 @@ export async function createShipment(
   console.log(`Creating shipment for picklist ${picklistId}...`)
 
   try {
-    // Fetch picklist details to get shipping provider and weight
-    const picklist = await fetchPicklist(picklistId)
-    console.log(`Picklist ${picklistId}: status=${picklist.status}, idshippingprovider_profile=${picklist.idshippingprovider_profile}, weight=${picklist.weight}`)
+    let profileId = shippingProviderId
 
-    // Log warning if picklist is not 'new', but proceed — Picqer allows shipments on closed picklists
-    if (picklist.status !== 'new') {
-      console.warn(`Picklist ${picklistId} status is '${picklist.status}' (not 'new'), proceeding with shipment creation anyway`)
-    }
-
-    // Use provided shipping provider, or fall back to picklist's provider
-    let profileId = shippingProviderId || picklist.idshippingprovider_profile
-
-    // If still no provider, require explicit selection — don't auto-pick first method
+    // Only fetch picklist if we don't have a shipping provider yet
     if (!profileId) {
-      console.warn(`No shipping provider on picklist ${picklistId} and none provided — cannot create shipment`)
-      return {
-        success: false,
-        error: 'Geen verzendprofiel geselecteerd. Kies eerst een verzendprofiel.',
+      const picklist = await fetchPicklist(picklistId)
+      console.log(`Picklist ${picklistId}: idshippingprovider_profile=${picklist.idshippingprovider_profile}`)
+      profileId = picklist.idshippingprovider_profile ?? undefined
+
+      if (!profileId) {
+        console.warn(`No shipping provider on picklist ${picklistId} and none provided — cannot create shipment`)
+        return {
+          success: false,
+          error: 'Geen verzendprofiel geselecteerd. Kies eerst een verzendprofiel.',
+        }
+      }
+
+      // Use picklist weight as fallback if no override
+      if (!weightOverride && picklist.weight) {
+        weightOverride = picklist.weight
       }
     }
 
@@ -518,11 +519,9 @@ export async function createShipment(
       idshippingprofile: profileId,
     }
 
-    // Add weight: prefer override, then picklist weight
+    // Add weight if available
     if (weightOverride) {
       body.weight = weightOverride
-    } else if (picklist.weight) {
-      body.weight = picklist.weight
     }
 
     // Add packaging if provided

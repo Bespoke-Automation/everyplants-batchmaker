@@ -80,7 +80,7 @@ export async function tryCompleteSession(
   // Step 1: Check if all boxes are shipped
   const allBoxes = await getBoxesBySession(sessionId)
   const allBoxesShipped = allBoxes.length > 0 && allBoxes.every(
-    b => b.status === 'label_fetched' || b.status === 'shipped'
+    b => b.status === 'label_fetched' || b.status === 'shipped' || b.status === 'shipment_created'
   )
 
   if (!allBoxesShipped) {

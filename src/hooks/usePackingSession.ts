@@ -705,11 +705,16 @@ export function usePackingSession(sessionId: string | null) {
   )
 
   const shipAllBoxes = useCallback(
-    async (shippingProviderId: number, boxWeights?: Map<string, number>, packingStationId?: string) => {
+    async (shippingProviderId: number, boxWeights?: Map<string, number>, packingStationId?: string, boxIds?: string[]) => {
       const currentSession = sessionRef.current
       if (!sessionId || !currentSession) return
 
-      const pendingBoxes = currentSession.boxes.filter((b) => b.status !== 'shipped' && b.status !== 'error')
+      // If boxIds specified, only ship those; otherwise ship all pending
+      let pendingBoxes = currentSession.boxes.filter((b) => b.status !== 'shipped' && b.status !== 'error')
+      if (boxIds && boxIds.length > 0) {
+        const idSet = new Set(boxIds)
+        pendingBoxes = pendingBoxes.filter((b) => idSet.has(b.id))
+      }
       if (pendingBoxes.length === 0) return
 
       // Set all pending boxes to 'shipping' state
@@ -729,6 +734,7 @@ export function usePackingSession(sessionId: string | null) {
             shippingProviderId,
             boxWeights: boxWeights ? Object.fromEntries(boxWeights) : undefined,
             packingStationId: packingStationId ?? null,
+            boxIds: boxIds ?? undefined,
           }),
         })
         const data = await response.json()

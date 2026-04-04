@@ -29,7 +29,7 @@ interface ShipmentProgressProps {
   shipProgress: Map<string, BoxShipmentStatus>
   isOpen: boolean
   onClose: () => void
-  onShipAll: (shippingProviderId: number, boxWeights?: Map<string, number>) => void
+  onShipAll: (shippingProviderId: number, boxWeights?: Map<string, number>, boxIds?: string[]) => void
   onRetryBox: (boxId: string, shippingProviderId: number) => void
   picklistId: number | null
   sessionId: string | null
@@ -262,7 +262,9 @@ export default function ShipmentProgress({
     }
     setPhase('shipping')
     autoStartedRef.current = true
-    onShipAll(resolvedProviderId, weightMap.size > 0 ? weightMap : boxWeights)
+    // Pass box IDs so only the boxes visible in this modal get shipped
+    const boxIds = boxes.map((b) => b.id)
+    onShipAll(resolvedProviderId, weightMap.size > 0 ? weightMap : boxWeights, boxIds)
   }, [resolvedProviderId, onShipAll, boxWeights, boxes, perBoxWeights])
 
   const handleRetryBox = useCallback((boxId: string) => {

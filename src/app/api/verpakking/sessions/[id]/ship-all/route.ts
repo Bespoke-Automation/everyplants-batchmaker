@@ -60,8 +60,59 @@ interface BoxResult {
 }
 
 /**
+ * Process label in background with retries.
+ * Box stays in 'shipment_created' if all retries fail — recoverable.
+ */
+async function processLabelInBackground(
+  sessionId: string,
+  boxId: string,
+  shipmentId: number,
+  labelPdfUrl: string | undefined,
+  packingStationId: string | undefined,
+) {
+  const MAX_RETRIES = 2
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const labelResult = await getShipmentLabel(shipmentId, labelPdfUrl)
+
+      if (!labelResult.success || !labelResult.labelData) {
+        console.error(`[ship-all-bg] Label download failed (attempt ${attempt + 1}):`, labelResult.error)
+        if (attempt < MAX_RETRIES) continue
+        await updateBox(boxId, { label_url: labelPdfUrl || null, status: 'label_fetched' })
+        return
+      }
+
+      // Auto-print (non-blocking)
+      tryAutoPrint(packingStationId, labelResult.labelData, shipmentId, boxId).catch((err) => {
+        console.error('[ship-all-bg] Auto-print failed (non-blocking):', err)
+      })
+
+      // Upload to storage
+      let labelUrl: string
+      try {
+        labelUrl = await uploadLabelToStorage(sessionId, boxId, labelResult.labelData)
+      } catch {
+        console.error(`[ship-all-bg] Storage upload failed (attempt ${attempt + 1})`)
+        if (attempt < MAX_RETRIES) continue
+        labelUrl = labelPdfUrl || ''
+      }
+
+      await updateBox(boxId, { label_url: labelUrl || null, status: 'label_fetched' })
+      return
+    } catch (err) {
+      console.error(`[ship-all-bg] Unexpected error (attempt ${attempt + 1}):`, err)
+      if (attempt >= MAX_RETRIES) {
+        console.error(`[ship-all-bg] All retries exhausted for box ${boxId}, shipment ${shipmentId}. Box stays in shipment_created.`)
+      }
+    }
+  }
+}
+
+/**
  * POST /api/verpakking/sessions/[id]/ship-all
- * Ships ALL closed boxes — each box gets its own individual shipment.
+ * Ships ALL closed boxes — creates shipments in Picqer in parallel,
+ * responds immediately, then processes labels in background.
  */
 export async function POST(
   request: NextRequest,
@@ -71,7 +122,7 @@ export async function POST(
 
   try {
     const body = await request.json()
-    const { shippingProviderId, boxWeights, packingStationId } = body
+    const { shippingProviderId, boxWeights, packingStationId, boxIds } = body
 
     if (!shippingProviderId) {
       return NextResponse.json(
@@ -80,10 +131,16 @@ export async function POST(
       )
     }
 
-    // Step 1: Get session and unshipped boxes (closed or pending — pending for extra shipments)
+    // Step 1: Get session and unshipped boxes
     const session = await getPackingSession(sessionId)
     const allBoxes = await getBoxesBySession(sessionId)
-    const closedBoxes = allBoxes.filter(b => b.status !== 'shipped' && b.status !== 'error')
+    let closedBoxes = allBoxes.filter(b => b.status !== 'shipped' && b.status !== 'error' && b.status !== 'label_fetched' && b.status !== 'shipment_created')
+
+    // If specific boxIds provided, only ship those
+    if (boxIds && Array.isArray(boxIds) && boxIds.length > 0) {
+      const idSet = new Set(boxIds as string[])
+      closedBoxes = closedBoxes.filter(b => idSet.has(b.id))
+    }
 
     if (closedBoxes.length === 0) {
       return NextResponse.json(
@@ -94,12 +151,11 @@ export async function POST(
 
     const weights = boxWeights as Record<string, number> | undefined
     const results: BoxResult[] = []
+    const shipmentMap = new Map<string, number>() // boxId → shipmentId
     let sessionCompleted = false
     let closeWarning: string | undefined
 
-    // Ship each box individually — 1 box = 1 shipment = 1 label
-    // Claims are serial (atomic lock), then shipments run in parallel
-    console.log(`[ship-all] Individual shipping: ${closedBoxes.length} boxes`)
+    console.log(`[ship-all] Shipping ${closedBoxes.length} boxes`)
 
     // Phase 1: Claim all boxes serially (atomic locks)
     const boxesToShip: typeof closedBoxes = []
@@ -122,14 +178,14 @@ export async function POST(
       boxesToShip.push(box)
     }
 
-    // Phase 2: Ship all claimed boxes in parallel
+    // Phase 2: Create shipments in parallel (only Picqer createShipment — no label fetching)
     if (boxesToShip.length > 0) {
       const shipResults = await Promise.allSettled(
         boxesToShip.map(box =>
-          shipSingleBox(
+          createShipmentForBox(
             sessionId, session.picklist_id, box.id,
             shippingProviderId, sanitizePackagingId(box.picqer_packaging_id),
-            weights?.[box.id], packingStationId
+            weights?.[box.id], shipmentMap
           )
         )
       )
@@ -148,7 +204,20 @@ export async function POST(
       }
     }
 
-    // Step 2: Try to complete session (only if all products are packed)
+    // Phase 3: Fire background label processing for all successful shipments
+    // shipmentMap was populated by createShipmentForBox during Phase 2
+    for (const box of results) {
+      const sId = shipmentMap.get(box.boxId)
+      if (box.success && sId) {
+        processLabelInBackground(
+          sessionId, box.boxId, sId, box.labelUrl || undefined, packingStationId
+        ).catch((err) => {
+          console.error(`[ship-all] Background label processing failed for box ${box.boxId}:`, err)
+        })
+      }
+    }
+
+    // Step 3: Try to complete session
     try {
       const completionResult = await tryCompleteSession(sessionId, session.picklist_id)
       sessionCompleted = completionResult.sessionCompleted
@@ -183,16 +252,17 @@ export async function POST(
 }
 
 /**
- * Ship a single box — creates individual shipment in Picqer and fetches label
+ * Create shipment in Picqer and save to DB — NO label fetching.
+ * Returns immediately with Picqer label URL for frontend display.
  */
-async function shipSingleBox(
+async function createShipmentForBox(
   sessionId: string,
   picklistId: number,
   boxId: string,
   shippingProviderId: number,
   packagingId?: number,
   weight?: number,
-  packingStationId?: string,
+  shipmentMap?: Map<string, number>,
 ): Promise<BoxResult> {
   try {
     const shipmentResult = await createShipment(
@@ -216,39 +286,25 @@ async function shipSingleBox(
     const trackingUrl = shipment.trackingurl ?? shipment.tracktraceurl ?? null
     const labelPdfUrl = shipment.labelurl_pdf ?? shipment.labelurl ?? undefined
 
-    // Fetch label
-    let labelUrl: string | undefined
-    const labelResult = await getShipmentLabel(shipment.idshipment, labelPdfUrl)
-    if (labelResult.success && labelResult.labelData) {
-      try {
-        labelUrl = await uploadLabelToStorage(sessionId, boxId, labelResult.labelData)
-      } catch {
-        labelUrl = labelPdfUrl
-      }
-      // Auto-print via PrintNode (non-blocking)
-      tryAutoPrint(packingStationId, labelResult.labelData, shipment.idshipment, boxId).catch((err) => {
-        console.error('[verpakking] Auto-print failed (non-blocking):', err)
-      })
-    } else {
-      labelUrl = labelPdfUrl
-    }
-
-    // Update box
+    // Save shipment data immediately (status = shipment_created, not label_fetched)
     await updateBox(boxId, {
       shipment_id: shipment.idshipment,
       tracking_code: trackingCode,
       tracking_url: trackingUrl,
-      label_url: labelUrl || null,
+      label_url: labelPdfUrl || null,
       shipped_at: new Date().toISOString(),
-      status: 'label_fetched',
+      status: 'shipment_created',
     })
+
+    // Track shipment ID for background label processing
+    shipmentMap?.set(boxId, shipment.idshipment)
 
     return {
       boxId,
       success: true,
       trackingCode,
       trackingUrl,
-      labelUrl: labelUrl || null,
+      labelUrl: labelPdfUrl || null,
     }
   } catch (error) {
     await updateBox(boxId, { status: 'error' }).catch(() => {})
