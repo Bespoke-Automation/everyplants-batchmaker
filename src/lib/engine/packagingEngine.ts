@@ -587,12 +587,13 @@ function evaluateRuleGroup(
   }
 
   // Process EN rules: ALL must be satisfiable
+  // rule.quantity = max CAPACITY of the box for this unit type, not a minimum requirement.
+  // A box that fits 4 plants should also match an order of 2 plants (consume min(available, capacity)).
   for (const rule of enRules) {
     const available = remaining.get(rule.shipping_unit_id) ?? 0
-    // Check if rule or any of its alternatives are satisfiable
-    if (available >= rule.quantity) {
-      // Primary rule matches
-      const consume = rule.quantity
+    if (available > 0) {
+      // Primary rule matches — consume up to capacity
+      const consume = Math.min(available, rule.quantity)
       remaining.set(rule.shipping_unit_id, available - consume)
       covered.set(rule.shipping_unit_id, (covered.get(rule.shipping_unit_id) ?? 0) + consume)
     } else {
@@ -601,15 +602,16 @@ function evaluateRuleGroup(
       let altMatched = false
       for (const alt of alternatives) {
         const altAvailable = remaining.get(alt.shipping_unit_id) ?? 0
-        if (altAvailable >= alt.quantity) {
-          remaining.set(alt.shipping_unit_id, altAvailable - alt.quantity)
-          covered.set(alt.shipping_unit_id, (covered.get(alt.shipping_unit_id) ?? 0) + alt.quantity)
+        if (altAvailable > 0) {
+          const consume = Math.min(altAvailable, alt.quantity)
+          remaining.set(alt.shipping_unit_id, altAvailable - consume)
+          covered.set(alt.shipping_unit_id, (covered.get(alt.shipping_unit_id) ?? 0) + consume)
           altMatched = true
           break
         }
       }
       if (!altMatched) {
-        return null // EN rule not satisfiable
+        return null // EN rule not satisfiable — this unit type is not in the order
       }
     }
   }
@@ -619,8 +621,8 @@ function evaluateRuleGroup(
     let anyOfMatched = false
     for (const rule of ofRules) {
       const available = remaining.get(rule.shipping_unit_id) ?? 0
-      if (available >= rule.quantity) {
-        const consume = rule.quantity
+      if (available > 0) {
+        const consume = Math.min(available, rule.quantity)
         remaining.set(rule.shipping_unit_id, available - consume)
         covered.set(rule.shipping_unit_id, (covered.get(rule.shipping_unit_id) ?? 0) + consume)
         anyOfMatched = true

@@ -298,6 +298,9 @@ const en: Dictionary = {
     boxesAutoCreated: 'boxes auto-created',
     boxesCreated: 'boxes created',
     productsAutoAssigned: 'products auto-assigned',
+    applyAdvice: 'Apply advice',
+    applyingAdvice: 'Applying advice...',
+    adviceDiffers: 'Advice differs from current boxes',
     alreadyFullyAssigned: 'is already fully assigned',
     sessionCompleted: 'Session completed',
 

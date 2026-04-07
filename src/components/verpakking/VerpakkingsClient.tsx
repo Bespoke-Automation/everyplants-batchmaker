@@ -211,6 +211,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     cancelBoxShipment,
     completeSession,
     dismissWarning,
+    refetch: refetchSession,
   } = usePackingSession(sessionId)
 
   // Batch navigation: computed after localPackagings hook below
@@ -638,7 +639,11 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
   }, [picklist, order])
 
   // Auto-pick packaging products and create boxes for them
-  const autoPickCalledRef = useRef(false)
+  // Persisted in sessionStorage so it doesn't re-run after page refresh
+  const autoPickKey = `auto_pick_called_${sessionId}`
+  const autoPickCalledRef = useRef(
+    (() => { try { return sessionStorage.getItem(autoPickKey) === 'true' } catch { return false } })()
+  )
   useEffect(() => {
     if (autoPickCalledRef.current) return
     if (!picklist?.products || picklist.products.length === 0) return
@@ -662,6 +667,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     if (needsProcessing.length === 0 && allAlreadyPicked) return
 
     autoPickCalledRef.current = true
+    try { sessionStorage.setItem(autoPickKey, 'true') } catch { /* ignore */ }
 
     // 1. Auto-pick in Picqer (non-blocking)
     const unpickedCodes = packagingProducts
@@ -707,10 +713,19 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
   // Auto-box state (refs + state declared early, effect runs after suggestedPackagings)
   // Track with BOTH ref (for effect guard) and state (survives React 18 batching)
   // userModifiedBoxes: set to true when user manually removes a box — prevents auto-recreate
+  // adviceApplied is persisted in sessionStorage so it survives page refresh
+  const adviceAppliedKey = `advice_applied_${sessionId}`
   const autoBoxCreatedRef = useRef(false)
-  const [adviceApplied, setAdviceApplied] = useState(false)
+  const [adviceApplied, setAdviceAppliedState] = useState(() => {
+    try { return sessionStorage.getItem(adviceAppliedKey) === 'true' } catch { return false }
+  })
+  const setAdviceApplied = useCallback((val: boolean) => {
+    setAdviceAppliedState(val)
+    try { sessionStorage.setItem(adviceAppliedKey, String(val)) } catch { /* ignore */ }
+  }, [adviceAppliedKey])
   const userModifiedBoxesRef = useRef(false)
   const [autoBoxMessage, setAutoBoxMessage] = useState<string | null>(null)
+  const [isApplyingAdvice, setIsApplyingAdvice] = useState(false)
 
   // Auto-dismiss warnings after 8 seconds
   useEffect(() => {
@@ -1257,6 +1272,102 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     }
     return ids
   }, [session])
+
+  // Detect if engine advice differs from current boxes and session is empty enough to reset
+  const canApplyAdvice = useMemo(() => {
+    if (!session || !engineAdvice) return false
+    if (engineAdvice.confidence === 'no_match') return false
+    if (engineAdvice.advice_boxes.length === 0) return false
+
+    const boxes = session.boxes
+    if (boxes.length === 0) return false // auto-create handles this
+
+    // Check session is "empty": no products assigned to any box
+    const hasAssignedProducts = boxes.some(b => b.products && b.products.length > 0)
+    if (hasAssignedProducts) return false
+
+    // Don't allow if any box is already shipped or closed
+    const hasShippedOrClosed = boxes.some(b => b.status === 'shipped' || b.status === 'closed' || b.status === 'label_fetched')
+    if (hasShippedOrClosed) return false
+
+    // Check boxes differ from advice
+    const currentPkgIds = boxes.map(b => b.picqerPackagingId ?? 0).sort((a, b) => a - b)
+    const advicePkgIds = engineAdvice.advice_boxes.map(b => b.idpackaging).sort((a, b) => a - b)
+
+    if (currentPkgIds.length === advicePkgIds.length &&
+        currentPkgIds.every((id, i) => id === advicePkgIds[i])) {
+      return false // same boxes already
+    }
+
+    return true
+  }, [session, engineAdvice, picklist])
+
+  // Apply engine advice: remove existing boxes, create advised boxes with auto-assign
+  const applyEngineAdvice = useCallback(async () => {
+    if (!session || !engineAdvice || !picklist || isApplyingAdvice) return
+
+    setIsApplyingAdvice(true)
+    try {
+      // 1. Remove all existing boxes via direct API calls (avoid optimistic update race conditions)
+      const boxIdsToRemove = session.boxes.map(b => b.id)
+      for (const boxId of boxIdsToRemove) {
+        await fetch(`/api/verpakking/sessions/${session.id}/boxes`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ boxId }),
+        })
+      }
+
+      // 2. Refetch session to get clean state (all boxes gone)
+      await refetchSession()
+
+      // 3. Create advised boxes with auto-assign
+      const engineBoxes = engineAdvice.advice_boxes
+      for (const adviceBox of engineBoxes) {
+        const pkg = activePackagings.find((p) => p.idpackaging === adviceBox.idpackaging)
+        const boxId = await addBox(
+          adviceBox.packaging_name,
+          adviceBox.idpackaging,
+          pkg?.barcode ?? undefined,
+          {
+            packagingAdviceId: engineAdvice.id,
+            suggestedPackagingId: adviceBox.idpackaging,
+            suggestedPackagingName: adviceBox.packaging_name,
+          }
+        )
+
+        if (boxId && adviceBox.products.length > 0) {
+          const assignableProducts = adviceBox.products.filter(
+            (ap) => !ap.productcode.startsWith('(')
+          )
+          for (const adviceProduct of assignableProducts) {
+            const picklistProduct = picklist.products.find(
+              (pp: PicqerPicklistProduct) => pp.productcode === adviceProduct.productcode
+            )
+            if (picklistProduct) {
+              await assignProduct(boxId, {
+                picqerProductId: picklistProduct.idproduct,
+                productcode: adviceProduct.productcode,
+                productName: picklistProduct.name,
+                amount: adviceProduct.quantity,
+              })
+            }
+          }
+        }
+      }
+
+      setAdviceApplied(true)
+      autoBoxCreatedRef.current = true
+      const label = engineAdvice.confidence === 'full_match' ? t.packing.fullMatch : t.packing.partialMatch
+      setAutoBoxMessage(
+        engineBoxes.length === 1
+          ? `${label}: ${engineBoxes[0].packaging_name} — ${t.packing.productsAutoAssigned}`
+          : `${label}: ${engineBoxes.length} ${t.packing.boxesCreated} — ${t.packing.productsAutoAssigned}`
+      )
+    } finally {
+      setIsApplyingAdvice(false)
+    }
+  }, [session, engineAdvice, picklist, isApplyingAdvice, activePackagings, refetchSession, addBox, assignProduct, t])
 
   // Auto-open shipment modal when all products are in closed boxes
   const autoShipTriggeredRef = useRef(false)
@@ -2007,62 +2118,78 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         {/* Engine packaging advice banner */}
         {engineAdvice && (
           <div className="px-3 pt-2 lg:px-4">
-            <button
-              onClick={() => setAdviceDetailsExpanded(!adviceDetailsExpanded)}
-              className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left transition-colors ${
-                engineAdvice.confidence === 'full_match'
-                  ? 'bg-green-50 border border-green-200 text-green-800 hover:bg-green-100'
-                  : engineAdvice.confidence === 'partial_match'
-                    ? 'bg-blue-50 border border-blue-200 text-blue-800 hover:bg-blue-100'
-                    : 'bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100'
-              }`}
-            >
-              <Sparkles className={`w-4 h-4 flex-shrink-0 ${
-                engineAdvice.confidence === 'full_match' ? 'text-green-600'
-                  : engineAdvice.confidence === 'partial_match' ? 'text-blue-600'
-                    : 'text-amber-600'
-              }`} />
-              <span className="flex-1">
-                {engineAdvice.confidence === 'full_match' && (
-                  <>
-                    Advies: {engineAdvice.advice_boxes.map((b) => b.packaging_name).join(' + ')}
-                    {engineAdvice.cost_data_available !== false && engineAdvice.advice_boxes.some(b => b.total_cost !== undefined) && (
-                      <span className="ml-1 font-medium">
-                        ({formatCost(engineAdvice.advice_boxes.reduce((sum, b) => sum + (b.total_cost ?? 0), 0))} {t.packing.totalCost})
-                      </span>
-                    )}
-                  </>
-                )}
-                {engineAdvice.confidence === 'partial_match' && (
-                  <>
-                    Gedeeltelijk advies: {engineAdvice.advice_boxes.map((b) => b.packaging_name).join(' + ')}
-                    {engineAdvice.cost_data_available !== false && engineAdvice.advice_boxes.some(b => b.total_cost !== undefined) && (
-                      <span className="ml-1 font-medium">
-                        ({formatCost(engineAdvice.advice_boxes.reduce((sum, b) => sum + (b.total_cost ?? 0), 0))} {t.packing.totalCost})
-                      </span>
-                    )}
-                  </>
-                )}
-                {engineAdvice.confidence === 'no_match' && (
-                  <>{t.packing.noAdviceAvailable}</>
-                )}
-                {engineAdvice.unclassified_products.length > 0 && engineAdvice.confidence !== 'no_match' && (
-                  <span className="text-xs ml-1 opacity-75">
-                    ({engineAdvice.unclassified_products.length} {engineAdvice.unclassified_products.length !== 1 ? t.common.products : t.common.product} {t.packing.notClassified})
-                  </span>
-                )}
-                {engineAdvice.weight_exceeded && (
-                  <span className="text-xs ml-1 text-amber-700 font-medium">
-                    — {t.packing.weightExceeded}
-                  </span>
-                )}
-              </span>
-              <ChevronDown className={`w-4 h-4 flex-shrink-0 transition-transform ${adviceDetailsExpanded ? 'rotate-180' : ''} ${
-                engineAdvice.confidence === 'full_match' ? 'text-green-500'
-                  : engineAdvice.confidence === 'partial_match' ? 'text-blue-500'
-                    : 'text-amber-500'
-              }`} />
-            </button>
+            <div className="flex items-stretch gap-2">
+              <button
+                onClick={() => setAdviceDetailsExpanded(!adviceDetailsExpanded)}
+                className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left transition-colors ${
+                  engineAdvice.confidence === 'full_match'
+                    ? 'bg-green-50 border border-green-200 text-green-800 hover:bg-green-100'
+                    : engineAdvice.confidence === 'partial_match'
+                      ? 'bg-blue-50 border border-blue-200 text-blue-800 hover:bg-blue-100'
+                      : 'bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100'
+                }`}
+              >
+                <Sparkles className={`w-4 h-4 flex-shrink-0 ${
+                  engineAdvice.confidence === 'full_match' ? 'text-green-600'
+                    : engineAdvice.confidence === 'partial_match' ? 'text-blue-600'
+                      : 'text-amber-600'
+                }`} />
+                <span className="flex-1">
+                  {engineAdvice.confidence === 'full_match' && (
+                    <>
+                      Advies: {engineAdvice.advice_boxes.map((b) => b.packaging_name).join(' + ')}
+                      {engineAdvice.cost_data_available !== false && engineAdvice.advice_boxes.some(b => b.total_cost !== undefined) && (
+                        <span className="ml-1 font-medium">
+                          ({formatCost(engineAdvice.advice_boxes.reduce((sum, b) => sum + (b.total_cost ?? 0), 0))} {t.packing.totalCost})
+                        </span>
+                      )}
+                    </>
+                  )}
+                  {engineAdvice.confidence === 'partial_match' && (
+                    <>
+                      Gedeeltelijk advies: {engineAdvice.advice_boxes.map((b) => b.packaging_name).join(' + ')}
+                      {engineAdvice.cost_data_available !== false && engineAdvice.advice_boxes.some(b => b.total_cost !== undefined) && (
+                        <span className="ml-1 font-medium">
+                          ({formatCost(engineAdvice.advice_boxes.reduce((sum, b) => sum + (b.total_cost ?? 0), 0))} {t.packing.totalCost})
+                        </span>
+                      )}
+                    </>
+                  )}
+                  {engineAdvice.confidence === 'no_match' && (
+                    <>{t.packing.noAdviceAvailable}</>
+                  )}
+                  {engineAdvice.unclassified_products.length > 0 && engineAdvice.confidence !== 'no_match' && (
+                    <span className="text-xs ml-1 opacity-75">
+                      ({engineAdvice.unclassified_products.length} {engineAdvice.unclassified_products.length !== 1 ? t.common.products : t.common.product} {t.packing.notClassified})
+                    </span>
+                  )}
+                  {engineAdvice.weight_exceeded && (
+                    <span className="text-xs ml-1 text-amber-700 font-medium">
+                      — {t.packing.weightExceeded}
+                    </span>
+                  )}
+                </span>
+                <ChevronDown className={`w-4 h-4 flex-shrink-0 transition-transform ${adviceDetailsExpanded ? 'rotate-180' : ''} ${
+                  engineAdvice.confidence === 'full_match' ? 'text-green-500'
+                    : engineAdvice.confidence === 'partial_match' ? 'text-blue-500'
+                      : 'text-amber-500'
+                }`} />
+              </button>
+              {canApplyAdvice && (
+                <button
+                  onClick={applyEngineAdvice}
+                  disabled={isApplyingAdvice}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 whitespace-nowrap"
+                >
+                  {isApplyingAdvice ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-4 h-4" />
+                  )}
+                  {t.packing.applyAdvice}
+                </button>
+              )}
+            </div>
             {adviceDetailsExpanded && (
               <div className={`mt-1 rounded-lg text-xs overflow-hidden border ${
                 engineAdvice.confidence === 'full_match'

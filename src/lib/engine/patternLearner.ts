@@ -25,8 +25,29 @@ const INVALIDATION_MIN_OBSERVATIONS = 6  // minimum total observations before ov
 // === Fingerprint building ===
 
 /**
- * Build a packing fingerprint from shipping units (WITHOUT country code).
- * Format: "UnitName:qty|UnitName:qty" (alphabetically sorted by unit name)
+ * Build a packing fingerprint from PRODUCTS (not shipping units).
+ * Format: "productcode:qty|productcode:qty" (alphabetically sorted by productcode)
+ *
+ * Product-based fingerprints give exact pattern matching: if you've packed
+ * 8x Chamaerops before, you know exactly which box to use next time.
+ */
+export function buildProductFingerprint(products: OrderProduct[]): string | null {
+  if (products.length === 0) return null
+
+  // Aggregate quantities per productcode (in case of duplicates)
+  const byCode = new Map<string, number>()
+  for (const p of products) {
+    byCode.set(p.productcode, (byCode.get(p.productcode) ?? 0) + p.quantity)
+  }
+
+  return Array.from(byCode.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([code, qty]) => `${code}:${qty}`)
+    .join('|')
+}
+
+/**
+ * @deprecated Use buildProductFingerprint instead. Kept for reference only.
  */
 export function buildPackingFingerprint(shippingUnits: Map<string, ShippingUnitEntry>): string | null {
   if (shippingUnits.size === 0) return null
@@ -129,12 +150,12 @@ export async function recordPackingPatternFromSession(sessionId: string): Promis
     }
   }
 
-  // 5. Classify to get shipping units (same logic as engine)
-  const { shippingUnits } = await classifyOrderProducts(allProducts)
+  // 5. Build product-based fingerprint (no classification needed for fingerprinting)
+  const fingerprint = buildProductFingerprint(allProducts)
+  if (!fingerprint) return  // no products
 
-  // 6. Build fingerprint
-  const fingerprint = buildPackingFingerprint(shippingUnits)
-  if (!fingerprint) return  // no classifiable products
+  // 6. Classify to get shipping units (still needed for box pattern units)
+  const { shippingUnits } = await classifyOrderProducts(allProducts)
 
   // 7. Map boxes to packagings (need packaging details)
   // Fetch packaging info for all boxes
@@ -196,6 +217,11 @@ export async function recordPackingPatternFromSession(sessionId: string): Promis
 
 /**
  * Upsert a packing pattern observation.
+ *
+ * Matches on FINGERPRINT only (not hash). Per fingerprint there should be at most
+ * one non-invalidated pattern. If the box pattern changed (different hash), update
+ * the stored pattern to the latest observation — the most recent packing is the
+ * most relevant. This prevents duplicate records from fragmenting the count.
  */
 async function upsertPattern(
   fingerprint: string,
@@ -204,22 +230,28 @@ async function upsertPattern(
   sessionId: string,
   wasOverride: boolean
 ): Promise<void> {
-  // Check if this exact pattern exists
+  // Find existing non-invalidated pattern for this fingerprint
   const { data: existing } = await supabase
     .schema('batchmaker')
     .from('learned_packing_patterns')
-    .select('id, times_seen, times_overridden, status')
+    .select('id, times_seen, times_overridden, status, box_pattern_hash')
     .eq('fingerprint', fingerprint)
-    .eq('box_pattern_hash', hash)
+    .neq('status', 'invalidated')
+    .order('times_seen', { ascending: false })
+    .limit(1)
     .maybeSingle()
 
   if (existing) {
-    if (existing.status === 'invalidated') return  // don't resurrect invalidated patterns
-
     const updates: Record<string, unknown> = {
       last_session_id: sessionId,
       last_seen_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+    }
+
+    // If box pattern changed, update to the latest pattern
+    if (existing.box_pattern_hash !== hash) {
+      updates.box_pattern = boxPattern
+      updates.box_pattern_hash = hash
     }
 
     if (wasOverride) {

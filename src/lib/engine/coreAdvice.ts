@@ -8,10 +8,10 @@
  *   2. Build packing fingerprint (without country) for learning
  *   3. Build cache fingerprint (with country) for dedup
  *   4. Fetch cost data for country
- *   5. [PLACEHOLDER] Check learned patterns
+ *   5. Check learned patterns (when ENABLE_LEARNED_PATTERNS=true)
  *   6. Single-SKU fast path (with real weight)
- *   7. Box optimizer (solveOptimalBoxes) when capacities + costs available
- *   8. Compartment rules → solveMultiBox fallback
+ *   7. Compartment rules → solveMultiBox (domain knowledge, preferred)
+ *   8. Box optimizer fallback (cost-based, only when rules gave no/partial match)
  *   9. Default packaging per shipping unit fallback
  *  10. Strapped consolidation
  *  11. Weight validation
@@ -25,7 +25,7 @@ import type { CostEntry } from './costProvider'
 import { solveOptimalBoxes } from './boxOptimizer'
 import type { PackagingInfo, ShippingUnitDemand } from './boxOptimizer'
 import { getBoxCapacitiesMap } from '@/lib/supabase/boxCapacities'
-import { findLearnedPattern, validatePatternPackagings, learnedPatternToAdviceBoxes } from './patternLearner'
+import { findLearnedPattern, validatePatternPackagings, learnedPatternToAdviceBoxes, buildProductFingerprint } from './patternLearner'
 
 import {
   classifyOrderProducts,
@@ -53,19 +53,14 @@ import type {
 // Re-export types that callers will need
 export type { OrderProduct, ShippingUnitEntry, AdviceBox, AlternativePackaging }
 
-// ── Fingerprint helpers (thin wrappers around buildFingerprint) ──────────
+// ── Fingerprint helpers ────────────────────────────────────────────────
 
-/** Build fingerprint WITHOUT country — for learned pattern matching */
-function buildPackingFingerprint(shippingUnits: Map<string, ShippingUnitEntry>): string | null {
-  if (shippingUnits.size === 0) return null
-  const units = Array.from(shippingUnits.values())
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .map(u => `${u.name}:${u.quantity}`)
-    .join('|')
-  return units
+/** Build fingerprint from PRODUCTS — for learned pattern matching */
+function buildPackingFingerprintFromProducts(products: OrderProduct[]): string | null {
+  return buildProductFingerprint(products)
 }
 
-/** Build fingerprint WITH country — for dedup/caching */
+/** Build fingerprint WITH country — for dedup/caching (still shipping-unit based) */
 function buildCacheFingerprint(shippingUnits: Map<string, ShippingUnitEntry>, countryCode: string): string | null {
   if (shippingUnits.size === 0) return null
   return buildFingerprint(shippingUnits, countryCode)
@@ -110,9 +105,9 @@ export interface CoreAdviceResult {
  * Unified packaging advice algorithm. Pure logic, no persistence.
  *
  * Priority chain:
- *   1. Classify → 2. Fingerprints → 3. Costs → 4. [Learned patterns] →
- *   5. Single-SKU → 6. Optimizer → 7. Compartment rules → 8. Default fallback →
- *   9. Strapped consolidation → 10. Weight validation → 11. Alternatives
+ *   1. Classify → 2. Fingerprints → 3. Costs → 4. Learned patterns →
+ *   5. Single-SKU → 6. Compartment rules → 7. Optimizer fallback →
+ *   8. Default fallback → 9. Strapped consolidation → 10. Weight validation → 11. Alternatives
  */
 export async function coreAdvice(options: CoreAdviceOptions): Promise<CoreAdviceResult> {
   const { products, countryCode, skipLearnedPatterns } = options
@@ -128,7 +123,7 @@ export async function coreAdvice(options: CoreAdviceOptions): Promise<CoreAdvice
   const { shippingUnits, unclassified, excludedPackaging, excludedNonShippable } = classification
 
   // ── Step 2: Build fingerprints ────────────────────────────────────
-  const packingFingerprint = buildPackingFingerprint(shippingUnits)
+  const packingFingerprint = buildPackingFingerprintFromProducts(products)
   const cacheFingerprint = buildCacheFingerprint(shippingUnits, countryCode)
 
   // ── Step 3: Fetch cost data ───────────────────────────────────────
@@ -206,7 +201,7 @@ export async function coreAdvice(options: CoreAdviceOptions): Promise<CoreAdvice
     }
   }
 
-  // ── Step 5: Single-SKU fast path ──────────────────────────────────
+  // ── Step 5: Single-SKU / single-default fast path ──────────────────
   const excludedSet = new Set([...excludedPackaging, ...excludedNonShippable])
   const realProducts = products.filter(p => !excludedSet.has(p.productcode))
   const uniqueProductIds = new Set(realProducts.map(p => p.picqer_product_id))
@@ -224,18 +219,35 @@ export async function coreAdvice(options: CoreAdviceOptions): Promise<CoreAdvice
     }
   }
 
-  // ── Step 6: Box optimizer (capacities + costs) ────────────────────
-  if (shippingUnits.size > 0) {
-    const optimizerResult = await tryBoxOptimizer(
-      shippingUnits, realProducts, costMap, costDataAvailable, unclassified,
-      classification, packingFingerprint, cacheFingerprint, products, countryCode
-    )
-    if (optimizerResult) {
-      return optimizerResult
+  // Also try fast path when all shipping units share the same default packaging
+  // (e.g., 3 different Ficus varieties all in the same shipping unit → same default box)
+  if (!isSingleSku && shippingUnits.size > 0 && unclassified.length === 0) {
+    const unitIds = Array.from(shippingUnits.keys())
+    const { data: unitDefaults } = await supabase
+      .schema('batchmaker')
+      .from('shipping_units')
+      .select('id, default_packaging_id')
+      .in('id', unitIds)
+      .not('default_packaging_id', 'is', null)
+
+    if (unitDefaults && unitDefaults.length === unitIds.length) {
+      const uniqueDefaults = new Set(unitDefaults.map(d => d.default_packaging_id))
+      if (uniqueDefaults.size === 1) {
+        // All shipping units share the same default packaging — use single-SKU fast path
+        const singleDefaultResult = await trySingleSkuFastPathByPackaging(
+          Array.from(uniqueDefaults)[0]!, realProducts, shippingUnits,
+          costMap, costDataAvailable, classification, packingFingerprint, cacheFingerprint, products
+        )
+        if (singleDefaultResult) {
+          return singleDefaultResult
+        }
+      }
     }
   }
 
-  // ── Step 7: Compartment rules → solveMultiBox ─────────────────────
+  // ── Step 6: Compartment rules → solveMultiBox ─────────────────────
+  // Compartment rules first: they encode domain knowledge about which box fits which products.
+  // The optimizer is only used as fallback for multi-box splits when rules don't find a solution.
   const matches = await matchCompartments(shippingUnits)
   const enrichedMatches = enrichWithCosts(matches, costMap)
   const ranked = rankPackagings(enrichedMatches, costDataAvailable)
@@ -246,6 +258,17 @@ export async function coreAdvice(options: CoreAdviceOptions): Promise<CoreAdvice
   )
 
   let source: AdviceSource = 'compartment_rules'
+
+  // ── Step 7: Box optimizer fallback (when compartment rules gave no/partial match) ──
+  if (confidence !== 'full_match' && shippingUnits.size > 0) {
+    const optimizerResult = await tryBoxOptimizer(
+      shippingUnits, realProducts, costMap, costDataAvailable, unclassified,
+      classification, packingFingerprint, cacheFingerprint, products, countryCode
+    )
+    if (optimizerResult) {
+      return optimizerResult
+    }
+  }
 
   // ── Step 8: Default packaging per shipping unit fallback ──────────
   if (confidence === 'no_match' && shippingUnits.size > 0) {
@@ -419,7 +442,135 @@ async function trySingleSkuFastPath(
   }
 }
 
-// ── Step 6 implementation: Box optimizer ─────────────────────────────────
+// ── Step 5b implementation: Single-default fast path (all shipping units → same packaging) ──
+
+async function trySingleSkuFastPathByPackaging(
+  packagingId: string,
+  realProducts: OrderProduct[],
+  shippingUnits: Map<string, ShippingUnitEntry>,
+  costMap: Map<string, CostEntry[]> | null,
+  costDataAvailable: boolean,
+  classification: ClassificationResult,
+  packingFingerprint: string | null,
+  cacheFingerprint: string | null,
+  allProducts: OrderProduct[]
+): Promise<CoreAdviceResult | null> {
+  const { data: defaultPkg } = await supabase
+    .schema('batchmaker')
+    .from('packagings')
+    .select('id, name, idpackaging, barcode, facturatie_box_sku, active')
+    .eq('id', packagingId)
+    .single()
+
+  if (!defaultPkg || !defaultPkg.active) return null
+
+  console.log(`[coreAdvice] Single-default fast path: all shipping units → ${defaultPkg.name}`)
+
+  // Fetch product attributes in bulk (shipping_unit_id + weight)
+  const productIds = realProducts.map(p => p.picqer_product_id)
+  const { data: productAttrs } = await supabase
+    .schema('batchmaker')
+    .from('product_attributes')
+    .select('picqer_product_id, shipping_unit_id, weight')
+    .in('picqer_product_id', productIds)
+
+  const attrByPid = new Map<number, { shipping_unit_id: string | null; weight: number }>()
+  for (const row of (productAttrs || [])) {
+    attrByPid.set(row.picqer_product_id, {
+      shipping_unit_id: row.shipping_unit_id,
+      weight: row.weight ?? 0,
+    })
+  }
+
+  // Build product list and calculate weight in one pass
+  const boxProducts: { productcode: string; shipping_unit_name: string; quantity: number }[] = []
+  let totalWeight = 0
+
+  for (const product of realProducts) {
+    const attr = attrByPid.get(product.picqer_product_id)
+    if (attr?.shipping_unit_id && shippingUnits.has(attr.shipping_unit_id)) {
+      const unitName = shippingUnits.get(attr.shipping_unit_id)?.name || 'Unknown'
+      boxProducts.push({
+        productcode: product.productcode,
+        shipping_unit_name: unitName,
+        quantity: product.quantity,
+      })
+      totalWeight += attr.weight * product.quantity
+    }
+  }
+
+  let singleBox: AdviceBox = {
+    packaging_id: defaultPkg.id,
+    packaging_name: defaultPkg.name,
+    idpackaging: defaultPkg.idpackaging,
+    products: boxProducts,
+  }
+
+  // Enrich with weight-aware cost data
+  let localCostDataAvailable = costDataAvailable
+  if (costMap && defaultPkg.facturatie_box_sku) {
+    const entries = costMap.get(defaultPkg.facturatie_box_sku)
+    if (entries && entries.length > 0) {
+      const entry = selectCostForWeight(entries, totalWeight)
+      if (entry) {
+        singleBox.box_cost = entry.boxMaterialCost ?? entry.boxCost
+        singleBox.box_pick_cost = entry.boxPickCost
+        singleBox.box_pack_cost = entry.boxPackCost
+        singleBox.transport_cost = entry.transportCost
+        singleBox.total_cost = entry.totalCost
+        singleBox.carrier_code = entry.carrier
+        singleBox.weight_grams = totalWeight
+        singleBox.weight_bracket = entry.weightBracket
+        localCostDataAvailable = true
+      }
+    }
+  }
+
+  let boxes = await applyStrappedConsolidation([singleBox], costMap)
+  const weightExceeded = !(await validateWeightsForBoxes(boxes, allProducts))
+
+  // Build alternatives
+  let alternatives: AlternativePackaging[] = []
+  if (shippingUnits.size > 0 && localCostDataAvailable && costMap) {
+    const matches = await matchCompartments(shippingUnits)
+    const enriched = enrichWithCosts(matches, costMap)
+    const ranked = rankPackagings(enriched, true)
+    alternatives = buildAlternatives(ranked, defaultPkg.id)
+    if (alternatives.length === 0) {
+      alternatives = await buildAlternativesByShippingUnit(shippingUnits, defaultPkg.id, costMap)
+    }
+  }
+
+  const shippingUnitsDetected = Array.from(shippingUnits.values()).map(entry => ({
+    shipping_unit_id: entry.id,
+    shipping_unit_name: entry.name,
+    quantity: entry.quantity,
+  }))
+
+  return {
+    confidence: 'full_match',
+    advice_boxes: boxes,
+    alternatives,
+    shipping_units_detected: shippingUnitsDetected,
+    unclassified_products: [],
+    excluded_packaging: classification.excludedPackaging,
+    excluded_non_shippable: classification.excludedNonShippable,
+    weight_exceeded: weightExceeded,
+    cost_data_available: localCostDataAvailable,
+    packing_fingerprint: packingFingerprint,
+    cache_fingerprint: cacheFingerprint,
+    source: 'single_sku_default',
+    is_single_sku: false,
+    default_packaging: {
+      packaging_id: defaultPkg.id,
+      packaging_name: defaultPkg.name,
+      idpackaging: defaultPkg.idpackaging,
+      facturatie_box_sku: defaultPkg.facturatie_box_sku,
+    },
+  }
+}
+
+// ── Step 7 implementation: Box optimizer (fallback) ─────────────────────
 
 async function tryBoxOptimizer(
   shippingUnits: Map<string, ShippingUnitEntry>,

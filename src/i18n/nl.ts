@@ -313,6 +313,9 @@ const nl = {
     boxesAutoCreated: 'dozen automatisch aangemaakt',
     boxesCreated: 'dozen aangemaakt',
     productsAutoAssigned: 'producten automatisch toegewezen',
+    applyAdvice: 'Advies toepassen',
+    applyingAdvice: 'Advies toepassen...',
+    adviceDiffers: 'Advies wijkt af van huidige dozen',
     alreadyFullyAssigned: 'is al volledig toegewezen',
     sessionCompleted: 'Sessie voltooid',
 

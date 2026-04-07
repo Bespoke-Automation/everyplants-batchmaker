@@ -2,7 +2,7 @@
 
 import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { Package, GripVertical, Check, X, ChevronDown, Box, Minus, Plus, ZoomIn } from 'lucide-react'
+import { Package, GripVertical, Check, X, ChevronDown, Box, Minus, Plus, ZoomIn, MapPin } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { useTranslation } from '@/i18n/LanguageContext'
 
@@ -227,7 +227,8 @@ export default function ProductCard({
             </div>
           )}
           {product.location && (
-            <span className="inline-block px-2 py-0.5 text-[10px] bg-muted rounded mt-1">
+            <span className="inline-flex items-center gap-0.5 px-2 py-0.5 text-[10px] bg-muted rounded mt-1">
+              <MapPin className="w-3 h-3" />
               {product.location}
             </span>
           )}

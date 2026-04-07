@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { MessageSquare, Loader2, User as UserIcon, Send, Check, RotateCcw, ExternalLink } from 'lucide-react'
 import { usePicqerUsers } from '@/hooks/usePicqerUsers'
 import MentionTextarea from '@/components/verpakking/MentionTextarea'
@@ -18,6 +20,7 @@ interface EnrichedComment {
   sourceId: number | null
   sourceReference: string | null
   sourceUrl: string | null
+  internalUrl: string | null
   mentions: Array<{ text: string; name: string; iduser: number }>
   isResolved: boolean
   createdAt: string
@@ -100,6 +103,19 @@ function SourceLink({ comment, t }: { comment: EnrichedComment; t: ReturnType<ty
     : comment.sourceType === 'picklist_batch' ? `${t.comments.batch} #${comment.sourceId}`
     : comment.sourceType || '?')
 
+  // Prefer internal link (stays in our app)
+  if (comment.internalUrl) {
+    return (
+      <Link
+        href={comment.internalUrl}
+        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+      >
+        {label}
+      </Link>
+    )
+  }
+
+  // Fallback to Picqer external link
   if (comment.sourceUrl) {
     return (
       <a
@@ -117,7 +133,9 @@ function SourceLink({ comment, t }: { comment: EnrichedComment; t: ReturnType<ty
 }
 
 export default function CommentsPage() {
-  const [activeTab, setActiveTab] = useState<Tab>('all')
+  const searchParams = useSearchParams()
+  const initialTab = (searchParams.get('tab') as Tab) || 'all'
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab)
   const [comments, setComments] = useState<EnrichedComment[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -151,8 +169,9 @@ export default function CommentsPage() {
   }, [worker])
 
   useEffect(() => {
+    if (!workerLoaded) return
     fetchComments(activeTab)
-  }, [activeTab, fetchComments])
+  }, [activeTab, fetchComments, workerLoaded])
 
   // Reply state
   const [replyTo, setReplyTo] = useState<EnrichedComment | null>(null)
