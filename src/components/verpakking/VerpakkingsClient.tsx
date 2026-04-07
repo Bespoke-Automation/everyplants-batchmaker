@@ -861,7 +861,11 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         for (let i = 0; i < session.boxes.length; i++) {
           const box = session.boxes[i]
           const matches = box.products.filter(
-            (sp) => sp.picqerProductId === pp.idproduct && sp.productcode === pp.productcode
+            (sp) =>
+              sp.picqerProductId === pp.idproduct &&
+              sp.productcode === pp.productcode &&
+              // When idpicklistProduct is set, match exact picklist line; otherwise fall back to idproduct match (legacy data)
+              (sp.idpicklistProduct == null || sp.idpicklistProduct === pp.idpicklist_product)
           )
           for (const match of matches) {
             assignments.push({
@@ -1479,9 +1483,10 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
       const productItem = productItems.find((p) => p.id === productItemId)
       if (!productItem || !picklist) return
 
-      const picklistProduct = picklist.products.find(
-        (pp) => pp.productcode === productItem.productCode && pp.name === productItem.name
-      )
+      // Find the exact picklist line — prefer idpicklist_product for precision
+      const picklistProduct = productItem.idpicklist_product
+        ? picklist.products.find((pp) => pp.idpicklist_product === productItem.idpicklist_product)
+        : picklist.products.find((pp) => pp.idproduct === productItem.idproduct)
       if (!picklistProduct) return
 
       const remaining = productItem.amount - productItem.amountAssigned
@@ -1502,11 +1507,14 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
 
       if (assignAmount <= 0) return
 
-      // Check if this product already exists in the target box — merge instead of creating duplicate
+      // Check if this exact picklist line already exists in the target box — merge instead of creating duplicate
       const existingInBox = session?.boxes
         .find((b) => b.id === boxId)
         ?.products.find(
-          (sp) => sp.picqerProductId === picklistProduct.idproduct && sp.productcode === picklistProduct.productcode
+          (sp) =>
+            sp.picqerProductId === picklistProduct.idproduct &&
+            sp.productcode === picklistProduct.productcode &&
+            (sp.idpicklistProduct == null || sp.idpicklistProduct === picklistProduct.idpicklist_product)
         )
 
       if (existingInBox) {
@@ -1517,6 +1525,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
           productcode: picklistProduct.productcode,
           productName: picklistProduct.name,
           amount: assignAmount,
+          idpicklistProduct: picklistProduct.idpicklist_product,
         })
       }
     },

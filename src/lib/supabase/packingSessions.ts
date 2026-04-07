@@ -53,6 +53,7 @@ export interface PackingSessionProduct {
   product_name: string
   amount: number
   weight_per_unit: number | null
+  idpicklist_product: number | null
   created_at: string
   updated_at: string
 }
@@ -94,6 +95,7 @@ export interface AssignProductInput {
   product_name: string
   amount: number
   weight_per_unit?: number
+  idpicklist_product?: number
 }
 
 export interface BoxShipmentData {
@@ -398,6 +400,7 @@ export async function assignProduct(input: AssignProductInput): Promise<PackingS
       product_name: input.product_name,
       amount: input.amount,
       weight_per_unit: input.weight_per_unit,
+      idpicklist_product: input.idpicklist_product,
     })
     .select()
     .single()

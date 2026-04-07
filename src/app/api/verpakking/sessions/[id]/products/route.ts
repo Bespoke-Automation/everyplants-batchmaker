@@ -16,7 +16,7 @@ export async function POST(
   try {
     const { id: sessionId } = await params
     const body = await request.json()
-    const { boxId, picqerProductId, productcode, productName, amount, weightPerUnit } = body
+    const { boxId, picqerProductId, productcode, productName, amount, weightPerUnit, idpicklistProduct } = body
 
     if (!boxId || !picqerProductId || !productcode || !productName || !amount) {
       return NextResponse.json(
@@ -45,6 +45,7 @@ export async function POST(
       product_name: productName,
       amount,
       weight_per_unit: weightPerUnit,
+      idpicklist_product: idpicklistProduct,
     })
 
     // Mark product as picked in Picqer (non-blocking — don't fail if Picqer is down)

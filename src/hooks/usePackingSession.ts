@@ -14,6 +14,7 @@ interface SessionProduct {
   productName: string
   amount: number
   weightPerUnit: number | null
+  idpicklistProduct: number | null
 }
 
 interface SessionBox {
@@ -56,6 +57,7 @@ function transformProduct(raw: any): SessionProduct {
     productName: raw.product_name ?? raw.productName,
     amount: raw.amount,
     weightPerUnit: raw.weight_per_unit ?? raw.weightPerUnit ?? null,
+    idpicklistProduct: raw.idpicklist_product ?? raw.idpicklistProduct ?? null,
   }
 }
 
@@ -328,6 +330,7 @@ export function usePackingSession(sessionId: string | null) {
         productName: string
         amount: number
         weightPerUnit?: number
+        idpicklistProduct?: number
       }
     ) => {
       if (!sessionId || !sessionRef.current) return
@@ -345,6 +348,7 @@ export function usePackingSession(sessionId: string | null) {
         productName: product.productName,
         amount: product.amount,
         weightPerUnit: product.weightPerUnit ?? null,
+        idpicklistProduct: product.idpicklistProduct ?? null,
       }
       setSession((prev) => {
         if (!prev) return prev
