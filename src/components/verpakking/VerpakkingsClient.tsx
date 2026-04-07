@@ -47,7 +47,14 @@ import {
 } from 'lucide-react'
 import Dialog from '@/components/ui/Dialog'
 import { usePackingSession } from '@/hooks/usePackingSession'
-import { usePackingStation } from '@/hooks/usePackingStation'
+import { usePackingStation, type PrinterStatus } from '@/hooks/usePackingStation'
+
+const STATUS_CONFIG: Record<PrinterStatus, { dot: string; text: string; labelNl: string; labelEn: string }> = {
+  online:       { dot: 'bg-emerald-500', text: 'text-emerald-600', labelNl: 'Online', labelEn: 'Online' },
+  offline:      { dot: 'bg-red-500',     text: 'text-red-500',     labelNl: 'Offline', labelEn: 'Offline' },
+  disconnected: { dot: 'bg-amber-500',   text: 'text-amber-600',   labelNl: 'Niet verbonden', labelEn: 'Not connected' },
+  unknown:      { dot: 'bg-gray-400',    text: 'text-gray-400',    labelNl: 'Onbekend', labelEn: 'Unknown' },
+}
 import { useLocalPackagings } from '@/hooks/useLocalPackagings'
 import { usePicqerUsers } from '@/hooks/usePicqerUsers'
 import { usePicklistComments, type PicklistComment } from '@/hooks/usePicklistComments'
@@ -183,7 +190,7 @@ interface VerpakkingsClientProps {
 
 export default function VerpakkingsClient({ sessionId, onBack, workerName, batchContext }: VerpakkingsClientProps) {
   const router = useRouter()
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
 
   // Session hook
   const {
@@ -3574,6 +3581,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
             </button>
             {stations.map((station) => {
               const isSelected = selectedStation?.id === station.id
+              const status = station.printer_status ?? 'unknown'
+              const cfg = STATUS_CONFIG[status]
               return (
                 <button
                   key={station.id}
@@ -3593,6 +3602,10 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                     {station.printnode_printer_name && (
                       <p className="text-xs text-muted-foreground truncate">{station.printnode_printer_name}</p>
                     )}
+                    <div className={`flex items-center gap-1.5 mt-0.5 text-xs font-medium ${cfg.text}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+                      {language === 'nl' ? cfg.labelNl : cfg.labelEn}
+                    </div>
                   </div>
                   {isSelected && <Check className="w-4 h-4 text-primary flex-shrink-0" />}
                 </button>
