@@ -651,17 +651,13 @@ function evaluateRuleGroup(
 /**
  * Enrich packaging matches with cost data from the cost provider.
  * - Matches whose facturatie_box_sku has cost entries: overwrite box_cost, transport_cost, total_cost
- * - Matches whose facturatie_box_sku has NO cost entry: EXCLUDED (no preferred route for this country)
+ * - Matches whose facturatie_box_sku has NO cost entry: KEPT with original costs (not excluded)
  * - Matches without facturatie_box_sku: kept with original total_cost (can't look up, but not excluded)
  * - If costMap is null (no cost data): return matches unchanged (graceful degradation)
  *
- * For weight bracket selection: uses NULL bracket entry if available, otherwise first entry.
- * Full weight-based selection happens in refineBoxCostWithWeight (Pass 2).
- *
- * Cost formula: total_cost from published_box_costs includes: box_material + pick + pack + transport.
- * box_cost is set to entry.boxCost (= boxMaterialCost) for downstream UI display.
- * transport_cost is set to entry.transportCost for downstream UI display.
- * total_cost is set from entry.totalCost directly (NOT box_cost + transport_cost, which would miss pick/pack).
+ * Previously, matches without cost data were EXCLUDED. This caused valid compartment rule matches
+ * to be silently dropped when cost data was missing for a country, falling through to the optimizer
+ * which could choose a completely different (wrong) packaging.
  */
 export function enrichWithCosts(
   matches: PackagingMatch[],
@@ -669,28 +665,25 @@ export function enrichWithCosts(
 ): PackagingMatch[] {
   if (!costMap) return matches  // No cost data → keep original costs
 
-  return matches
-    .map(match => {
-      if (!match.facturatie_box_sku) return match  // No SKU mapping → can't look up, keep as-is
+  return matches.map(match => {
+    if (!match.facturatie_box_sku) return match  // No SKU mapping → keep as-is
 
-      const entries = costMap.get(match.facturatie_box_sku)
-      if (!entries || entries.length === 0) return null  // No cost data → EXCLUDE
+    const entries = costMap.get(match.facturatie_box_sku)
+    if (!entries || entries.length === 0) return match  // No cost data → keep with original costs
 
-      // Use the entry with NULL weight_bracket if available (DPD/pallet), otherwise first
-      const entry = entries.find(e => e.weightBracket === null) ?? entries[0]
+    // Use the entry with NULL weight_bracket if available (DPD/pallet), otherwise first
+    const entry = entries.find(e => e.weightBracket === null) ?? entries[0]
 
-      return {
-        ...match,
-        box_cost: entry.boxCost,           // = boxMaterialCost (for UI display)
-        box_pick_cost: entry.boxPickCost,   // pick cost per box type
-        box_pack_cost: entry.boxPackCost,   // pack cost per box type
-        transport_cost: entry.transportCost, // = transport_purchase_cost (for UI display)
-        // total_cost from published_box_costs includes: box_material + pick + pack + transport
-        total_cost: entry.totalCost,
-        carrier_code: entry.carrier,        // selected carrier (e.g. "PostNL", "DPD")
-      }
-    })
-    .filter((m): m is PackagingMatch => m !== null)
+    return {
+      ...match,
+      box_cost: entry.boxCost,
+      box_pick_cost: entry.boxPickCost,
+      box_pack_cost: entry.boxPackCost,
+      transport_cost: entry.transportCost,
+      total_cost: entry.totalCost,
+      carrier_code: entry.carrier,
+    }
+  })
 }
 
 // ── 2c. Weight-aware cost refinement ────────────────────────────────────

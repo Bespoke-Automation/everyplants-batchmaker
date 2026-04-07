@@ -266,11 +266,28 @@ export async function coreAdvice(options: CoreAdviceOptions): Promise<CoreAdvice
   const enrichedMatches = enrichWithCosts(matches, costMap)
   const ranked = rankPackagings(enrichedMatches, costDataAvailable)
 
-  reasoning.push(`Compartment rules: ${matches.length} matches gevonden voor ${shippingUnits.size} shipping unit type(s)`)
+  if (matches.length > 0) {
+    // Show all matched packagings with their coverage
+    const matchNames = [...new Set(matches.map(m => m.packaging_name))]
+    reasoning.push(`Compartment rules: ${matches.length} matches in ${matchNames.length} verpakking(en): ${matchNames.join(', ')}`)
+
+    // Show which have full coverage vs leftover
+    const fullCoverage = ranked.filter(m => m.leftover_units.size === 0)
+    const partialCoverage = ranked.filter(m => m.leftover_units.size > 0)
+    if (fullCoverage.length > 0) {
+      reasoning.push(`Volledige dekking: ${[...new Set(fullCoverage.map(m => m.packaging_name))].join(', ')}`)
+    }
+    if (partialCoverage.length > 0) {
+      reasoning.push(`Gedeeltelijke dekking: ${[...new Set(partialCoverage.map(m => `${m.packaging_name} (${m.leftover_units.size} type(s) over)`))].join(', ')}`)
+    }
+  } else {
+    reasoning.push(`Compartment rules: geen matches voor ${shippingUnits.size} shipping unit type(s)`)
+  }
+
   if (ranked.length > 0) {
     const top = ranked[0]
-    const leftover = top.leftover_units.size
-    reasoning.push(`Beste match: ${top.packaging_name} (specificity: ${top.specificity_score}, kosten: €${(top.total_cost / 100).toFixed(2)}, leftover: ${leftover} types)`)
+    const costStr = top.total_cost > 0 ? `€${(top.total_cost / 100).toFixed(2)}` : 'geen kostendata'
+    reasoning.push(`Beste match: ${top.packaging_name} (specificity: ${top.specificity_score}, kosten: ${costStr})`)
   }
 
   let { boxes, confidence } = await solveMultiBox(
