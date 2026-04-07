@@ -32,12 +32,15 @@ export async function GET() {
           const printer = printerMap.get(station.printnode_printer_id)
           if (!printer) {
             station.printer_status = 'unknown' as PrinterStatus
-          } else if (printer.computer?.state !== 'connected') {
-            station.printer_status = 'disconnected' as PrinterStatus
-          } else if (printer.state === 'offline') {
-            station.printer_status = 'offline' as PrinterStatus
           } else {
-            station.printer_status = 'online' as PrinterStatus
+            station.computer_name = printer.computer?.name ?? null
+            if (printer.computer?.state !== 'connected') {
+              station.printer_status = 'disconnected' as PrinterStatus
+            } else if (printer.state === 'offline') {
+              station.printer_status = 'offline' as PrinterStatus
+            } else {
+              station.printer_status = 'online' as PrinterStatus
+            }
           }
         }
       } catch (err) {

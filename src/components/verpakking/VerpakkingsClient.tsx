@@ -3605,6 +3605,9 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                     <div className={`flex items-center gap-1.5 mt-0.5 text-xs font-medium ${cfg.text}`}>
                       <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
                       {language === 'nl' ? cfg.labelNl : cfg.labelEn}
+                      {station.computer_name && (
+                        <span className="text-muted-foreground font-normal">· {station.computer_name}</span>
+                      )}
                     </div>
                   </div>
                   {isSelected && <Check className="w-4 h-4 text-primary flex-shrink-0" />}

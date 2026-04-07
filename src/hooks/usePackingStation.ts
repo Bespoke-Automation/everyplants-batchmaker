@@ -10,6 +10,7 @@ export interface PackingStation {
   printnode_printer_id: number
   printnode_printer_name: string | null
   printer_status?: PrinterStatus
+  computer_name?: string | null
 }
 
 const STORAGE_KEY = 'verpakking_packing_station'

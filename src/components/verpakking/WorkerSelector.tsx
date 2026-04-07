@@ -194,6 +194,9 @@ export default function WorkerSelector({
                     <div className={`flex items-center justify-center gap-1.5 mt-1.5 text-xs font-medium ${cfg.text}`}>
                       <span className={`w-2 h-2 rounded-full ${cfg.dot}`} />
                       {language === 'nl' ? cfg.labelNl : cfg.labelEn}
+                      {station.computer_name && (
+                        <span className="text-muted-foreground font-normal">· {station.computer_name}</span>
+                      )}
                     </div>
                   </div>
                 </button>
