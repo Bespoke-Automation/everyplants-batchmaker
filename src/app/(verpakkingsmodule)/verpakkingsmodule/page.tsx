@@ -25,6 +25,11 @@ export default function VerpakkingsmodulePage() {
   const [devPreviewBatchId, setDevPreviewBatchId] = useState<number | null>(null)
   const [devPreviewPicklist, setDevPreviewPicklist] = useState<{ id: number; displayId: string } | null>(null)
 
+  // Auto-sync packing stations from Picqer on module load (fire-and-forget)
+  useEffect(() => {
+    fetch('/api/verpakking/packing-stations/sync', { method: 'POST' }).catch(() => {})
+  }, [])
+
   // Restore active session from sessionStorage (for backwards compat / mid-session refresh)
   useEffect(() => {
     const activeSessionId = sessionStorage.getItem('verpakking_active_session')

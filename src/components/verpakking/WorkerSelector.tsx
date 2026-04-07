@@ -4,7 +4,14 @@ import { useState, useEffect } from 'react'
 import { User, Loader2, AlertCircle, RefreshCw, Monitor, Printer } from 'lucide-react'
 import { useTranslation } from '@/i18n/LanguageContext'
 import type { Worker } from '@/types/verpakking'
-import type { PackingStation } from '@/hooks/usePackingStation'
+import type { PackingStation, PrinterStatus } from '@/hooks/usePackingStation'
+
+const STATUS_CONFIG: Record<PrinterStatus, { dot: string; bg: string; text: string; labelNl: string; labelEn: string }> = {
+  online:       { dot: 'bg-emerald-500', bg: 'bg-emerald-100 text-emerald-700', text: 'text-emerald-600', labelNl: 'Online', labelEn: 'Online' },
+  offline:      { dot: 'bg-red-500',     bg: 'bg-red-100 text-red-700',         text: 'text-red-500',     labelNl: 'Offline', labelEn: 'Offline' },
+  disconnected: { dot: 'bg-amber-500',   bg: 'bg-amber-100 text-amber-700',     text: 'text-amber-600',   labelNl: 'Niet verbonden', labelEn: 'Not connected' },
+  unknown:      { dot: 'bg-gray-400',    bg: 'bg-gray-100 text-gray-500',        text: 'text-gray-400',    labelNl: 'Onbekend', labelEn: 'Unknown' },
+}
 
 interface WorkerSelectorProps {
   workers: Worker[]
@@ -52,7 +59,7 @@ export default function WorkerSelector({
   onSelectStation,
   onSkipStation,
 }: WorkerSelectorProps) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   // Step state: 'worker' or 'station'
   const [step, setStep] = useState<'worker' | 'station'>('worker')
   const [pendingWorker, setPendingWorker] = useState<Worker | null>(null)
@@ -163,27 +170,35 @@ export default function WorkerSelector({
 
           {/* Station grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
-            {stations!.map((station) => (
-              <button
-                key={station.id}
-                onClick={() => handleStationClick(station)}
-                className="flex flex-col items-center gap-3 p-5 sm:p-6 bg-card border border-border rounded-xl hover:border-primary hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all min-h-[100px] cursor-pointer"
-              >
-                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                  <Printer className="w-7 h-7 sm:w-8 sm:h-8" />
-                </div>
-                <div className="text-center min-w-0 w-full">
-                  <p className="font-semibold text-base sm:text-lg truncate">
-                    {station.name}
-                  </p>
-                  {station.printnode_printer_name && (
-                    <p className="text-xs text-muted-foreground truncate mt-0.5">
-                      {station.printnode_printer_name}
+            {stations!.map((station) => {
+              const status = station.printer_status ?? 'unknown'
+              const cfg = STATUS_CONFIG[status]
+              return (
+                <button
+                  key={station.id}
+                  onClick={() => handleStationClick(station)}
+                  className="flex flex-col items-center gap-3 p-5 sm:p-6 bg-card border border-border rounded-xl hover:border-primary hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all min-h-[100px] cursor-pointer"
+                >
+                  <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full ${cfg.bg} flex items-center justify-center shrink-0`}>
+                    <Printer className="w-7 h-7 sm:w-8 sm:h-8" />
+                  </div>
+                  <div className="text-center min-w-0 w-full">
+                    <p className="font-semibold text-base sm:text-lg truncate">
+                      {station.name}
                     </p>
-                  )}
-                </div>
-              </button>
-            ))}
+                    {station.printnode_printer_name && (
+                      <p className="text-xs text-muted-foreground truncate mt-0.5">
+                        {station.printnode_printer_name}
+                      </p>
+                    )}
+                    <div className={`flex items-center justify-center gap-1.5 mt-1.5 text-xs font-medium ${cfg.text}`}>
+                      <span className={`w-2 h-2 rounded-full ${cfg.dot}`} />
+                      {language === 'nl' ? cfg.labelNl : cfg.labelEn}
+                    </div>
+                  </div>
+                </button>
+              )
+            })}
           </div>
 
           {/* Skip / back buttons */}

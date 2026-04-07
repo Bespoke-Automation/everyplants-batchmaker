@@ -2,11 +2,14 @@
 
 import { useState, useEffect, useCallback } from 'react'
 
+export type PrinterStatus = 'online' | 'offline' | 'disconnected' | 'unknown'
+
 export interface PackingStation {
   id: string
   name: string
   printnode_printer_id: number
   printnode_printer_name: string | null
+  printer_status?: PrinterStatus
 }
 
 const STORAGE_KEY = 'verpakking_packing_station'
