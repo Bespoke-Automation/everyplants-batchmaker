@@ -28,7 +28,9 @@ export async function POST(
     // B4: Validate product belongs to this picklist
     const session = await getPackingSession(sessionId)
     const picklist = await fetchPicklist(session.picklist_id)
-    const picklistProduct = picklist.products.find(p => p.idproduct === picqerProductId)
+    const picklistProduct = idpicklistProduct
+      ? picklist.products.find(p => p.idpicklist_product === idpicklistProduct)
+      : picklist.products.find(p => p.idproduct === picqerProductId)
 
     if (!picklistProduct) {
       return NextResponse.json(
@@ -130,7 +132,7 @@ export async function DELETE(
     const { data: productRecord } = await supabase
       .schema('batchmaker')
       .from('packing_session_products')
-      .select('picqer_product_id, amount, session_id')
+      .select('picqer_product_id, amount, session_id, idpicklist_product')
       .eq('id', productId)
       .single()
 
@@ -143,9 +145,9 @@ export async function DELETE(
     if (productRecord && productRecord.amount > 0) {
       try {
         const picklist = await fetchPicklist(session.picklist_id)
-        const picklistProduct = picklist.products.find(
-          (p) => p.idproduct === productRecord.picqer_product_id
-        )
+        const picklistProduct = productRecord.idpicklist_product
+          ? picklist.products.find((p) => p.idpicklist_product === productRecord.idpicklist_product)
+          : picklist.products.find((p) => p.idproduct === productRecord.picqer_product_id)
 
         if (picklistProduct && picklistProduct.amount_picked > 0) {
           const amountToUnpick = Math.min(productRecord.amount, picklistProduct.amount_picked)
