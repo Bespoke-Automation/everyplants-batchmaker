@@ -101,6 +101,7 @@ export interface PackagingAdviceResult {
   weight_exceeded: boolean
   shipping_unit_fingerprint: string | null
   cost_data_available: boolean
+  reasoning?: string[]
 }
 
 // ── DB row types (internal) ───────────────────────────────────────────────
@@ -1712,7 +1713,7 @@ export async function calculateAdvice(
     if (sameFingerprint) {
       console.log(`[packagingEngine] Returning existing advice ${existing.id} (same fingerprint)`)
 
-      // Recompute alternatives on-the-fly (not persisted) via coreAdvice
+      // Recompute alternatives + reasoning on-the-fly (not persisted) via coreAdvice
       const result = await coreAdvice({ products, countryCode: effectiveCountry })
 
       return {
@@ -1730,6 +1731,7 @@ export async function calculateAdvice(
         weight_exceeded: existing.weight_exceeded ?? false,
         shipping_unit_fingerprint: fingerprint,
         cost_data_available: existing.cost_data_available ?? false,
+        reasoning: result.reasoning,
       }
     }
 
@@ -1761,6 +1763,7 @@ export async function calculateAdvice(
     weight_exceeded: result.weight_exceeded,
     country_code: countryCode ?? null,
     cost_data_available: result.cost_data_available,
+    reasoning: result.reasoning,
   }
 
   const { data: inserted, error: insertError } = await supabase
@@ -1792,6 +1795,7 @@ export async function calculateAdvice(
     weight_exceeded: inserted.weight_exceeded ?? false,
     shipping_unit_fingerprint: inserted.shipping_unit_fingerprint ?? null,
     cost_data_available: inserted.cost_data_available ?? false,
+    reasoning: result.reasoning,
   }
 }
 

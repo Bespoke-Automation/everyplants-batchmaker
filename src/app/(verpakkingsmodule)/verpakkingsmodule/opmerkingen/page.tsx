@@ -1,5 +1,10 @@
+import { Suspense } from 'react'
 import CommentsPage from '@/components/verpakking/CommentsPage'
 
 export default function OpmerkingenPage() {
-  return <CommentsPage />
+  return (
+    <Suspense>
+      <CommentsPage />
+    </Suspense>
+  )
 }

@@ -94,9 +94,10 @@ export interface CoreAdviceResult {
   packing_fingerprint: string | null    // country-free fingerprint for learning
   cache_fingerprint: string | null      // country-included fingerprint for dedup
   source: AdviceSource
-  learned_pattern_id?: string           // placeholder for Phase 2
+  learned_pattern_id?: string
   is_single_sku: boolean
   default_packaging: { packaging_id: string; packaging_name: string; idpackaging: number; facturatie_box_sku: string | null } | null
+  reasoning: string[]
 }
 
 // ── Core Advice Algorithm ───────────────────────────────────────────────
@@ -118,9 +119,17 @@ export async function coreAdvice(options: CoreAdviceOptions): Promise<CoreAdvice
 
   console.log(`[coreAdvice] Starting for ${products.length} products (country: ${countryCode})`)
 
+  const reasoning: string[] = []
+
   // ── Step 1: Classify products into shipping units ─────────────────
   const classification = await classifyOrderProducts(products)
   const { shippingUnits, unclassified, excludedPackaging, excludedNonShippable } = classification
+
+  const unitSummary = Array.from(shippingUnits.values()).map(u => `${u.quantity}x ${u.name}`).join(', ')
+  reasoning.push(`Classificatie: ${unitSummary || 'geen shipping units'}`)
+  if (excludedPackaging.length > 0) reasoning.push(`Verpakkingsproducten uitgesloten: ${excludedPackaging.join(', ')}`)
+  if (excludedNonShippable.length > 0) reasoning.push(`Niet-verzendbare producten uitgesloten: ${excludedNonShippable.join(', ')}`)
+  if (unclassified.length > 0) reasoning.push(`Niet geclassificeerd: ${unclassified.join(', ')}`)
 
   // ── Step 2: Build fingerprints ────────────────────────────────────
   const packingFingerprint = buildPackingFingerprintFromProducts(products)
@@ -133,7 +142,10 @@ export async function coreAdvice(options: CoreAdviceOptions): Promise<CoreAdvice
   if (countryCode) {
     costMap = await getAllCostsForCountry(countryCode)
     costDataAvailable = costMap !== null
-    if (!costDataAvailable) {
+    if (costDataAvailable) {
+      reasoning.push(`Kostendata beschikbaar voor ${countryCode}`)
+    } else {
+      reasoning.push(`Geen kostendata voor ${countryCode} — ranking op specificiteit`)
       console.warn(`[coreAdvice] Cost data unavailable for ${countryCode}, using specificity ranking`)
     }
   }
@@ -145,19 +157,12 @@ export async function coreAdvice(options: CoreAdviceOptions): Promise<CoreAdvice
     if (pattern) {
       const valid = await validatePatternPackagings(pattern)
       if (valid) {
+        reasoning.push(`✅ Geleerd patroon gevonden (${pattern.times_seen}x gezien) → direct toepassen`)
         console.log(`[coreAdvice] Using learned pattern ${pattern.id} (seen ${pattern.times_seen}x)`)
 
-        // Convert pattern to AdviceBox[] — uses shipping unit names as abstract product identifiers.
-        // The packing screen resolves these to real products when creating boxes.
         const patternBoxes = learnedPatternToAdviceBoxes(pattern, costMap)
-
-        // Apply strapped consolidation
         const consolidatedBoxes = await applyStrappedConsolidation(patternBoxes, costMap)
-
-        // Weight validation
         const weightExceeded = !(await validateWeightsForBoxes(consolidatedBoxes, products))
-
-        // Compute alternatives for comparison
         const recommendedPkgId = consolidatedBoxes.length === 1 ? consolidatedBoxes[0].packaging_id : null
         let alternatives = await computeAlternatives(shippingUnits, costMap, costDataAvailable, recommendedPkgId)
 
@@ -183,9 +188,10 @@ export async function coreAdvice(options: CoreAdviceOptions): Promise<CoreAdvice
           learned_pattern_id: pattern.id,
           is_single_sku: false,
           default_packaging: null,
+          reasoning,
         }
       } else {
-        // Pattern has stale packagings — invalidate it
+        reasoning.push(`Geleerd patroon gevonden maar bevat gedeactiveerde verpakking → overgeslagen`)
         await supabase
           .schema('batchmaker')
           .from('learned_packing_patterns')
@@ -198,7 +204,11 @@ export async function coreAdvice(options: CoreAdviceOptions): Promise<CoreAdvice
           .eq('id', pattern.id)
         console.log(`[coreAdvice] Invalidated stale learned pattern ${pattern.id}`)
       }
+    } else {
+      reasoning.push(`Geen geleerd patroon voor deze productcombinatie`)
     }
+  } else if (!learnedPatternsEnabled) {
+    reasoning.push(`Geleerde patronen uitgeschakeld (ENABLE_LEARNED_PATTERNS)`)
   }
 
   // ── Step 5: Single-SKU / single-default fast path ──────────────────
@@ -215,12 +225,17 @@ export async function coreAdvice(options: CoreAdviceOptions): Promise<CoreAdvice
       classification, packingFingerprint, cacheFingerprint, products
     )
     if (singleSkuResult) {
+      reasoning.push(`✅ Single-SKU fast path: 1 product met default verpakking → ${singleSkuResult.advice_boxes[0]?.packaging_name}`)
+      singleSkuResult.reasoning = reasoning
       return singleSkuResult
+    } else {
+      reasoning.push(`Single-SKU: product heeft geen default verpakking → overgeslagen`)
     }
+  } else if (!isSingleSku && realProducts.length > 1) {
+    reasoning.push(`Meerdere producttypes (${uniqueProductIds.size}) → single-SKU niet van toepassing`)
   }
 
   // Also try fast path when all shipping units share the same default packaging
-  // (e.g., 3 different Ficus varieties all in the same shipping unit → same default box)
   if (!isSingleSku && shippingUnits.size > 0 && unclassified.length === 0) {
     const unitIds = Array.from(shippingUnits.keys())
     const { data: unitDefaults } = await supabase
@@ -233,12 +248,13 @@ export async function coreAdvice(options: CoreAdviceOptions): Promise<CoreAdvice
     if (unitDefaults && unitDefaults.length === unitIds.length) {
       const uniqueDefaults = new Set(unitDefaults.map(d => d.default_packaging_id))
       if (uniqueDefaults.size === 1) {
-        // All shipping units share the same default packaging — use single-SKU fast path
         const singleDefaultResult = await trySingleSkuFastPathByPackaging(
           Array.from(uniqueDefaults)[0]!, realProducts, shippingUnits,
           costMap, costDataAvailable, classification, packingFingerprint, cacheFingerprint, products
         )
         if (singleDefaultResult) {
+          reasoning.push(`✅ Alle shipping units delen dezelfde default verpakking → ${singleDefaultResult.advice_boxes[0]?.packaging_name}`)
+          singleDefaultResult.reasoning = reasoning
           return singleDefaultResult
         }
       }
@@ -246,11 +262,16 @@ export async function coreAdvice(options: CoreAdviceOptions): Promise<CoreAdvice
   }
 
   // ── Step 6: Compartment rules → solveMultiBox ─────────────────────
-  // Compartment rules first: they encode domain knowledge about which box fits which products.
-  // The optimizer is only used as fallback for multi-box splits when rules don't find a solution.
   const matches = await matchCompartments(shippingUnits)
   const enrichedMatches = enrichWithCosts(matches, costMap)
   const ranked = rankPackagings(enrichedMatches, costDataAvailable)
+
+  reasoning.push(`Compartment rules: ${matches.length} matches gevonden voor ${shippingUnits.size} shipping unit type(s)`)
+  if (ranked.length > 0) {
+    const top = ranked[0]
+    const leftover = top.leftover_units.size
+    reasoning.push(`Beste match: ${top.packaging_name} (specificity: ${top.specificity_score}, kosten: €${(top.total_cost / 100).toFixed(2)}, leftover: ${leftover} types)`)
+  }
 
   let { boxes, confidence } = await solveMultiBox(
     shippingUnits, unclassified, ranked, products,
@@ -259,19 +280,33 @@ export async function coreAdvice(options: CoreAdviceOptions): Promise<CoreAdvice
 
   let source: AdviceSource = 'compartment_rules'
 
+  if (confidence === 'full_match') {
+    reasoning.push(`✅ Compartment rules: ${boxes.length} ${boxes.length === 1 ? 'doos' : 'dozen'} → ${boxes.map(b => b.packaging_name).join(' + ')}`)
+  } else if (confidence === 'partial_match') {
+    reasoning.push(`Compartment rules: gedeeltelijke match (${boxes.length} dozen), probeer optimizer als fallback`)
+  } else {
+    reasoning.push(`Compartment rules: geen match gevonden`)
+  }
+
   // ── Step 7: Box optimizer fallback (when compartment rules gave no/partial match) ──
   if (confidence !== 'full_match' && shippingUnits.size > 0) {
+    reasoning.push(`Optimizer fallback: proberen kosten-optimale oplossing te vinden...`)
     const optimizerResult = await tryBoxOptimizer(
       shippingUnits, realProducts, costMap, costDataAvailable, unclassified,
       classification, packingFingerprint, cacheFingerprint, products, countryCode
     )
     if (optimizerResult) {
+      reasoning.push(`✅ Optimizer: ${optimizerResult.advice_boxes.length} dozen → ${optimizerResult.advice_boxes.map(b => b.packaging_name).join(' + ')}`)
+      optimizerResult.reasoning = reasoning
       return optimizerResult
+    } else {
+      reasoning.push(`Optimizer: geen oplossing gevonden (geen capaciteiten of kostendata)`)
     }
   }
 
   // ── Step 8: Default packaging per shipping unit fallback ──────────
   if (confidence === 'no_match' && shippingUnits.size > 0) {
+    reasoning.push(`Default fallback: proberen default verpakking per shipping unit...`)
     const fallbackResult = await tryDefaultPackagingFallback(
       shippingUnits, products, costMap, unclassified
     )
@@ -279,14 +314,24 @@ export async function coreAdvice(options: CoreAdviceOptions): Promise<CoreAdvice
       boxes = fallbackResult.boxes
       confidence = fallbackResult.confidence
       source = 'default_fallback'
+      reasoning.push(`✅ Default fallback: ${boxes.length} dozen → ${boxes.map(b => b.packaging_name).join(' + ')}`)
+    } else {
+      reasoning.push(`Default fallback: geen default verpakkingen geconfigureerd`)
     }
   }
 
   // ── Step 9: Strapped consolidation ────────────────────────────────
+  const preStrappedCount = boxes.length
   boxes = await applyStrappedConsolidation(boxes, costMap)
+  if (boxes.length < preStrappedCount) {
+    reasoning.push(`Strapped consolidatie: ${preStrappedCount} → ${boxes.length} dozen (${preStrappedCount - boxes.length} samengevoegd)`)
+  }
 
   // ── Step 10: Weight validation ────────────────────────────────────
   const weightExceeded = !(await validateWeightsForBoxes(boxes, products))
+  if (weightExceeded) {
+    reasoning.push(`⚠️ Gewicht overschreden voor één of meer dozen`)
+  }
 
   // ── Step 11: Build alternatives ───────────────────────────────────
   const recommendedPkgId = boxes.length === 1 ? boxes[0].packaging_id : null
@@ -318,6 +363,7 @@ export async function coreAdvice(options: CoreAdviceOptions): Promise<CoreAdvice
     source,
     is_single_sku: isSingleSku,
     default_packaging: defaultPackaging,
+    reasoning,
   }
 }
 
@@ -439,6 +485,7 @@ async function trySingleSkuFastPath(
       idpackaging: defaultPkg.idpackaging,
       facturatie_box_sku: defaultPkg.facturatie_box_sku,
     },
+    reasoning: [], // populated by caller
   }
 }
 
@@ -567,6 +614,7 @@ async function trySingleSkuFastPathByPackaging(
       idpackaging: defaultPkg.idpackaging,
       facturatie_box_sku: defaultPkg.facturatie_box_sku,
     },
+    reasoning: [], // populated by caller
   }
 }
 
@@ -736,6 +784,7 @@ async function tryBoxOptimizer(
     source: 'optimizer',
     is_single_sku: false,
     default_packaging: null,
+    reasoning: [], // populated by caller
   }
 }
 
@@ -967,5 +1016,6 @@ function emptyResult(confidence: CoreAdviceResult['confidence'], source: AdviceS
     source,
     is_single_sku: false,
     default_packaging: null,
+    reasoning: ['Geen producten om te verwerken'],
   }
 }

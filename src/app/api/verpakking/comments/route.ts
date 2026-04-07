@@ -38,6 +38,14 @@ function buildPicqerUrl(sourceType: string, sourceId: number): string {
   }
 }
 
+function buildInternalUrl(sourceType: string, sourceId: number): string | null {
+  switch (sourceType) {
+    case 'picklist': return `/verpakkingsmodule/picklist/${sourceId}`
+    case 'picklist_batch': return `/verpakkingsmodule/batch/${sourceId}`
+    default: return null
+  }
+}
+
 function getSourceReference(comment: PicqerGlobalComment): string | null {
   const src = comment.source
   if (!src) return null
@@ -126,6 +134,7 @@ async function enrichComments(
       sourceId,
       sourceReference: sourceRef,
       sourceUrl: sourceId ? buildPicqerUrl(comment.source_type, sourceId) : null,
+      internalUrl: sourceId ? buildInternalUrl(comment.source_type, sourceId) : null,
       mentions: comment.mentions?.map(m => ({
         text: m.text,
         name: m.mentioned.full_name,

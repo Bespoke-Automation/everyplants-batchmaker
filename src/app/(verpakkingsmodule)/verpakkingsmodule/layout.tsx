@@ -1,10 +1,12 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import { Package, LogOut, ArrowLeft, User, MessageSquare } from 'lucide-react'
 import { useAuth } from '@/components/providers/AuthProvider'
 import { LanguageProvider, useTranslation } from '@/i18n/LanguageContext'
+import { useUnreadMentions } from '@/hooks/useUnreadMentions'
 
 function LanguageSwitcher() {
   const { language, setLanguage } = useTranslation()
@@ -24,6 +26,38 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const { profile, signOut } = useAuth()
   const { t } = useTranslation()
+
+  // Read worker from localStorage for unread mentions badge
+  const [workerId, setWorkerId] = useState<number | null>(null)
+  useEffect(() => {
+    const readWorker = () => {
+      try {
+        const stored = localStorage.getItem('verpakking_worker')
+        if (stored) {
+          const parsed = JSON.parse(stored)
+          setWorkerId(parsed.iduser || null)
+        } else {
+          setWorkerId(null)
+        }
+      } catch {
+        setWorkerId(null)
+      }
+    }
+    readWorker()
+
+    const onWorkerChanged = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      setWorkerId(detail?.iduser || null)
+    }
+    window.addEventListener('storage', readWorker)
+    window.addEventListener('worker-changed', onWorkerChanged)
+    return () => {
+      window.removeEventListener('storage', readWorker)
+      window.removeEventListener('worker-changed', onWorkerChanged)
+    }
+  }, [])
+
+  const { unreadCount } = useUnreadMentions(workerId)
 
   const NAV_LINKS = [
     { href: '/verpakkingsmodule', label: t.layout.queue },
@@ -84,8 +118,8 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
         </div>
         <div className="flex items-center gap-3">
           <Link
-            href="/verpakkingsmodule/opmerkingen"
-            className={`p-2 rounded-lg transition-colors ${
+            href="/verpakkingsmodule/opmerkingen?tab=mentions"
+            className={`p-2 rounded-lg transition-colors relative ${
               pathname.startsWith('/verpakkingsmodule/opmerkingen')
                 ? 'bg-primary/10 text-primary'
                 : 'text-muted-foreground hover:text-foreground hover:bg-muted'
@@ -93,6 +127,11 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
             title={t.layout.comments}
           >
             <MessageSquare className="w-5 h-5" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 flex items-center justify-center bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
           </Link>
           <LanguageSwitcher />
           {profile && (

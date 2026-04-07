@@ -112,6 +112,7 @@ interface EngineAdvice {
   tags_written: string[]
   weight_exceeded?: boolean
   cost_data_available?: boolean
+  reasoning?: string[]
 }
 
 // Product group for rendering (composition groups + single products)
@@ -2219,6 +2220,23 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                     </span>
                   )}
                 </div>
+
+                {/* Reasoning trail */}
+                {engineAdvice.reasoning && engineAdvice.reasoning.length > 0 && (
+                  <div className="px-3 py-2 border-t border-inherit">
+                    <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Beslisproces</div>
+                    <ul className="space-y-0.5">
+                      {engineAdvice.reasoning.map((reason, idx) => (
+                        <li key={idx} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                          <span className="text-[10px] mt-px flex-shrink-0">
+                            {reason.startsWith('✅') ? '' : reason.startsWith('⚠️') ? '' : '→'}
+                          </span>
+                          <span>{reason.replace(/^[✅⚠️]\s*/, '')}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
                 {/* Warnings */}
                 {engineAdvice.unclassified_products.length > 0 && (
