@@ -38,9 +38,12 @@ export async function POST() {
     let created = 0
     let updated = 0
 
+    const syncedPrinterIds: number[] = []
+
     for (const station of validStations) {
       const printer = station.printer_shipping_labels!
       const printerId = printer.printnode_printerid
+      syncedPrinterIds.push(printerId)
       const existingId = existingByPrinterId.get(printerId)
 
       if (existingId) {
@@ -71,11 +74,25 @@ export async function POST() {
       }
     }
 
+    // Deactivate stations whose printer ID is no longer in Picqer
+    let deactivated = 0
+    if (syncedPrinterIds.length > 0) {
+      const { data: stale } = await supabase
+        .schema('batchmaker')
+        .from('packing_stations')
+        .update({ is_active: false, updated_at: new Date().toISOString() })
+        .eq('is_active', true)
+        .not('printnode_printer_id', 'in', `(${syncedPrinterIds.join(',')})`)
+        .select('id')
+      deactivated = stale?.length ?? 0
+    }
+
     return NextResponse.json({
       synced: validStations.length,
       created,
       updated,
-      message: `${created} nieuw, ${updated} bijgewerkt van ${validStations.length} stations uit Picqer`,
+      deactivated,
+      message: `${created} nieuw, ${updated} bijgewerkt, ${deactivated} gedeactiveerd van ${validStations.length} stations uit Picqer`,
     })
   } catch (error) {
     console.error('[packing-stations] Error syncing from Picqer:', error)

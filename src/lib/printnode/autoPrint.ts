@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase/client'
-import { submitPrintJob, isPrintNodeConfigured } from './client'
+import { submitPrintJob, isPrintNodeConfigured, getPrinter } from './client'
 
 /**
  * Try to auto-print a label via PrintNode.
@@ -25,6 +25,21 @@ export async function tryAutoPrint(
 
     if (error || !station) {
       console.warn(`[autoPrint] Packing station ${packingStationId} not found or inactive`)
+      return
+    }
+
+    // Check if the printer is reachable (online + connected computer)
+    const printer = await getPrinter(station.printnode_printer_id)
+    if (!printer) {
+      console.warn(`[autoPrint] Printer ${station.printnode_printer_id} for station "${station.name}" not found in PrintNode`)
+      return
+    }
+    if (printer.computer?.state !== 'connected') {
+      console.warn(`[autoPrint] Computer "${printer.computer?.name}" for station "${station.name}" is ${printer.computer?.state ?? 'unknown'} — skipping print`)
+      return
+    }
+    if (printer.state === 'offline') {
+      console.warn(`[autoPrint] Printer "${printer.name}" at station "${station.name}" is offline — skipping print`)
       return
     }
 

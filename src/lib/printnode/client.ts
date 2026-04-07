@@ -68,6 +68,32 @@ export async function getPrinters(): Promise<PrintNodePrinter[]> {
 }
 
 /**
+ * Get a specific printer by ID
+ */
+export async function getPrinter(printerId: number): Promise<PrintNodePrinter | null> {
+  if (!PRINTNODE_API_KEY) return null
+
+  try {
+    const response = await fetch(`${PRINTNODE_BASE_URL}/printers/${printerId}`, {
+      headers: {
+        'Authorization': getAuthHeader(),
+        'Content-Type': 'application/json',
+      },
+    })
+
+    if (!response.ok) return null
+
+    const printers = await response.json()
+    // PrintNode returns an array even for single printer lookup
+    if (Array.isArray(printers) && printers.length > 0) return printers[0]
+    if (!Array.isArray(printers) && printers?.id) return printers
+    return null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Submit a print job to PrintNode
  */
 export async function submitPrintJob(
