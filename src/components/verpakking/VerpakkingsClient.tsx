@@ -47,7 +47,7 @@ import {
 } from 'lucide-react'
 import Dialog from '@/components/ui/Dialog'
 import { usePackingSession } from '@/hooks/usePackingSession'
-import { usePackingStation, type PrinterStatus } from '@/hooks/usePackingStation'
+import { usePackingStation, type PrinterStatus, type PackingStation } from '@/hooks/usePackingStation'
 
 const STATUS_CONFIG: Record<PrinterStatus, { dot: string; text: string; labelNl: string; labelEn: string }> = {
   online:       { dot: 'bg-emerald-500', text: 'text-emerald-600', labelNl: 'Online', labelEn: 'Online' },
@@ -186,6 +186,27 @@ interface VerpakkingsClientProps {
   onBack: () => void
   workerName: string
   batchContext?: BatchContextProps
+}
+
+const BADGE_STYLES: Record<PrinterStatus, string> = {
+  online:       'border-green-300 bg-green-50 text-green-800 hover:bg-green-100',
+  offline:      'border-red-300 bg-red-50 text-red-800 hover:bg-red-100',
+  disconnected: 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100',
+  unknown:      'border-gray-300 bg-gray-50 text-gray-600 hover:bg-gray-100',
+}
+
+function StationBadge({ station, onClick, label }: { station: PackingStation | null; onClick: () => void; label: string }) {
+  const status: PrinterStatus = station?.printer_status ?? (station ? 'unknown' : 'unknown')
+  const style = station ? BADGE_STYLES[status] : 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
+  return (
+    <button
+      onClick={onClick}
+      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium leading-none border transition-colors ${style}`}
+    >
+      <Printer className="w-3 h-3" />
+      {label}
+    </button>
+  )
 }
 
 export default function VerpakkingsClient({ sessionId, onBack, workerName, batchContext }: VerpakkingsClientProps) {
@@ -1953,32 +1974,12 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                         <span className="font-medium text-foreground">{order.deliveryname}</span>
                         {order.reference && <span>Ref: {order.reference}</span>}
                         <span>{workerName}</span>
-                        <button
-                          onClick={() => setShowStationPicker(true)}
-                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium leading-none border transition-colors ${
-                            selectedStation
-                              ? 'border-green-300 bg-green-50 text-green-800 hover:bg-green-100'
-                              : 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
-                          }`}
-                        >
-                          <Printer className="w-3 h-3" />
-                          {selectedStation ? selectedStation.name : t.packing.noStation}
-                        </button>
+                        <StationBadge station={selectedStation} onClick={() => setShowStationPicker(true)} label={selectedStation ? selectedStation.name : t.packing.noStation} />
                       </div>
                     ) : (
                       <div className="text-sm text-muted-foreground mt-0.5 hidden sm:flex sm:items-center sm:gap-2">
                         <span>{workerName}</span>
-                        <button
-                          onClick={() => setShowStationPicker(true)}
-                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium leading-none border transition-colors ${
-                            selectedStation
-                              ? 'border-green-300 bg-green-50 text-green-800 hover:bg-green-100'
-                              : 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
-                          }`}
-                        >
-                          <Printer className="w-3 h-3" />
-                          {selectedStation ? selectedStation.name : t.packing.noStation}
-                        </button>
+                        <StationBadge station={selectedStation} onClick={() => setShowStationPicker(true)} label={selectedStation ? selectedStation.name : t.packing.noStation} />
                       </div>
                     )}
                     {picklist?.tags && picklist.tags.length > 0 && (
