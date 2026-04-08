@@ -64,6 +64,7 @@ import { ORDERFIELD_IDS } from '@/lib/picqer/types'
 import { getTagPackagingFilter } from '@/lib/verpakking/tag-packaging-filter'
 import { sortPicklistsByProduct } from '@/lib/verpakking/picklist-sort'
 import BatchNavigationBar from './BatchNavigationBar'
+import { VerpakkingsClientSkeleton } from './skeletons/VerpakkingsClientSkeleton'
 import BarcodeListener from './BarcodeListener'
 import ProductCard, { type ProductCardItem, type BoxRef, type ProductCustomFields } from './ProductCard'
 import BoxCard, { type BoxCardItem, type BoxProduct } from './BoxCard'
@@ -285,6 +286,31 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
       setIsNavCreatingSession(false)
     }
   }, [router, workerName, session?.workerId, session?.workerName])
+
+  // Prefetch picklist data on hover over nav buttons (for instant navigation)
+  const handlePrefetchPicklist = useCallback((picklist: import('@/types/verpakking').BatchPicklistItem) => {
+    if (!picklist.sessionId) return
+    // Don't prefetch if already in cache
+    const picklistId = picklist.idpicklist
+    if (prefetchCache.has(picklistId)) return
+
+    const doPrefetch = async () => {
+      try {
+        const res = await fetch(`/api/verpakking/sessions/${picklist.sessionId}/picklist-data`)
+        if (!res.ok) return
+        const data = await res.json()
+        prefetchCache.set(picklistId, { ...data, fetchedAt: Date.now() })
+      } catch {
+        // Non-critical — prefetch failure is fine
+      }
+    }
+
+    if ('requestIdleCallback' in window) {
+      requestIdleCallback(() => doPrefetch())
+    } else {
+      doPrefetch()
+    }
+  }, [])
 
   // Packing station (for auto-print)
   const { selectedStation, stations, selectStation, clearStation, packingStationId } = usePackingStation()
@@ -1892,66 +1918,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
 
   // Loading state — skeleton that mirrors the actual layout
   if (isSessionLoading) {
-    return (
-      <div className="flex flex-col h-full animate-pulse">
-        {/* Header skeleton */}
-        <div className="bg-card border-b border-border px-3 py-2 lg:px-4 lg:py-3">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-muted rounded-lg" />
-              <div className="space-y-1.5">
-                <div className="h-5 w-32 bg-muted rounded" />
-                <div className="h-3 w-48 bg-muted rounded" />
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="h-9 w-28 bg-muted rounded-lg" />
-              <div className="h-9 w-28 bg-muted rounded-lg" />
-            </div>
-          </div>
-        </div>
-        {/* Body skeleton — products left, boxes right */}
-        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-          {/* Products column */}
-          <div className="flex-1 p-3 lg:p-4 space-y-2 overflow-hidden">
-            <div className="h-4 w-24 bg-muted rounded mb-3" />
-            {[...Array(4)].map((_, i) => (
-              <div key={i} className="flex items-center gap-3 p-3 border border-border rounded-lg">
-                <div className="w-16 h-16 bg-muted rounded-lg flex-shrink-0" />
-                <div className="flex-1 space-y-2">
-                  <div className="h-4 w-3/4 bg-muted rounded" />
-                  <div className="h-3 w-1/2 bg-muted rounded" />
-                </div>
-                <div className="h-8 w-12 bg-muted rounded" />
-              </div>
-            ))}
-          </div>
-          {/* Boxes column */}
-          <div className="flex-1 p-3 lg:p-4 lg:border-l border-border space-y-3 overflow-hidden">
-            <div className="h-4 w-20 bg-muted rounded mb-3" />
-            {[...Array(2)].map((_, i) => (
-              <div key={i} className="border border-border rounded-lg p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="h-5 w-40 bg-muted rounded" />
-                  <div className="h-8 w-24 bg-muted rounded-lg" />
-                </div>
-                <div className="h-16 bg-muted/50 rounded-lg" />
-              </div>
-            ))}
-          </div>
-          {/* Sidebar skeleton (desktop only) */}
-          <div className="hidden lg:block w-72 border-l border-border p-4 space-y-4 overflow-hidden">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="space-y-2">
-                <div className="h-4 w-20 bg-muted rounded" />
-                <div className="h-3 w-full bg-muted rounded" />
-                <div className="h-3 w-2/3 bg-muted rounded" />
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    )
+    return <VerpakkingsClientSkeleton />
   }
 
   // Error state
@@ -1997,6 +1964,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
             picklists={sortedBatchPicklists}
             currentPicklistId={session?.picklistId ?? 0}
             onNavigate={handleBatchNavigate}
+            onPrefetch={handlePrefetchPicklist}
             onBatchClick={onBack}
             isNavigating={isNavCreatingSession}
             sessionCompleted={session.status === 'completed'}
@@ -3132,15 +3100,16 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                 </div>
                 <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 lg:p-4 space-y-2">
                   {picklistLoading ? (
-                    <div className="space-y-2 animate-pulse">
-                      {[...Array(4)].map((_, i) => (
+                    <div className="space-y-2">
+                      {[...Array(5)].map((_, i) => (
                         <div key={i} className="flex items-center gap-3 p-3 border border-border rounded-lg">
-                          <div className="w-16 h-16 bg-muted rounded-lg flex-shrink-0" />
+                          <div className="w-[64px] h-[64px] lg:w-[104px] lg:h-[104px] bg-muted rounded-lg flex-shrink-0 animate-pulse" />
                           <div className="flex-1 space-y-2">
-                            <div className="h-4 w-3/4 bg-muted rounded" />
-                            <div className="h-3 w-1/2 bg-muted rounded" />
+                            <div className="h-4 w-3/4 bg-muted rounded animate-pulse" />
+                            <div className="h-3 w-1/2 bg-muted rounded animate-pulse" />
+                            <div className="h-3 w-1/3 bg-muted rounded animate-pulse" />
                           </div>
-                          <div className="h-8 w-12 bg-muted rounded" />
+                          <div className="h-8 w-12 bg-muted rounded animate-pulse" />
                         </div>
                       ))}
                     </div>

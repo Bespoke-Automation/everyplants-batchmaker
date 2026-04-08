@@ -1,5 +1,6 @@
 'use client'
 
+import { useRef, useCallback } from 'react'
 import { ChevronLeft, ChevronRight, Layers, Loader2, ArrowLeft } from 'lucide-react'
 import { useTranslation } from '@/i18n/LanguageContext'
 import type { BatchPicklistItem } from '@/types/verpakking'
@@ -10,6 +11,7 @@ interface BatchNavigationBarProps {
   currentPicklistId: number
   onNavigate: (picklist: BatchPicklistItem) => void
   onBatchClick: () => void
+  onPrefetch?: (picklist: BatchPicklistItem) => void
   isNavigating?: boolean
   sessionCompleted?: boolean
 }
@@ -20,10 +22,14 @@ export default function BatchNavigationBar({
   currentPicklistId,
   onNavigate,
   onBatchClick,
+  onPrefetch,
   isNavigating,
   sessionCompleted,
 }: BatchNavigationBarProps) {
   const { t } = useTranslation()
+  const prefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const prefetchedRef = useRef<Set<number>>(new Set())
+
   const currentIndex = picklists.findIndex((pl) => pl.idpicklist === currentPicklistId)
   if (currentIndex === -1) return null
 
@@ -43,6 +49,24 @@ export default function BatchNavigationBar({
   }
 
   const displayName = current.alias || current.deliveryname || current.picklistid
+
+  // Prefetch on hover with 200ms delay to avoid accidental triggers
+  const handleMouseEnter = useCallback((picklist: BatchPicklistItem | null) => {
+    if (!picklist || !onPrefetch || !picklist.sessionId) return
+    if (prefetchedRef.current.has(picklist.idpicklist)) return
+
+    prefetchTimerRef.current = setTimeout(() => {
+      prefetchedRef.current.add(picklist.idpicklist)
+      onPrefetch(picklist)
+    }, 200)
+  }, [onPrefetch])
+
+  const handleMouseLeave = useCallback(() => {
+    if (prefetchTimerRef.current) {
+      clearTimeout(prefetchTimerRef.current)
+      prefetchTimerRef.current = null
+    }
+  }, [])
 
   return (
     <div className="bg-muted/40 border-b border-border px-3 py-2.5 flex items-center justify-between gap-3">
@@ -81,6 +105,10 @@ export default function BatchNavigationBar({
       <div className="flex items-center gap-2 flex-shrink-0">
           <button
             onClick={() => prevPicklist && onNavigate(prevPicklist)}
+            onMouseEnter={() => handleMouseEnter(prevPicklist)}
+            onMouseLeave={handleMouseLeave}
+            onFocus={() => handleMouseEnter(prevPicklist)}
+            onBlur={handleMouseLeave}
             disabled={!prevPicklist || isNavigating}
             className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-md border border-border bg-background hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed min-h-[36px]"
             title={prevPicklist ? (prevPicklist.alias || prevPicklist.deliveryname || prevPicklist.picklistid) : undefined}
@@ -91,6 +119,10 @@ export default function BatchNavigationBar({
 
           <button
             onClick={() => nextPicklist && onNavigate(nextPicklist)}
+            onMouseEnter={() => handleMouseEnter(nextPicklist)}
+            onMouseLeave={handleMouseLeave}
+            onFocus={() => handleMouseEnter(nextPicklist)}
+            onBlur={handleMouseLeave}
             disabled={!nextPicklist || isNavigating}
             className="inline-flex items-center gap-1 px-4 py-1.5 text-sm font-medium rounded-md border border-primary bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-30 disabled:cursor-not-allowed min-h-[36px]"
             title={nextPicklist ? (nextPicklist.alias || nextPicklist.deliveryname || nextPicklist.picklistid) : undefined}
