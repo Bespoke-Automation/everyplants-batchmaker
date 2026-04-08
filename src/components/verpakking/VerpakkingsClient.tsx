@@ -130,7 +130,16 @@ interface CompositionInfo {
 }
 
 // Module-level cache for prefetched picklist data (survives re-renders, cleared on navigation)
-const prefetchCache = new Map<number, { picklist: PicqerPicklistWithProducts; order: PicqerOrder | null; fetchedAt: number }>()
+interface PrefetchedPicklistData {
+  picklist: PicqerPicklistWithProducts
+  order: PicqerOrder | null
+  shippingProfileName: string | null
+  productCustomFields: Record<number, ProductCustomFields>
+  engineAdvice: EngineAdvice | null
+  comments: Array<{ idcomment: number; body: string; author_type: string; author: { full_name: string; image_url: string | null }; created_at: string }>
+  fetchedAt: number
+}
+const prefetchCache = new Map<number, PrefetchedPicklistData>()
 const PREFETCH_TTL = 60_000 // 60 seconds
 
 function formatCost(value: number | undefined): string {
@@ -352,7 +361,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
 
   // Picklist data from Picqer
   const [picklist, setPicklist] = useState<PicqerPicklistWithProducts | null>(null)
-  const [picklistLoading, setPicklistLoading] = useState(false)
+  const [picklistLoading, setPicklistLoading] = useState(true)
   const [picklistError, setPicklistError] = useState<string | null>(null)
 
   // Order data from Picqer (delivery address etc.)
@@ -485,99 +494,62 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     deviationType: string
   } | null>(null)
 
-  // Fetch picklist when session loads
-  // Fetch picklist, then order + shipping + product attrs in parallel
+  // Fetch all picklist data via aggregate endpoint (single request)
   useEffect(() => {
-    if (!session?.picklistId) return
+    if (!sessionId || !session?.picklistId) return
 
     let cancelled = false
     setPicklistLoading(true)
     setPicklistError(null)
     setOrderLoading(true)
+    setEngineLoading(true)
 
     async function loadPicklistData() {
       try {
         // Check prefetch cache first
         const cached = prefetchCache.get(session!.picklistId)
-        let pl: PicqerPicklistWithProducts
-        let cachedOrder: PicqerOrder | null = null
+        let data: PrefetchedPicklistData
 
         if (cached && Date.now() - cached.fetchedAt < PREFETCH_TTL) {
-          pl = cached.picklist
-          cachedOrder = cached.order
+          data = cached
           prefetchCache.delete(session!.picklistId)
         } else {
-          // Step 1: Fetch picklist (required for subsequent calls)
-          const picklistRes = await fetch(`/api/picqer/picklists/${session!.picklistId}`)
-          if (!picklistRes.ok) throw new Error(t.packing.fetchPicklistFailed)
-          const picklistData = await picklistRes.json()
-          pl = picklistData.picklist
+          const res = await fetch(`/api/verpakking/sessions/${sessionId}/picklist-data`)
+          if (!res.ok) throw new Error(t.packing.fetchPicklistFailed)
+          const json = await res.json()
+          data = { ...json, fetchedAt: Date.now() }
         }
 
         if (cancelled) return
-        setPicklist(pl)
+
+        // Set all state from the single response
+        setPicklist(data.picklist)
         setPicklistLoading(false)
 
-        // Step 2: Fetch order, shipping, product attrs IN PARALLEL
-        const parallelFetches: Promise<void>[] = []
+        if (data.order) setOrder(data.order)
+        setOrderLoading(false)
 
-        // Order (needed for engine advice + delivery address)
-        if (cachedOrder) {
-          setOrder(cachedOrder)
-          setOrderLoading(false)
-        } else if (pl.idorder) {
-          parallelFetches.push(
-            fetch(`/api/picqer/orders/${pl.idorder}`)
-              .then((res) => res.ok ? res.json() : null)
-              .then((data) => { if (!cancelled && data?.order) { setOrder(data.order) } })
-              .catch(() => {})
-              .finally(() => { if (!cancelled) setOrderLoading(false) })
-          )
-        } else {
-          setOrderLoading(false)
+        if (data.shippingProfileName) setShippingProfileName(data.shippingProfileName)
+
+        if (data.productCustomFields) {
+          const map = new Map<number, ProductCustomFields>()
+          for (const [id, attrs] of Object.entries(data.productCustomFields)) {
+            map.set(parseInt(id, 10), attrs as ProductCustomFields)
+          }
+          setProductCustomFields(map)
         }
 
-        // Shipping profile name
-        if (pl.idshippingprovider_profile && pl.idpicklist) {
-          parallelFetches.push(
-            fetch(`/api/picqer/shipping-methods?picklistId=${pl.idpicklist}`)
-              .then((res) => res.ok ? res.json() : null)
-              .then((data) => {
-                if (cancelled || !data?.methods) return
-                const match = data.methods.find(
-                  (m: { idshippingprovider_profile: number; name: string }) =>
-                    m.idshippingprovider_profile === pl.idshippingprovider_profile
-                )
-                if (match) setShippingProfileName(match.name)
-              })
-              .catch(() => {})
-          )
+        if (data.engineAdvice) {
+          setEngineAdvice(data.engineAdvice)
+          engineCalledRef.current = true
         }
-
-        // Product custom fields
-        if (pl.products?.length) {
-          const ids = pl.products.map((p: { idproduct: number }) => p.idproduct).join(',')
-          parallelFetches.push(
-            fetch(`/api/verpakking/product-attributes?ids=${ids}`)
-              .then((res) => res.ok ? res.json() : null)
-              .then((data) => {
-                if (cancelled || !data?.attributes) return
-                const map = new Map<number, ProductCustomFields>()
-                for (const [id, attrs] of Object.entries(data.attributes)) {
-                  map.set(parseInt(id, 10), attrs as ProductCustomFields)
-                }
-                setProductCustomFields(map)
-              })
-              .catch(() => {})
-          )
-        }
-
-        await Promise.all(parallelFetches)
+        setEngineLoading(false)
       } catch (err) {
         if (!cancelled) {
           setPicklistError(err instanceof Error ? err.message : 'Unknown error')
           setPicklistLoading(false)
           setOrderLoading(false)
+          setEngineLoading(false)
         }
       }
     }
@@ -585,7 +557,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     loadPicklistData()
 
     return () => { cancelled = true }
-  }, [session?.picklistId])
+  }, [sessionId, session?.picklistId])
 
   // Prefetch next picklist data when worker has assigned products to boxes (making progress)
   const prefetchTriggeredRef = useRef(false)
@@ -597,29 +569,19 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     const hasAssignedProducts = session.boxes.some(b => b.products.length > 0)
     if (!hasAssignedProducts) return
 
+    const nextSessionId = nextPicklistInBatch.sessionId
     const nextPicklistId = nextPicklistInBatch.idpicklist
-    if (prefetchCache.has(nextPicklistId)) return
+    if (!nextSessionId || prefetchCache.has(nextPicklistId)) return
 
     prefetchTriggeredRef.current = true
 
-    // Prefetch picklist + order using requestIdleCallback for low priority
+    // Prefetch via aggregate endpoint using requestIdleCallback for low priority
     const doPrefetch = async () => {
       try {
-        const picklistRes = await fetch(`/api/picqer/picklists/${nextPicklistId}`)
-        if (!picklistRes.ok) return
-        const picklistData = await picklistRes.json()
-        const pl = picklistData.picklist
-
-        let orderData: PicqerOrder | null = null
-        if (pl.idorder) {
-          const orderRes = await fetch(`/api/picqer/orders/${pl.idorder}`)
-          if (orderRes.ok) {
-            const data = await orderRes.json()
-            orderData = data.order ?? null
-          }
-        }
-
-        prefetchCache.set(nextPicklistId, { picklist: pl, order: orderData, fetchedAt: Date.now() })
+        const res = await fetch(`/api/verpakking/sessions/${nextSessionId}/picklist-data`)
+        if (!res.ok) return
+        const data = await res.json()
+        prefetchCache.set(nextPicklistId, { ...data, fetchedAt: Date.now() })
       } catch {
         // Non-critical — prefetch failure is fine
       }
@@ -678,12 +640,15 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     }
   }, [picklistIdForComments, fetchComments])
 
-  // Call packaging engine when picklist products and order data are available
+  // Engine advice is now fetched server-side in the aggregate endpoint.
+  // This fallback effect handles edge cases where engine advice was not included
+  // in the aggregate response (e.g., order country was missing at fetch time).
   useEffect(() => {
     if (engineCalledRef.current) return
     if (!picklist?.products || picklist.products.length === 0) return
     if (!picklist.idorder) return
-    if (!order?.deliverycountry) return  // Wait for order data to load
+    if (!order?.deliverycountry) return
+    if (engineLoading) return
 
     engineCalledRef.current = true
     setEngineLoading(true)
@@ -712,17 +677,15 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
       .then((data) => {
         if (data.advice) {
           setEngineAdvice(data.advice)
-          console.log('[VerpakkingsClient] Engine advice:', data.advice.confidence, data.advice.advice_boxes?.length, 'boxes')
         }
       })
       .catch((err) => {
-        console.error('[VerpakkingsClient] Engine advice error:', err)
-        // Silently fall back to tag mappings — don't show error to user
+        console.error('[VerpakkingsClient] Engine advice fallback error:', err)
       })
       .finally(() => {
         setEngineLoading(false)
       })
-  }, [picklist, order])
+  }, [picklist, order, engineLoading])
 
   // Auto-pick packaging products and create boxes for them
   // Persisted in sessionStorage so it doesn't re-run after page refresh
