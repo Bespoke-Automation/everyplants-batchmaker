@@ -9,7 +9,7 @@ const PICQER_BASE_URL = `https://${PICQER_SUBDOMAIN}.picqer.com/api/v1`
 const MAX_RETRIES = 5
 const INITIAL_RETRY_DELAY_MS = 2000
 // Picqer allows 500 req/min. Limit concurrent requests to prevent stampedes.
-const MAX_CONCURRENT_REQUESTS = 3
+const MAX_CONCURRENT_REQUESTS = 6
 
 /**
  * Sleep for a given number of milliseconds

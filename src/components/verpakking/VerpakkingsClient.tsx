@@ -482,96 +482,92 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
   } | null>(null)
 
   // Fetch picklist when session loads
+  // Fetch picklist, then order + shipping + product attrs in parallel
   useEffect(() => {
     if (!session?.picklistId) return
 
     let cancelled = false
     setPicklistLoading(true)
     setPicklistError(null)
+    setOrderLoading(true)
 
-    fetch(`/api/picqer/picklists/${session.picklistId}`)
-      .then((res) => {
-        if (!res.ok) throw new Error(t.packing.fetchPicklistFailed)
-        return res.json()
-      })
-      .then((data) => {
-        if (!cancelled) {
-          setPicklist(data.picklist)
-          setPicklistLoading(false)
+    async function loadPicklistData() {
+      try {
+        // Step 1: Fetch picklist (required for subsequent calls)
+        const picklistRes = await fetch(`/api/picqer/picklists/${session!.picklistId}`)
+        if (!picklistRes.ok) throw new Error(t.packing.fetchPicklistFailed)
+        const picklistData = await picklistRes.json()
+        const pl = picklistData.picklist
+
+        if (cancelled) return
+        setPicklist(pl)
+        setPicklistLoading(false)
+
+        // Step 2: Fetch order, shipping, product attrs IN PARALLEL
+        const parallelFetches: Promise<void>[] = []
+
+        // Order (needed for engine advice + delivery address)
+        if (pl.idorder) {
+          parallelFetches.push(
+            fetch(`/api/picqer/orders/${pl.idorder}`)
+              .then((res) => res.ok ? res.json() : null)
+              .then((data) => { if (!cancelled && data?.order) { setOrder(data.order) } })
+              .catch(() => {})
+              .finally(() => { if (!cancelled) setOrderLoading(false) })
+          )
+        } else {
+          setOrderLoading(false)
         }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setPicklistError(err.message)
-          setPicklistLoading(false)
+
+        // Shipping profile name
+        if (pl.idshippingprovider_profile && pl.idpicklist) {
+          parallelFetches.push(
+            fetch(`/api/picqer/shipping-methods?picklistId=${pl.idpicklist}`)
+              .then((res) => res.ok ? res.json() : null)
+              .then((data) => {
+                if (cancelled || !data?.methods) return
+                const match = data.methods.find(
+                  (m: { idshippingprovider_profile: number; name: string }) =>
+                    m.idshippingprovider_profile === pl.idshippingprovider_profile
+                )
+                if (match) setShippingProfileName(match.name)
+              })
+              .catch(() => {})
+          )
         }
-      })
+
+        // Product custom fields
+        if (pl.products?.length) {
+          const ids = pl.products.map((p: { idproduct: number }) => p.idproduct).join(',')
+          parallelFetches.push(
+            fetch(`/api/verpakking/product-attributes?ids=${ids}`)
+              .then((res) => res.ok ? res.json() : null)
+              .then((data) => {
+                if (cancelled || !data?.attributes) return
+                const map = new Map<number, ProductCustomFields>()
+                for (const [id, attrs] of Object.entries(data.attributes)) {
+                  map.set(parseInt(id, 10), attrs as ProductCustomFields)
+                }
+                setProductCustomFields(map)
+              })
+              .catch(() => {})
+          )
+        }
+
+        await Promise.all(parallelFetches)
+      } catch (err) {
+        if (!cancelled) {
+          setPicklistError(err instanceof Error ? err.message : 'Unknown error')
+          setPicklistLoading(false)
+          setOrderLoading(false)
+        }
+      }
+    }
+
+    loadPicklistData()
 
     return () => { cancelled = true }
   }, [session?.picklistId])
-
-  // Resolve shipping profile name when picklist loads
-  useEffect(() => {
-    if (!picklist?.idshippingprovider_profile || !picklist?.idpicklist) return
-
-    let cancelled = false
-    fetch(`/api/picqer/shipping-methods?picklistId=${picklist.idpicklist}`)
-      .then((res) => res.ok ? res.json() : null)
-      .then((data) => {
-        if (cancelled || !data?.methods) return
-        const match = data.methods.find(
-          (m: { idshippingprovider_profile: number; name: string }) =>
-            m.idshippingprovider_profile === picklist.idshippingprovider_profile
-        )
-        if (match) setShippingProfileName(match.name)
-      })
-      .catch(() => {})
-
-    return () => { cancelled = true }
-  }, [picklist?.idpicklist, picklist?.idshippingprovider_profile])
-
-  // Fetch product custom fields when picklist loads
-  useEffect(() => {
-    if (!picklist?.products?.length) return
-
-    const ids = picklist.products.map((p) => p.idproduct).join(',')
-    fetch(`/api/verpakking/product-attributes?ids=${ids}`)
-      .then((res) => res.ok ? res.json() : null)
-      .then((data) => {
-        if (!data?.attributes) return
-        const map = new Map<number, ProductCustomFields>()
-        for (const [id, attrs] of Object.entries(data.attributes)) {
-          map.set(parseInt(id, 10), attrs as ProductCustomFields)
-        }
-        setProductCustomFields(map)
-      })
-      .catch(() => {/* non-blocking */})
-  }, [picklist])
-
-  // Fetch order when picklist loads (for delivery address)
-  useEffect(() => {
-    if (!picklist?.idorder) return
-
-    let cancelled = false
-    setOrderLoading(true)
-
-    fetch(`/api/picqer/orders/${picklist.idorder}`)
-      .then((res) => {
-        if (!res.ok) throw new Error(t.packing.fetchOrderFailed)
-        return res.json()
-      })
-      .then((data) => {
-        if (!cancelled) {
-          setOrder(data.order)
-          setOrderLoading(false)
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setOrderLoading(false)
-      })
-
-    return () => { cancelled = true }
-  }, [picklist?.idorder])
 
   const startEditAddress = useCallback(() => {
     if (!order) return
