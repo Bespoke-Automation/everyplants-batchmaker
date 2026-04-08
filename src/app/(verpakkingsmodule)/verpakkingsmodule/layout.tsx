@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import { Package, LogOut, ArrowLeft, User, MessageSquare } from 'lucide-react'
+import { SWRConfig } from 'swr'
+import { fetcher } from '@/lib/swr/fetcher'
 import { useAuth } from '@/components/providers/AuthProvider'
 import { LanguageProvider, useTranslation } from '@/i18n/LanguageContext'
 import { useUnreadMentions } from '@/hooks/useUnreadMentions'
@@ -161,8 +163,16 @@ export default function VerpakkingsmoduleLayout({
   children: React.ReactNode
 }) {
   return (
-    <LanguageProvider>
-      <LayoutContent>{children}</LayoutContent>
-    </LanguageProvider>
+    <SWRConfig value={{
+      fetcher,
+      revalidateOnFocus: true,
+      dedupingInterval: 5_000,
+      errorRetryCount: 3,
+      keepPreviousData: true,
+    }}>
+      <LanguageProvider>
+        <LayoutContent>{children}</LayoutContent>
+      </LanguageProvider>
+    </SWRConfig>
   )
 }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import useSWR from 'swr'
 
 export type PrinterStatus = 'online' | 'offline' | 'disconnected' | 'unknown'
 
@@ -16,44 +17,32 @@ export interface PackingStation {
 const STORAGE_KEY = 'verpakking_packing_station'
 
 export function usePackingStation() {
-  const [stations, setStations] = useState<PackingStation[]>([])
-  const [selectedStation, setSelectedStation] = useState<PackingStation | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const { data, isLoading } = useSWR<{ stations: PackingStation[] }>(
+    '/api/verpakking/packing-stations',
+    { revalidateOnFocus: false }
+  )
 
-  // Restore selected station from localStorage
-  useEffect(() => {
+  const stations = data?.stations ?? []
+
+  const [selectedStation, setSelectedStation] = useState<PackingStation | null>(() => {
+    if (typeof window === 'undefined') return null
     try {
       const stored = localStorage.getItem(STORAGE_KEY)
-      if (stored) {
-        setSelectedStation(JSON.parse(stored))
-      }
+      return stored ? JSON.parse(stored) : null
     } catch {
-      // Ignore parse errors
+      return null
     }
-  }, [])
+  })
 
-  // Fetch available stations
+  // Sync selectedStation with fetched stations (validate it still exists)
   useEffect(() => {
-    let cancelled = false
-
-    async function fetchStations() {
-      try {
-        const response = await fetch('/api/verpakking/packing-stations')
-        if (!response.ok) return
-        const data = await response.json()
-        if (!cancelled) {
-          setStations(data.stations ?? [])
-        }
-      } catch {
-        // Silent fail
-      } finally {
-        if (!cancelled) setIsLoading(false)
-      }
+    if (!selectedStation || stations.length === 0) return
+    const stillExists = stations.find(s => s.id === selectedStation.id)
+    if (!stillExists) {
+      setSelectedStation(null)
+      localStorage.removeItem(STORAGE_KEY)
     }
-
-    fetchStations()
-    return () => { cancelled = true }
-  }, [])
+  }, [stations, selectedStation])
 
   const selectStation = useCallback((station: PackingStation) => {
     setSelectedStation(station)

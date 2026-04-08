@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
+import useSWR from 'swr'
 import type { LocalPackaging } from '@/types/verpakking'
 
 interface ApiLocalPackaging {
@@ -52,45 +53,21 @@ function transformPackaging(raw: ApiLocalPackaging): LocalPackaging {
 }
 
 export function useLocalPackagings(activeOnly = false) {
-  const [packagings, setPackagings] = useState<LocalPackaging[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<Error | null>(null)
+  const url = activeOnly
+    ? '/api/verpakking/packagings?active=true'
+    : '/api/verpakking/packagings'
+
+  const { data, error, isLoading, mutate } = useSWR<{ packagings: ApiLocalPackaging[] }>(
+    url,
+    { revalidateOnFocus: false }
+  )
+
+  const packagings = (data?.packagings ?? []).map(transformPackaging)
+
   const [isSyncing, setIsSyncing] = useState(false)
-
-  const fetchPackagings = useCallback(async (signal?: AbortSignal) => {
-    setIsLoading(true)
-    setError(null)
-
-    try {
-      const url = activeOnly
-        ? '/api/verpakking/packagings?active=true'
-        : '/api/verpakking/packagings'
-      const response = await fetch(url, { signal })
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to fetch packagings')
-      }
-      const data = await response.json()
-      const rawPackagings: ApiLocalPackaging[] = data.packagings ?? []
-      setPackagings(rawPackagings.map(transformPackaging))
-    } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') return
-      setError(err instanceof Error ? err : new Error('Unknown error'))
-    } finally {
-      setIsLoading(false)
-    }
-  }, [activeOnly])
-
-  useEffect(() => {
-    const abortController = new AbortController()
-    fetchPackagings(abortController.signal)
-    return () => abortController.abort()
-  }, [fetchPackagings])
 
   const syncFromPicqer = useCallback(async () => {
     setIsSyncing(true)
-    setError(null)
-
     try {
       const response = await fetch('/api/verpakking/sync/packagings', { method: 'POST' })
       if (!response.ok) {
@@ -98,18 +75,16 @@ export function useLocalPackagings(activeOnly = false) {
         throw new Error(errorData.error || 'Failed to sync packagings')
       }
       const result = await response.json()
-      await fetchPackagings()
+      await mutate()
       return result as { synced: number; added: number; updated: number }
     } catch (err) {
-      const error = err instanceof Error ? err : new Error('Unknown error')
-      setError(error)
-      throw error
+      throw err instanceof Error ? err : new Error('Unknown error')
     } finally {
       setIsSyncing(false)
     }
-  }, [fetchPackagings])
+  }, [mutate])
 
-  const createPackaging = useCallback(async (data: {
+  const createPackaging = useCallback(async (createData: {
     name: string
     barcode?: string
     length?: number
@@ -118,29 +93,21 @@ export function useLocalPackagings(activeOnly = false) {
     skipPicqer?: boolean
     idpackaging?: number
   }) => {
-    setError(null)
-
-    try {
-      const response = await fetch('/api/verpakking/packagings/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      })
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to create packaging')
-      }
-      const result = await response.json()
-      await fetchPackagings()
-      return result
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error('Unknown error')
-      setError(error)
-      throw error
+    const response = await fetch('/api/verpakking/packagings/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(createData),
+    })
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || 'Failed to create packaging')
     }
-  }, [fetchPackagings])
+    const result = await response.json()
+    await mutate()
+    return result
+  }, [mutate])
 
-  const updatePackaging = useCallback(async (idpackaging: number, data: {
+  const updatePackaging = useCallback(async (idpackaging: number, updateData: {
     name?: string
     barcode?: string
     length?: number
@@ -158,59 +125,43 @@ export function useLocalPackagings(activeOnly = false) {
     facturatie_box_sku?: string | null
     strapped_variant_id?: string | null
   }) => {
-    setError(null)
-
-    try {
-      const response = await fetch('/api/verpakking/packagings/update', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idpackaging, ...data }),
-      })
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to update packaging')
-      }
-      const result = await response.json()
-      await fetchPackagings()
-      return result
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error('Unknown error')
-      setError(error)
-      throw error
+    const response = await fetch('/api/verpakking/packagings/update', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idpackaging, ...updateData }),
+    })
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || 'Failed to update packaging')
     }
-  }, [fetchPackagings])
+    const result = await response.json()
+    await mutate()
+    return result
+  }, [mutate])
 
   const deletePackaging = useCallback(async (idpackaging: number, transferToIdpackaging?: number) => {
-    setError(null)
-
-    try {
-      const response = await fetch('/api/verpakking/packagings/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idpackaging, transferToIdpackaging }),
-      })
-      const result = await response.json()
-      if (!response.ok) {
-        if (response.status === 409 && result.error === 'has_rules') {
-          return result as { error: 'has_rules'; ruleCount: number; message: string }
-        }
-        throw new Error(result.error || 'Failed to delete packaging')
+    const response = await fetch('/api/verpakking/packagings/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idpackaging, transferToIdpackaging }),
+    })
+    const result = await response.json()
+    if (!response.ok) {
+      if (response.status === 409 && result.error === 'has_rules') {
+        return result as { error: 'has_rules'; ruleCount: number; message: string }
       }
-      await fetchPackagings()
-      return result as { success: boolean; rulesTransferred?: number; warnings?: string[] }
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error('Unknown error')
-      setError(error)
-      throw error
+      throw new Error(result.error || 'Failed to delete packaging')
     }
-  }, [fetchPackagings])
+    await mutate()
+    return result as { success: boolean; rulesTransferred?: number; warnings?: string[] }
+  }, [mutate])
 
-  const refresh = useCallback(() => fetchPackagings(), [fetchPackagings])
+  const refresh = useCallback(() => mutate(), [mutate])
 
   return {
     packagings,
     isLoading,
-    error,
+    error: error ?? null,
     isSyncing,
     syncFromPicqer,
     createPackaging,

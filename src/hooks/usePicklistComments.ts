@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useCallback } from 'react'
+import useSWR from 'swr'
 
 export interface PicklistComment {
   idcomment: number
@@ -11,43 +12,33 @@ export interface PicklistComment {
   createdAt: string
 }
 
+interface RawComment {
+  idcomment: number
+  body: string
+  author_type: string
+  author: { full_name: string; image_url: string | null }
+  created_at: string
+}
+
+function mapComments(raw: RawComment[]): PicklistComment[] {
+  return raw.map((c) => ({
+    idcomment: c.idcomment,
+    body: c.body,
+    authorType: c.author_type,
+    authorName: c.author?.full_name ?? 'Onbekend',
+    authorImageUrl: c.author?.image_url ?? null,
+    createdAt: c.created_at,
+  }))
+}
+
 export function usePicklistComments(picklistId: number | null) {
-  const [comments, setComments] = useState<PicklistComment[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-  const mountedRef = useRef(true)
+  const { data, isLoading, mutate } = useSWR<{ comments: RawComment[] }>(
+    picklistId ? `/api/picqer/picklists/${picklistId}/comments` : null
+  )
 
-  const fetchComments = useCallback(async () => {
-    if (!picklistId) return
+  const comments = mapComments(data?.comments ?? [])
 
-    setIsLoading(true)
-    try {
-      const res = await fetch(`/api/picqer/picklists/${picklistId}/comments`)
-      if (res.ok) {
-        const data = await res.json()
-        const mapped: PicklistComment[] = (data.comments ?? []).map(
-          (c: {
-            idcomment: number
-            body: string
-            author_type: string
-            author: { full_name: string; image_url: string | null }
-            created_at: string
-          }) => ({
-            idcomment: c.idcomment,
-            body: c.body,
-            authorType: c.author_type,
-            authorName: c.author?.full_name ?? 'Onbekend',
-            authorImageUrl: c.author?.image_url ?? null,
-            createdAt: c.created_at,
-          })
-        )
-        if (mountedRef.current) setComments(mapped)
-      }
-    } catch {
-      // silently fail
-    } finally {
-      if (mountedRef.current) setIsLoading(false)
-    }
-  }, [picklistId])
+  const fetchComments = useCallback(() => mutate(), [mutate])
 
   const addComment = useCallback(
     async (body: string): Promise<{ success: boolean; error?: string }> => {
@@ -61,18 +52,17 @@ export function usePicklistComments(picklistId: number | null) {
         })
 
         if (!res.ok) {
-          const data = await res.json()
-          return { success: false, error: data.error || 'Failed to add comment' }
+          const resData = await res.json()
+          return { success: false, error: resData.error || 'Failed to add comment' }
         }
 
-        await fetchComments()
+        await mutate()
         return { success: true }
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Unknown error'
-        return { success: false, error: message }
+        return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
       }
     },
-    [picklistId, fetchComments]
+    [picklistId, mutate]
   )
 
   const deleteComment = useCallback(
@@ -83,18 +73,17 @@ export function usePicklistComments(picklistId: number | null) {
         })
 
         if (!res.ok && res.status !== 204) {
-          const data = await res.json().catch(() => ({}))
-          return { success: false, error: (data as { error?: string }).error || 'Failed to delete comment' }
+          const resData = await res.json().catch(() => ({}))
+          return { success: false, error: (resData as { error?: string }).error || 'Failed to delete comment' }
         }
 
-        await fetchComments()
+        await mutate()
         return { success: true }
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Unknown error'
-        return { success: false, error: message }
+        return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
       }
     },
-    [fetchComments]
+    [mutate]
   )
 
   return { comments, isLoading, fetchComments, addComment, deleteComment }
