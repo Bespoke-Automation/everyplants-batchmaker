@@ -962,7 +962,9 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         : null
 
       const firstSessionProductId = assignments.length > 0 ? assignments[0].sessionProductId : null
-      const id = firstSessionProductId ?? `picklist-${idSuffix}-${pp.idproduct}`
+      const id = firstSessionProductId
+        ? `${firstSessionProductId}-pp-${pp.idpicklist_product}`
+        : `picklist-${idSuffix}-${pp.idproduct}`
 
       const compInfo = compositionMap.get(pp.idproduct)
 
@@ -1013,7 +1015,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
           const firstSessionProductId = totalAssignments.length > 0 ? totalAssignments[0].sessionProductId : null
           const idSuffix = `${pp.idpicklist_product ?? index}-loc-${loc.idlocation ?? loc.name}`
           const id = firstSessionProductId && locAssigned > 0
-            ? `${firstSessionProductId}-loc-${loc.idlocation ?? loc.name}`
+            ? `${firstSessionProductId}-pp-${pp.idpicklist_product}-loc-${loc.idlocation ?? loc.name}`
             : `picklist-${idSuffix}-${pp.idproduct}`
 
           const compInfo = compositionMap.get(pp.idproduct)
