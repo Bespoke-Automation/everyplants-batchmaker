@@ -26,7 +26,7 @@ export interface SessionCompletionResult {
  * This mirrors the filtering logic in VerpakkingsClient.tsx (lines 656-662).
  */
 function countRealPicklistProducts(
-  picklistProducts: { idproduct: number; productcode: string; amount: number }[],
+  picklistProducts: { idproduct: number; productcode: string; amount: number; has_parts?: boolean; partof_idpicklist_product?: number | null }[],
   orderProducts: { idorder_product: number; idproduct: number; productcode: string; has_parts: boolean; partof_idorder_product: number | null }[],
   packagingBarcodes: Set<string>,
 ): number {
@@ -52,16 +52,18 @@ function countRealPicklistProducts(
     }
   }
 
-  // Count only real products (same filter as UI)
+  // Count only real products (same filter as UI — uses picklist-level partof, not order-level)
   let total = 0
   for (const pp of picklistProducts) {
     // Skip packaging products (boxes appearing as line items)
     if (packagingBarcodes.has(pp.productcode)) continue
-    // Skip composition parents (virtual sets)
-    if (compositionParentIds.has(pp.idproduct)) continue
-    // Skip packaging composition parts (inlays etc.)
-    const compInfo = compositionMap.get(pp.idproduct)
-    if (compInfo?.parentIsPackaging) continue
+    // Skip composition parents (virtual sets) — only if this line IS a parent
+    if (pp.has_parts && compositionParentIds.has(pp.idproduct)) continue
+    // Skip packaging composition parts (inlays etc.) — only if this line is actually a child
+    if (pp.partof_idpicklist_product) {
+      const compInfo = compositionMap.get(pp.idproduct)
+      if (compInfo?.parentIsPackaging) continue
+    }
 
     total += pp.amount
   }
