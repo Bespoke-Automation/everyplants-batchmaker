@@ -1709,12 +1709,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     if (!session?.picklistId) return
     setIsClosingPicklist(true)
     try {
-      // Pick all products first (required before closing in Picqer)
-      try {
-        await fetch(`/api/picqer/picklists/${session.picklistId}/pick`, { method: 'POST' })
-      } catch {
-        // Non-blocking — continue with close
-      }
+      // The close endpoint now handles pickAll + close server-side
       const res = await fetch(`/api/picqer/picklists/${session.picklistId}/close`, { method: 'POST' })
       const data = await res.json()
       if (!res.ok) {

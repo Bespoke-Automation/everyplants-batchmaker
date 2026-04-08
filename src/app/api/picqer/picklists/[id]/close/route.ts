@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { closePicklist } from '@/lib/picqer/client'
+import { pickAllProducts, closePicklist } from '@/lib/picqer/client'
 
 export const dynamic = 'force-dynamic'
 
@@ -9,7 +9,22 @@ export async function POST(
 ) {
   try {
     const { id } = await params
-    await closePicklist(Number(id))
+    const picklistId = Number(id)
+
+    // Pick all products first (required before closing in Picqer)
+    const pickResult = await pickAllProducts(picklistId)
+    if (!pickResult.success) {
+      console.warn(`[picqer] pickAll failed for picklist ${picklistId}, attempting close anyway:`, pickResult.error)
+    }
+
+    const result = await closePicklist(picklistId)
+
+    if (!result.success) {
+      return NextResponse.json(
+        { error: result.error || 'Failed to close picklist' },
+        { status: 502 }
+      )
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {
