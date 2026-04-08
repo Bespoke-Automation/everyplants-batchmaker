@@ -5,6 +5,34 @@ import { supabase } from '@/lib/supabase/client'
 export const dynamic = 'force-dynamic'
 
 /**
+ * GET /api/verpakking/sessions/[id]/boxes
+ * Lightweight fetch of box statuses and label URLs (used for label polling after shipment)
+ */
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: sessionId } = await params
+
+    const { data, error } = await supabase
+      .schema('batchmaker')
+      .from('packing_session_boxes')
+      .select('id, status, label_url')
+      .eq('session_id', sessionId)
+
+    if (error) throw error
+
+    return NextResponse.json({ boxes: data })
+  } catch (error) {
+    return NextResponse.json(
+      { error: 'Failed to fetch boxes', details: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
  * POST /api/verpakking/sessions/[id]/boxes
  * Adds a new box to the session
  */

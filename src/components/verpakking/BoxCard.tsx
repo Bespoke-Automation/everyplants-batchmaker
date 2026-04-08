@@ -137,11 +137,16 @@ export default function BoxCard({
               <span className="font-mono text-xs text-muted-foreground ml-auto">{box.trackingCode}</span>
             )
           )}
-          {box.labelUrl && (
+          {box.labelUrl ? (
             <a href={box.labelUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-2 py-1 border border-border rounded text-xs hover:bg-muted transition-colors" title="Label openen">
               <FileText className="w-3 h-3" />
               <ExternalLink className="w-3 h-3" />
             </a>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+              <Clock className="w-3 h-3 animate-spin" />
+              Label...
+            </span>
           )}
           {onCancelShipment && (
             <button

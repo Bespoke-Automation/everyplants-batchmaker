@@ -708,6 +708,64 @@ export function usePackingSession(sessionId: string | null) {
     [sessionId]
   )
 
+  // Poll box label statuses after shipment to show label progress
+  const labelPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const pollLabelStatuses = useCallback((shippedBoxIds: string[]) => {
+    if (!sessionId || shippedBoxIds.length === 0) return
+    if (labelPollRef.current) clearInterval(labelPollRef.current)
+
+    let attempts = 0
+    const maxAttempts = 15 // 30 seconds max (15 × 2s)
+
+    labelPollRef.current = setInterval(async () => {
+      attempts++
+      try {
+        const res = await fetch(`/api/verpakking/sessions/${sessionId}/boxes`)
+        if (!res.ok) return
+        const data = await res.json()
+        const boxes: Array<{ id: string; status: string; label_url: string | null }> = data.boxes ?? []
+
+        let allDone = true
+        for (const boxId of shippedBoxIds) {
+          const box = boxes.find(b => b.id === boxId)
+          if (!box) continue
+          const hasLabel = box.status === 'label_fetched' || box.status === 'shipped'
+          if (!hasLabel && box.status !== 'error') {
+            allDone = false
+          }
+          // Update label URL in session state when it becomes available
+          if (box.label_url) {
+            setSession((prev) => {
+              if (!prev) return prev
+              return {
+                ...prev,
+                boxes: prev.boxes.map((b) =>
+                  b.id === boxId && !b.labelUrl ? { ...b, labelUrl: box.label_url } : b
+                ),
+              }
+            })
+          }
+        }
+
+        if (allDone || attempts >= maxAttempts) {
+          clearInterval(labelPollRef.current!)
+          labelPollRef.current = null
+        }
+      } catch {
+        // Non-critical — just stop polling on error
+        clearInterval(labelPollRef.current!)
+        labelPollRef.current = null
+      }
+    }, 2000)
+  }, [sessionId])
+
+  // Cleanup label polling on unmount
+  useEffect(() => {
+    return () => {
+      if (labelPollRef.current) clearInterval(labelPollRef.current)
+    }
+  }, [])
+
   const shipAllBoxes = useCallback(
     async (shippingProviderId: number, boxWeights?: Map<string, number>, packingStationId?: string, boxIds?: string[]) => {
       const currentSession = sessionRef.current
@@ -814,6 +872,12 @@ export function usePackingSession(sessionId: string | null) {
         if (data.sessionCompleted) {
           setSession((prev) => prev ? { ...prev, status: 'completed' } : prev)
         }
+
+        // Start polling for label URLs on successfully shipped boxes
+        const shippedIds = boxResults.filter((r: { success: boolean }) => r.success).map((r: { boxId: string }) => r.boxId)
+        if (shippedIds.length > 0) {
+          pollLabelStatuses(shippedIds)
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error'
         for (const box of pendingBoxes) {
@@ -825,7 +889,7 @@ export function usePackingSession(sessionId: string | null) {
         }
       }
     },
-    [sessionId]
+    [sessionId, pollLabelStatuses]
   )
 
   // --- Session methods ---
