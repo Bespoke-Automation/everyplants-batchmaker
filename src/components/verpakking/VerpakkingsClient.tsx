@@ -136,7 +136,6 @@ interface PrefetchedPicklistData {
   order: PicqerOrder | null
   shippingProfileName: string | null
   productCustomFields: Record<number, ProductCustomFields>
-  engineAdvice: EngineAdvice | null
   fetchedAt: number
 }
 const prefetchCache = new Map<number, PrefetchedPicklistData>()
@@ -529,9 +528,9 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     setPicklistLoading(true)
     setPicklistError(null)
     setOrderLoading(true)
-    setEngineLoading(true)
     setOrder(null)
     setEngineAdvice(null)
+    setEngineLoading(false)
     setShippingProfileName(null)
     setProductCustomFields(new Map())
     engineCalledRef.current = false
@@ -575,18 +574,12 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
           }
           setProductCustomFields(map)
         }
-
-        if (data.engineAdvice) {
-          setEngineAdvice(data.engineAdvice)
-          engineCalledRef.current = true
-        }
-        setEngineLoading(false)
+        // Engine advice is fetched separately (non-blocking) via the engine effect below
       } catch (err) {
         if (!cancelled) {
           setPicklistError(err instanceof Error ? err.message : 'Unknown error')
           setPicklistLoading(false)
           setOrderLoading(false)
-          setEngineLoading(false)
         }
       }
     }
@@ -677,15 +670,13 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     }
   }, [picklistIdForComments, fetchComments])
 
-  // Engine advice is now fetched server-side in the aggregate endpoint.
-  // This fallback effect handles edge cases where engine advice was not included
-  // in the aggregate response (e.g., order country was missing at fetch time).
+  // Engine advice: runs separately from the aggregate endpoint so it doesn't
+  // block the initial render. Fires once picklist + order are loaded.
   useEffect(() => {
     if (engineCalledRef.current) return
     if (!picklist?.products || picklist.products.length === 0) return
     if (!picklist.idorder) return
     if (!order?.deliverycountry) return
-    if (engineLoading) return
 
     engineCalledRef.current = true
     setEngineLoading(true)
@@ -717,12 +708,12 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         }
       })
       .catch((err) => {
-        console.error('[VerpakkingsClient] Engine advice fallback error:', err)
+        console.error('[VerpakkingsClient] Engine advice error:', err)
       })
       .finally(() => {
         setEngineLoading(false)
       })
-  }, [picklist, order, engineLoading])
+  }, [picklist, order])
 
   // Auto-pick packaging products and create boxes for them
   // Persisted in sessionStorage so it doesn't re-run after page refresh

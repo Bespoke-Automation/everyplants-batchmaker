@@ -7,19 +7,18 @@ import {
   getPicklistBatch,
 } from '@/lib/picqer/client'
 import { supabase } from '@/lib/supabase/client'
-import { calculateAdvice } from '@/lib/engine/packagingEngine'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * GET /api/verpakking/sessions/[id]/picklist-data
  *
- * Aggregate endpoint that fetches ALL data needed to render VerpakkingsClient
+ * Aggregate endpoint that fetches all data needed to render VerpakkingsClient
  * in a single request. Server-side parallelization eliminates the client-side
  * waterfall of sequential API calls.
  *
- * Returns: picklist, order, shipping profile name, product attributes,
- *          engine advice, and comments — all in one response.
+ * Engine advice is NOT included — it runs as a separate non-blocking client-side
+ * call so the UI renders immediately with picklist/order/products data.
  */
 export async function GET(
   _request: NextRequest,
@@ -39,17 +38,7 @@ export async function GET(
     const picklist = await fetchPicklist(picklistId)
     const tPicklist = Date.now() - t1
 
-    // Step 3: Everything in parallel — including engine advice
-    // Engine doesn't need order.deliverycountry (it's optional), so we can
-    // run it simultaneously with order/shipping/attrs/images.
-    const engineProducts = picklist.products?.length
-      ? picklist.products.map(pp => ({
-          picqer_product_id: pp.idproduct,
-          productcode: pp.productcode,
-          quantity: pp.amount,
-        }))
-      : null
-
+    // Step 3: Order, shipping, product attrs, images — all in parallel
     const t2 = Date.now()
     const results = await Promise.allSettled([
       // Order data
@@ -71,25 +60,11 @@ export async function GET(
       picklist.idpicklist_batch
         ? getPicklistBatch(picklist.idpicklist_batch).catch(() => null)
         : Promise.resolve(null),
-
-      // Engine advice (runs in parallel — countryCode not yet available but optional)
-      engineProducts
-        ? calculateAdvice(
-            picklist.idorder,
-            picklist.idpicklist,
-            engineProducts,
-            picklist.idshippingprovider_profile ?? undefined,
-            undefined // countryCode not available yet, engine handles this gracefully
-          ).catch((err) => {
-            console.error('[picklist-data] Engine advice error:', err)
-            return null
-          })
-        : Promise.resolve(null),
     ])
     const tParallel = Date.now() - t2
     const tTotal = Date.now() - t0
 
-    const [orderResult, shippingResult, attrsResult, batchResult, engineResult] = results
+    const [orderResult, shippingResult, attrsResult, batchResult] = results
 
     // Extract order
     const order = orderResult.status === 'fulfilled' ? orderResult.value : null
@@ -118,14 +93,9 @@ export async function GET(
       }
     }
 
-    // Extract engine advice
-    const engineAdvice = engineResult.status === 'fulfilled' ? engineResult.value : null
+    console.log(`[picklist-data] Timing: session=${tSession}ms picklist=${tPicklist}ms parallel=${tParallel}ms total=${tTotal}ms`)
+
     const errors: Record<string, string> = {}
-    if (engineResult.status === 'rejected') errors.engine = String(engineResult.reason)
-
-    console.log(`[picklist-data] Timing: session=${tSession}ms picklist=${tPicklist}ms parallel+engine=${tParallel}ms total=${tTotal}ms`)
-
-    // Collect any errors from settled promises
     if (orderResult.status === 'rejected') errors.order = String(orderResult.reason)
     if (shippingResult.status === 'rejected') errors.shipping = String(shippingResult.reason)
     if (attrsResult.status === 'rejected') errors.productAttributes = String(attrsResult.reason)
@@ -135,7 +105,6 @@ export async function GET(
       order,
       shippingProfileName,
       productCustomFields,
-      engineAdvice,
       ...(Object.keys(errors).length > 0 && { _errors: errors }),
     })
   } catch (error) {
