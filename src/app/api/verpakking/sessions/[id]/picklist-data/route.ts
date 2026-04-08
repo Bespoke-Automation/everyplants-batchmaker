@@ -27,16 +27,30 @@ export async function GET(
 ) {
   try {
     const { id: sessionId } = await params
+    const t0 = Date.now()
 
-    // Step 1: Fetch session from Supabase (fast, ~100ms)
+    // Step 1: Fetch session from Supabase
     const session = await getPackingSession(sessionId)
     const picklistId = session.picklist_id
+    const tSession = Date.now() - t0
 
-    // Step 2: Fetch picklist from Picqer (~200-400ms)
+    // Step 2: Fetch picklist from Picqer
+    const t1 = Date.now()
     const picklist = await fetchPicklist(picklistId)
+    const tPicklist = Date.now() - t1
 
-    // Step 3: Everything else in parallel (~max 500ms)
-    // All of these are independent once we have the picklist
+    // Step 3: Everything in parallel — including engine advice
+    // Engine doesn't need order.deliverycountry (it's optional), so we can
+    // run it simultaneously with order/shipping/attrs/images.
+    const engineProducts = picklist.products?.length
+      ? picklist.products.map(pp => ({
+          picqer_product_id: pp.idproduct,
+          productcode: pp.productcode,
+          quantity: pp.amount,
+        }))
+      : null
+
+    const t2 = Date.now()
     const results = await Promise.allSettled([
       // Order data
       picklist.idorder
@@ -57,9 +71,25 @@ export async function GET(
       picklist.idpicklist_batch
         ? getPicklistBatch(picklist.idpicklist_batch).catch(() => null)
         : Promise.resolve(null),
-    ])
 
-    const [orderResult, shippingResult, attrsResult, batchResult] = results
+      // Engine advice (runs in parallel — countryCode not yet available but optional)
+      engineProducts
+        ? calculateAdvice(
+            picklist.idorder,
+            picklist.idpicklist,
+            engineProducts,
+            picklist.idshippingprovider_profile ?? undefined,
+            undefined // countryCode not available yet, engine handles this gracefully
+          ).catch((err) => {
+            console.error('[picklist-data] Engine advice error:', err)
+            return null
+          })
+        : Promise.resolve(null),
+    ])
+    const tParallel = Date.now() - t2
+    const tTotal = Date.now() - t0
+
+    const [orderResult, shippingResult, attrsResult, batchResult, engineResult] = results
 
     // Extract order
     const order = orderResult.status === 'fulfilled' ? orderResult.value : null
@@ -88,31 +118,12 @@ export async function GET(
       }
     }
 
-    // Step 4: Engine advice (needs picklist products + order country code)
-    // Run after order is available since countryCode improves advice quality
-    let engineAdvice = null
+    // Extract engine advice
+    const engineAdvice = engineResult.status === 'fulfilled' ? engineResult.value : null
     const errors: Record<string, string> = {}
+    if (engineResult.status === 'rejected') errors.engine = String(engineResult.reason)
 
-    if (picklist.products?.length) {
-      try {
-        const products = picklist.products.map(pp => ({
-          picqer_product_id: pp.idproduct,
-          productcode: pp.productcode,
-          quantity: pp.amount,
-        }))
-
-        engineAdvice = await calculateAdvice(
-          picklist.idorder,
-          picklist.idpicklist,
-          products,
-          picklist.idshippingprovider_profile ?? undefined,
-          order?.deliverycountry?.toUpperCase()
-        )
-      } catch (err) {
-        console.error('[picklist-data] Engine advice error:', err)
-        errors.engine = err instanceof Error ? err.message : 'Engine calculation failed'
-      }
-    }
+    console.log(`[picklist-data] Timing: session=${tSession}ms picklist=${tPicklist}ms parallel+engine=${tParallel}ms total=${tTotal}ms`)
 
     // Collect any errors from settled promises
     if (orderResult.status === 'rejected') errors.order = String(orderResult.reason)
