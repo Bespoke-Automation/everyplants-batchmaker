@@ -238,12 +238,39 @@ export default function BatchOverview({
     }
   }, [deleteBatch, onBack])
 
-  // Loading state
+  // Loading state — skeleton matching batch overview layout
   if (isLoading && !batchSession) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-2">
-        <Loader2 className="w-6 h-6 text-primary animate-spin" />
-        <p className="text-muted-foreground text-sm">{t.common.loading}</p>
+      <div className="flex-1 flex flex-col animate-pulse">
+        {/* Header skeleton */}
+        <div className="bg-card border-b border-border px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-muted rounded-lg" />
+              <div className="space-y-1.5">
+                <div className="h-5 w-28 bg-muted rounded" />
+                <div className="h-3 w-44 bg-muted rounded" />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="h-9 w-24 bg-muted rounded-lg" />
+            </div>
+          </div>
+        </div>
+        {/* Picklist cards skeleton */}
+        <div className="flex-1 p-4 space-y-3">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="border border-border rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div className="space-y-2">
+                  <div className="h-4 w-36 bg-muted rounded" />
+                  <div className="h-3 w-52 bg-muted rounded" />
+                </div>
+                <div className="h-9 w-20 bg-muted rounded-lg" />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     )
   }

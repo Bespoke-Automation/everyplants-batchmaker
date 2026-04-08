@@ -1858,13 +1858,65 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     return () => clearTimeout(timer)
   }, [highlightProductId])
 
-  // Loading state
+  // Loading state — skeleton that mirrors the actual layout
   if (isSessionLoading) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          <p className="text-muted-foreground">{t.packing.loadingSession}</p>
+      <div className="flex flex-col h-full animate-pulse">
+        {/* Header skeleton */}
+        <div className="bg-card border-b border-border px-3 py-2 lg:px-4 lg:py-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-muted rounded-lg" />
+              <div className="space-y-1.5">
+                <div className="h-5 w-32 bg-muted rounded" />
+                <div className="h-3 w-48 bg-muted rounded" />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="h-9 w-28 bg-muted rounded-lg" />
+              <div className="h-9 w-28 bg-muted rounded-lg" />
+            </div>
+          </div>
+        </div>
+        {/* Body skeleton — products left, boxes right */}
+        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+          {/* Products column */}
+          <div className="flex-1 p-3 lg:p-4 space-y-2 overflow-hidden">
+            <div className="h-4 w-24 bg-muted rounded mb-3" />
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="flex items-center gap-3 p-3 border border-border rounded-lg">
+                <div className="w-16 h-16 bg-muted rounded-lg flex-shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 w-3/4 bg-muted rounded" />
+                  <div className="h-3 w-1/2 bg-muted rounded" />
+                </div>
+                <div className="h-8 w-12 bg-muted rounded" />
+              </div>
+            ))}
+          </div>
+          {/* Boxes column */}
+          <div className="flex-1 p-3 lg:p-4 lg:border-l border-border space-y-3 overflow-hidden">
+            <div className="h-4 w-20 bg-muted rounded mb-3" />
+            {[...Array(2)].map((_, i) => (
+              <div key={i} className="border border-border rounded-lg p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="h-5 w-40 bg-muted rounded" />
+                  <div className="h-8 w-24 bg-muted rounded-lg" />
+                </div>
+                <div className="h-16 bg-muted/50 rounded-lg" />
+              </div>
+            ))}
+          </div>
+          {/* Sidebar skeleton (desktop only) */}
+          <div className="hidden lg:block w-72 border-l border-border p-4 space-y-4 overflow-hidden">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="space-y-2">
+                <div className="h-4 w-20 bg-muted rounded" />
+                <div className="h-3 w-full bg-muted rounded" />
+                <div className="h-3 w-2/3 bg-muted rounded" />
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     )
@@ -3048,9 +3100,17 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
                 </div>
                 <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 lg:p-4 space-y-2">
                   {picklistLoading ? (
-                    <div className="flex items-center justify-center py-8">
-                      <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                      <span className="ml-2 text-sm text-muted-foreground">{t.packing.loadingProducts}</span>
+                    <div className="space-y-2 animate-pulse">
+                      {[...Array(4)].map((_, i) => (
+                        <div key={i} className="flex items-center gap-3 p-3 border border-border rounded-lg">
+                          <div className="w-16 h-16 bg-muted rounded-lg flex-shrink-0" />
+                          <div className="flex-1 space-y-2">
+                            <div className="h-4 w-3/4 bg-muted rounded" />
+                            <div className="h-3 w-1/2 bg-muted rounded" />
+                          </div>
+                          <div className="h-8 w-12 bg-muted rounded" />
+                        </div>
+                      ))}
                     </div>
                   ) : picklistError ? (
                     <div className="flex items-center justify-center py-8 text-red-500">
