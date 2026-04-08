@@ -470,7 +470,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     productName: string
   } | null>(null)
   const [boxSearchQuery, setBoxSearchQuery] = useState('')
-  const [showAllPackagings, setShowAllPackagings] = useState(false)
+  const [showAllPackagings, setShowAllPackagings] = useState(true)
   const [closedBoxes, setClosedBoxes] = useState<Set<string>>(new Set())
   const [activeTab, setActiveTab] = useState<'products' | 'boxes'>('products')
   const [showSessionInfo, setShowSessionInfo] = useState(false)
