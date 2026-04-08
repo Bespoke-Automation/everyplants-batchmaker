@@ -129,6 +129,10 @@ interface CompositionInfo {
   parentIsPackaging: boolean
 }
 
+// Module-level cache for prefetched picklist data (survives re-renders, cleared on navigation)
+const prefetchCache = new Map<number, { picklist: PicqerPicklistWithProducts; order: PicqerOrder | null; fetchedAt: number }>()
+const PREFETCH_TTL = 60_000 // 60 seconds
+
 function formatCost(value: number | undefined): string {
   if (value === undefined) return '-'
   return `\u20AC${value.toFixed(2)}`
@@ -493,11 +497,22 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
 
     async function loadPicklistData() {
       try {
-        // Step 1: Fetch picklist (required for subsequent calls)
-        const picklistRes = await fetch(`/api/picqer/picklists/${session!.picklistId}`)
-        if (!picklistRes.ok) throw new Error(t.packing.fetchPicklistFailed)
-        const picklistData = await picklistRes.json()
-        const pl = picklistData.picklist
+        // Check prefetch cache first
+        const cached = prefetchCache.get(session!.picklistId)
+        let pl: PicqerPicklistWithProducts
+        let cachedOrder: PicqerOrder | null = null
+
+        if (cached && Date.now() - cached.fetchedAt < PREFETCH_TTL) {
+          pl = cached.picklist
+          cachedOrder = cached.order
+          prefetchCache.delete(session!.picklistId)
+        } else {
+          // Step 1: Fetch picklist (required for subsequent calls)
+          const picklistRes = await fetch(`/api/picqer/picklists/${session!.picklistId}`)
+          if (!picklistRes.ok) throw new Error(t.packing.fetchPicklistFailed)
+          const picklistData = await picklistRes.json()
+          pl = picklistData.picklist
+        }
 
         if (cancelled) return
         setPicklist(pl)
@@ -507,7 +522,10 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         const parallelFetches: Promise<void>[] = []
 
         // Order (needed for engine advice + delivery address)
-        if (pl.idorder) {
+        if (cachedOrder) {
+          setOrder(cachedOrder)
+          setOrderLoading(false)
+        } else if (pl.idorder) {
           parallelFetches.push(
             fetch(`/api/picqer/orders/${pl.idorder}`)
               .then((res) => res.ok ? res.json() : null)
@@ -567,6 +585,56 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     loadPicklistData()
 
     return () => { cancelled = true }
+  }, [session?.picklistId])
+
+  // Prefetch next picklist data when worker has assigned products to boxes (making progress)
+  const prefetchTriggeredRef = useRef(false)
+  useEffect(() => {
+    if (prefetchTriggeredRef.current) return
+    if (!nextPicklistInBatch || !picklist || !session) return
+
+    // Trigger prefetch when any products have been assigned to boxes
+    const hasAssignedProducts = session.boxes.some(b => b.products.length > 0)
+    if (!hasAssignedProducts) return
+
+    const nextPicklistId = nextPicklistInBatch.idpicklist
+    if (prefetchCache.has(nextPicklistId)) return
+
+    prefetchTriggeredRef.current = true
+
+    // Prefetch picklist + order using requestIdleCallback for low priority
+    const doPrefetch = async () => {
+      try {
+        const picklistRes = await fetch(`/api/picqer/picklists/${nextPicklistId}`)
+        if (!picklistRes.ok) return
+        const picklistData = await picklistRes.json()
+        const pl = picklistData.picklist
+
+        let orderData: PicqerOrder | null = null
+        if (pl.idorder) {
+          const orderRes = await fetch(`/api/picqer/orders/${pl.idorder}`)
+          if (orderRes.ok) {
+            const data = await orderRes.json()
+            orderData = data.order ?? null
+          }
+        }
+
+        prefetchCache.set(nextPicklistId, { picklist: pl, order: orderData, fetchedAt: Date.now() })
+      } catch {
+        // Non-critical — prefetch failure is fine
+      }
+    }
+
+    if ('requestIdleCallback' in window) {
+      requestIdleCallback(() => doPrefetch())
+    } else {
+      setTimeout(doPrefetch, 100)
+    }
+  }, [nextPicklistInBatch, picklist, session])
+
+  // Reset prefetch trigger when navigating to a new picklist
+  useEffect(() => {
+    prefetchTriggeredRef.current = false
   }, [session?.picklistId])
 
   const startEditAddress = useCallback(() => {
