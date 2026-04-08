@@ -108,6 +108,8 @@ export interface PicqerPicklistProduct {
   name: string
   amount: number
   amount_picked: number
+  partof_idpicklist_product: number | null
+  has_parts: boolean
   image?: string | null // Enriched from batch products (not in Picqer response)
   stocklocation?: string | null // Deprecated but still returned by Picqer
   pick_locations?: PicqerPickLocation[]

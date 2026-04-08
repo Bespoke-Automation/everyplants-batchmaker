@@ -908,13 +908,15 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
 
     // Filter out:
     // 1. Packaging products (boxes that appear as line items)
-    // 2. Composition parents (virtual sets - not physically pickable)
-    // 3. Packaging composition parts (belong to the box, not the product list)
+    // 2. Composition parents (virtual sets - not physically pickable) — only if this picklist line IS a parent (has_parts)
+    // 3. Packaging composition parts (belong to the box, not the product list) — only if this picklist line is actually a child (partof set)
     const realProducts = picklist.products.filter(pp => {
       if (packagingBarcodeMap.has(pp.productcode)) return false
-      if (compositionParentIds.has(pp.idproduct)) return false
-      const compInfo = compositionMap.get(pp.idproduct)
-      if (compInfo?.parentIsPackaging) return false
+      if (pp.has_parts && compositionParentIds.has(pp.idproduct)) return false
+      if (pp.partof_idpicklist_product) {
+        const compInfo = compositionMap.get(pp.idproduct)
+        if (compInfo?.parentIsPackaging) return false
+      }
       return true
     })
 
@@ -966,7 +968,9 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         ? `${firstSessionProductId}-pp-${pp.idpicklist_product}`
         : `picklist-${idSuffix}-${pp.idproduct}`
 
-      const compInfo = compositionMap.get(pp.idproduct)
+      // Only treat as composition child if this picklist line actually has partof set
+      // (same idproduct can appear both as standalone AND as part of a set)
+      const compInfo = pp.partof_idpicklist_product ? compositionMap.get(pp.idproduct) : undefined
 
       return {
         id,
@@ -1018,7 +1022,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
             ? `${firstSessionProductId}-pp-${pp.idpicklist_product}-loc-${loc.idlocation ?? loc.name}`
             : `picklist-${idSuffix}-${pp.idproduct}`
 
-          const compInfo = compositionMap.get(pp.idproduct)
+          const compInfo = pp.partof_idpicklist_product ? compositionMap.get(pp.idproduct) : undefined
 
           items.push({
             id,
