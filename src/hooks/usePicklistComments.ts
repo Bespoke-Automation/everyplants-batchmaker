@@ -33,7 +33,8 @@ function mapComments(raw: RawComment[]): PicklistComment[] {
 
 export function usePicklistComments(picklistId: number | null) {
   const { data, isLoading, mutate } = useSWR<{ comments: RawComment[] }>(
-    picklistId ? `/api/picqer/picklists/${picklistId}/comments` : null
+    picklistId ? `/api/picqer/picklists/${picklistId}/comments` : null,
+    { keepPreviousData: false } // Don't show stale comments from previous picklist
   )
 
   const comments = mapComments(data?.comments ?? [])

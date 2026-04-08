@@ -5,7 +5,6 @@ import {
   fetchOrder,
   getPicklistShippingMethods,
   getPicklistBatch,
-  getComments,
 } from '@/lib/picqer/client'
 import { supabase } from '@/lib/supabase/client'
 import { calculateAdvice } from '@/lib/engine/packagingEngine'
@@ -54,19 +53,13 @@ export async function GET(
         ? fetchProductAttributes(picklist.products.map(p => p.idproduct))
         : Promise.resolve({}),
 
-      // Comments
-      getComments('picklists', picklistId),
-
       // Image enrichment from batch
       picklist.idpicklist_batch
         ? getPicklistBatch(picklist.idpicklist_batch).catch(() => null)
         : Promise.resolve(null),
-
-      // Engine advice (needs order for countryCode, but we can try without)
-      // We'll re-run this after order is available if needed
     ])
 
-    const [orderResult, shippingResult, attrsResult, commentsResult, batchResult] = results
+    const [orderResult, shippingResult, attrsResult, batchResult] = results
 
     // Extract order
     const order = orderResult.status === 'fulfilled' ? orderResult.value : null
@@ -81,9 +74,6 @@ export async function GET(
 
     // Extract product attributes
     const productCustomFields = attrsResult.status === 'fulfilled' ? attrsResult.value : {}
-
-    // Extract comments
-    const comments = commentsResult.status === 'fulfilled' ? commentsResult.value : []
 
     // Enrich products with images from batch
     if (batchResult.status === 'fulfilled' && batchResult.value) {
@@ -128,7 +118,6 @@ export async function GET(
     if (orderResult.status === 'rejected') errors.order = String(orderResult.reason)
     if (shippingResult.status === 'rejected') errors.shipping = String(shippingResult.reason)
     if (attrsResult.status === 'rejected') errors.productAttributes = String(attrsResult.reason)
-    if (commentsResult.status === 'rejected') errors.comments = String(commentsResult.reason)
 
     return NextResponse.json({
       picklist,
@@ -136,7 +125,6 @@ export async function GET(
       shippingProfileName,
       productCustomFields,
       engineAdvice,
-      comments,
       ...(Object.keys(errors).length > 0 && { _errors: errors }),
     })
   } catch (error) {

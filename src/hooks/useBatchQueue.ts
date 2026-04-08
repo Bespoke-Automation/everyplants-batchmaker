@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import useSWR from 'swr'
 import type { QueueBatch, BatchClaimResult } from '@/types/verpakking'
 
@@ -110,7 +110,7 @@ export function useBatchQueue(workerId: number | null) {
   const [assignedToFilter, setAssignedToFilter] = useState<number | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [completedLimit, setCompletedLimit] = useState(50)
-  const commentCountsRef = useRef<Record<number, number>>({})
+  const [commentCounts, setCommentCounts] = useState<Record<number, number>>({})
 
   // Build SWR key with all filter params
   const swrKey = useMemo(() => {
@@ -138,9 +138,9 @@ export function useBatchQueue(workerId: number | null) {
     if (!data?.batches) return []
     return data.batches.map((b) => ({
       ...b,
-      totalComments: commentCountsRef.current[b.idpicklistBatch] ?? 0,
+      totalComments: commentCounts[b.idpicklistBatch] ?? 0,
     }))
-  }, [data?.batches])
+  }, [data?.batches, commentCounts])
 
   // Comment counts: separate SWR with longer interval
   const commentKey = useMemo(() => {
@@ -160,7 +160,7 @@ export function useBatchQueue(workerId: number | null) {
       if (!res.ok) return
       const result = await res.json()
       if (result?.counts) {
-        commentCountsRef.current = { ...commentCountsRef.current, ...result.counts }
+        setCommentCounts(prev => ({ ...prev, ...result.counts }))
       }
     },
     { refreshInterval: COMMENT_POLL_INTERVAL, revalidateOnFocus: false }

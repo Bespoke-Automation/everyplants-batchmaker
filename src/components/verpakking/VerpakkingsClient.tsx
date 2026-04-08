@@ -137,11 +137,10 @@ interface PrefetchedPicklistData {
   shippingProfileName: string | null
   productCustomFields: Record<number, ProductCustomFields>
   engineAdvice: EngineAdvice | null
-  comments: Array<{ idcomment: number; body: string; author_type: string; author: { full_name: string; image_url: string | null }; created_at: string }>
   fetchedAt: number
 }
 const prefetchCache = new Map<number, PrefetchedPicklistData>()
-const PREFETCH_TTL = 60_000 // 60 seconds
+const PREFETCH_TTL = 300_000 // 5 minutes — picklist data changes rarely during packing
 
 function formatCost(value: number | undefined): string {
   if (value === undefined) return '-'
@@ -525,10 +524,22 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     if (!sessionId || !session?.picklistId) return
 
     let cancelled = false
+
+    // Reset all state to prevent stale data from previous picklist
     setPicklistLoading(true)
     setPicklistError(null)
     setOrderLoading(true)
     setEngineLoading(true)
+    setOrder(null)
+    setEngineAdvice(null)
+    setShippingProfileName(null)
+    setProductCustomFields(new Map())
+    engineCalledRef.current = false
+
+    // Clean up stale prefetch cache entries
+    for (const [key, entry] of prefetchCache) {
+      if (Date.now() - entry.fetchedAt > PREFETCH_TTL) prefetchCache.delete(key)
+    }
 
     async function loadPicklistData() {
       try {
@@ -552,10 +563,10 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         setPicklist(data.picklist)
         setPicklistLoading(false)
 
-        if (data.order) setOrder(data.order)
+        setOrder(data.order ?? null)
         setOrderLoading(false)
 
-        if (data.shippingProfileName) setShippingProfileName(data.shippingProfileName)
+        setShippingProfileName(data.shippingProfileName ?? null)
 
         if (data.productCustomFields) {
           const map = new Map<number, ProductCustomFields>()
