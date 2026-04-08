@@ -1,28 +1,45 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getBatchSession, updateBatchSession, getPackingSessionsForBatch } from '@/lib/supabase/batchSessions'
+import { getPicklistBatch } from '@/lib/picqer/client'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * GET /api/verpakking/batch-sessions/[id]
- * Get batch session details with linked packing sessions
+ * Get batch session details with linked packing sessions.
+ * Add ?include=picqer to also fetch Picqer batch details (picklists, products) in parallel.
  */
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params
+    const includePicqer = request.nextUrl.searchParams.get('include') === 'picqer'
 
     const [batchSession, packingSessions] = await Promise.all([
       getBatchSession(id),
       getPackingSessionsForBatch(id),
     ])
 
-    return NextResponse.json({
+    const response: Record<string, unknown> = {
       ...batchSession,
       packing_sessions: packingSessions,
-    })
+    }
+
+    // Fetch Picqer batch details in parallel if requested
+    if (includePicqer && batchSession.batch_id) {
+      try {
+        const picqerBatch = await getPicklistBatch(batchSession.batch_id)
+        response.picqer_batch = picqerBatch
+      } catch (picqerError) {
+        // Non-fatal: return Supabase data even if Picqer fails
+        console.error('[verpakking] Failed to fetch Picqer batch (non-fatal):', picqerError)
+        response.picqer_batch = null
+      }
+    }
+
+    return NextResponse.json(response)
   } catch (error) {
     console.error('[verpakking] Error fetching batch session:', error)
     return NextResponse.json(

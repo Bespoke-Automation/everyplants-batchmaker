@@ -60,7 +60,17 @@ export interface BatchComment {
   createdAt: string
 }
 
-const POLL_INTERVAL = 5000
+const POLL_INTERVAL = 10000
+
+interface PicqerBatchDetail {
+  picklists?: PicqerBatchPicklist[]
+  products?: PicqerBatchProduct[]
+  type?: 'singles' | 'normal'
+  total_products?: number
+  total_picklists?: number
+  picklist_batchid?: string
+  assigned_to?: { iduser: number; full_name: string }
+}
 
 export function useBatchSession(batchSessionId: string | null, previewBatchId?: number | null) {
   const [batchSession, setBatchSession] = useState<BatchSessionDetail | null>(null)
@@ -74,6 +84,16 @@ export function useBatchSession(batchSessionId: string | null, previewBatchId?: 
   const picklistCommentsLoadedRef = useRef(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const isMountedRef = useRef(true)
+  // Smart polling: track last known status to avoid unnecessary re-renders
+  const lastKnownStatusRef = useRef<{ status: string; completedPicklists: number } | null>(null)
+  // Cache Picqer data between light polls (only re-fetched on full fetch)
+  const lastPicqerDataRef = useRef<{
+    rawPicklists: PicqerBatchPicklist[]
+    rawProducts: PicqerBatchProduct[]
+    batchType: 'singles' | 'normal'
+    totalProducts: number
+    picqerTotalPicklists: number
+  } | null>(null)
 
   // Helper: map raw Picqer products to BatchProduct[]
   const mapProducts = (rawProducts: PicqerBatchProduct[]): BatchProduct[] =>
@@ -112,7 +132,7 @@ export function useBatchSession(batchSessionId: string | null, previewBatchId?: 
       customerRemarks: pl.customer_remarks,
     }))
 
-  const fetchBatchSession = useCallback(async (signal?: AbortSignal) => {
+  const fetchBatchSession = useCallback(async (signal?: AbortSignal, isPolling = false) => {
     // Preview mode: load only from Picqer without Supabase session
     if (!batchSessionId && previewBatchId) {
       try {
@@ -160,31 +180,45 @@ export function useBatchSession(batchSessionId: string | null, previewBatchId?: 
     if (!batchSessionId) return
 
     try {
-      // Fetch batch session details (with linked packing sessions) and batch picklists in parallel
-      const batchSessionRes = await fetch(`/api/verpakking/batch-sessions/${batchSessionId}`, { signal })
+      // Single call that fetches Supabase session + Picqer batch details server-side in parallel
+      const includePicqer = !isPolling
+      const url = `/api/verpakking/batch-sessions/${batchSessionId}${includePicqer ? '?include=picqer' : ''}`
+      const batchSessionRes = await fetch(url, { signal })
 
       if (!batchSessionRes.ok) {
         const errorData = await batchSessionRes.json()
         throw new Error(errorData.error || 'Failed to fetch batch session')
       }
 
-      const sessionData: BatchSessionResponse = await batchSessionRes.json()
+      const sessionData = await batchSessionRes.json() as BatchSessionResponse & { picqer_batch?: PicqerBatchDetail | null }
 
-      // Fetch single batch detail from Picqer (includes picklists with rich data + products)
-      const batchDetailRes = await fetch(`/api/picqer/picklist-batches/${sessionData.batch_id}`, { signal })
+      // Smart polling: if status hasn't changed, skip the expensive UI update
+      if (isPolling && lastKnownStatusRef.current) {
+        const statusUnchanged =
+          sessionData.status === lastKnownStatusRef.current.status &&
+          sessionData.completed_picklists === lastKnownStatusRef.current.completedPicklists
+        if (statusUnchanged) return // No changes — skip re-render
+      }
 
+      // Extract Picqer data (from combined response, or use cached)
       let rawPicklists: PicqerBatchPicklist[] = []
       let rawProducts: PicqerBatchProduct[] = []
       let batchType: 'singles' | 'normal' = 'normal'
       let totalProducts = 0
       let picqerTotalPicklists = 0
-      if (batchDetailRes.ok) {
-        const batchDetail = await batchDetailRes.json()
-        rawPicklists = batchDetail.picklists ?? []
-        rawProducts = batchDetail.products ?? []
-        batchType = batchDetail.type ?? 'normal'
-        totalProducts = batchDetail.total_products ?? 0
-        picqerTotalPicklists = batchDetail.total_picklists ?? 0
+
+      const picqerBatch = sessionData.picqer_batch
+      if (picqerBatch) {
+        rawPicklists = picqerBatch.picklists ?? []
+        rawProducts = picqerBatch.products ?? []
+        batchType = picqerBatch.type ?? 'normal'
+        totalProducts = picqerBatch.total_products ?? 0
+        picqerTotalPicklists = picqerBatch.total_picklists ?? 0
+        // Cache Picqer data for light polls
+        lastPicqerDataRef.current = { rawPicklists, rawProducts, batchType, totalProducts, picqerTotalPicklists }
+      } else if (lastPicqerDataRef.current) {
+        // Light poll: reuse cached Picqer data
+        ;({ rawPicklists, rawProducts, batchType, totalProducts, picqerTotalPicklists } = lastPicqerDataRef.current)
       }
 
       // Build a map of picklist_id → packing session
@@ -234,6 +268,7 @@ export function useBatchSession(batchSessionId: string | null, previewBatchId?: 
 
       if (isMountedRef.current) {
         setBatchSession(detail)
+        lastKnownStatusRef.current = { status: sessionData.status, completedPicklists: sessionData.completed_picklists }
         setError(null)
         setIsLoading(false)
       }
@@ -271,7 +306,7 @@ export function useBatchSession(batchSessionId: string | null, previewBatchId?: 
     const startPolling = () => {
       if (intervalRef.current) clearInterval(intervalRef.current)
       intervalRef.current = setInterval(() => {
-        fetchBatchSession()
+        fetchBatchSession(undefined, true)
       }, POLL_INTERVAL)
     }
 
