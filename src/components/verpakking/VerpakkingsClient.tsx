@@ -1716,6 +1716,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         setScanFeedback({ message: data.error || t.packing.closePicklistFailed, type: 'error' })
         return
       }
+      // Update local picklist status so UI reflects the closed state
+      setPicklist(prev => prev ? { ...prev, status: 'closed' } : prev)
       // Mark session as completed
       await completeSession()
       setScanFeedback({ message: t.packing.picklistClosed, type: 'success' })
@@ -2161,8 +2163,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
               >
                 <Info className="w-5 h-5 text-muted-foreground" />
               </button>
-              {/* Close picklist button */}
-              {session.status !== 'completed' && !isPicklistTerminal && (
+              {/* Close picklist button — show when picklist is still open in Picqer, even if session is completed */}
+              {!isPicklistTerminal && (
                 <button
                   onClick={() => setShowClosePicklistConfirm(true)}
                   disabled={isClosingPicklist}
@@ -2575,8 +2577,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
           </div>
         )}
 
-        {/* Completed banner + quick actions — shown when picklist is closed or session completed */}
-        {(isPicklistTerminal || session.status === 'completed') && (
+        {/* Completed banner + quick actions — shown only when picklist is actually closed/cancelled in Picqer */}
+        {isPicklistTerminal && (
           <CompletedView
             session={session}
             nextPicklist={nextPicklistInBatch}
@@ -2593,7 +2595,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
         )}
 
         {/* Feedback toast for completed view */}
-        {(isPicklistTerminal || session.status === 'completed') && scanFeedback && (
+        {isPicklistTerminal && scanFeedback && (
           <div className={`px-3 py-2 lg:px-4 border-b ${
             scanFeedback.type === 'success' ? 'bg-green-50 border-green-200 text-green-800' :
             scanFeedback.type === 'error' ? 'bg-red-50 border-red-200 text-red-800' :
@@ -2608,8 +2610,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
           </div>
         )}
 
-        {/* Content area — always shown, read-only when completed */}
-        {(isPicklistTerminal || session.status === 'completed') ? (
+        {/* Content area — always shown, read-only when picklist is closed in Picqer */}
+        {isPicklistTerminal ? (
           <>
         {/* Read-only product/box view for completed sessions */}
         <div className="flex-1 flex flex-col overflow-y-auto">
