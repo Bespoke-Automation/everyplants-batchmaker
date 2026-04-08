@@ -54,7 +54,7 @@ export async function POST(
 
     // Idempotency: check if a box with this packaging already exists in the session
     // Prevents duplicate creation from React StrictMode double-firing or race conditions
-    if (packagingAdviceId) {
+    {
       const { data: existing } = await supabase
         .schema('batchmaker')
         .from('packing_session_boxes')

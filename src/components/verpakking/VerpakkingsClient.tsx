@@ -753,6 +753,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     if (needsProcessing.length === 0 && allAlreadyPicked) return
 
     autoPickCalledRef.current = true
+    // Prevent engine advice effect from also creating boxes in the same render cycle
+    autoBoxCreatedRef.current = true
     try { sessionStorage.setItem(autoPickKey, 'true') } catch { /* ignore */ }
 
     // 1. Auto-pick in Picqer (non-blocking)
