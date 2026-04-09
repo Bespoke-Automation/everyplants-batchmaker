@@ -131,14 +131,14 @@ interface CompositionInfo {
 }
 
 // Module-level cache for prefetched picklist data (survives re-renders, cleared on navigation)
-interface PrefetchedPicklistData {
+export interface PrefetchedPicklistData {
   picklist: PicqerPicklistWithProducts
   order: PicqerOrder | null
   shippingProfileName: string | null
   productCustomFields: Record<number, ProductCustomFields>
   fetchedAt: number
 }
-const prefetchCache = new Map<number, PrefetchedPicklistData>()
+export const prefetchCache = new Map<number, PrefetchedPicklistData>()
 const PREFETCH_TTL = 300_000 // 5 minutes — picklist data changes rarely during packing
 
 function formatCost(value: number | undefined): string {
@@ -200,6 +200,7 @@ interface VerpakkingsClientProps {
   workerName: string
   batchContext?: BatchContextProps
   onPicklistClosed?: (picklistId: number) => void
+  onNavigatePicklist?: (picklist: import('@/types/verpakking').BatchPicklistItem) => void
 }
 
 const BADGE_STYLES: Record<PrinterStatus, string> = {
@@ -223,7 +224,7 @@ function StationBadge({ station, onClick, label }: { station: PackingStation | n
   )
 }
 
-export default function VerpakkingsClient({ sessionId, onBack, workerName, batchContext, onPicklistClosed }: VerpakkingsClientProps) {
+export default function VerpakkingsClient({ sessionId, onBack, workerName, batchContext, onPicklistClosed, onNavigatePicklist }: VerpakkingsClientProps) {
   const router = useRouter()
   const { t, language } = useTranslation()
 
@@ -254,6 +255,13 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
   const [isNavCreatingSession, setIsNavCreatingSession] = useState(false)
 
   const handleBatchNavigate = useCallback(async (picklist: import('@/types/verpakking').BatchPicklistItem) => {
+    // State-driven navigation: delegate to parent (BatchWorkspace) if available
+    if (onNavigatePicklist) {
+      onNavigatePicklist(picklist)
+      return
+    }
+
+    // Fallback: route-based navigation (standalone picklist page)
     if (picklist.sessionId) {
       const batchIdParam = new URLSearchParams(window.location.search).get('batchId')
       const url = `/verpakkingsmodule/picklist/${picklist.sessionId}${batchIdParam ? `?batchId=${batchIdParam}` : ''}`
@@ -284,10 +292,12 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     } finally {
       setIsNavCreatingSession(false)
     }
-  }, [router, workerName, session?.workerId, session?.workerName])
+  }, [router, workerName, session?.workerId, session?.workerName, onNavigatePicklist])
 
   // Prefetch picklist data on hover over nav buttons (for instant navigation)
   const handlePrefetchPicklist = useCallback((picklist: import('@/types/verpakking').BatchPicklistItem) => {
+    // Skip prefetch if using state-driven navigation (bulk data already in prefetchCache)
+    if (onNavigatePicklist) return
     if (!picklist.sessionId) return
     // Don't prefetch if already in cache
     const picklistId = picklist.idpicklist

@@ -79,6 +79,39 @@ export default function PicklistPage({ params }: { params: Promise<{ sessionId: 
   const batchIdParam = searchParams.get('batchId')
   const { workers, selectedWorker, isLoading: isLoadingWorker, error: workerError, selectWorker } = useWorker()
   const { stations, selectedStation, selectStation, clearStation } = usePackingStation()
+  // Redirect to BatchWorkspace if session is linked to a batch
+  // This enables state-driven navigation instead of route-based navigation
+  const [redirectChecked, setRedirectChecked] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    async function checkBatchRedirect() {
+      try {
+        const res = await fetch(`/api/verpakking/sessions/${sessionId}`)
+        if (!res.ok || cancelled) { setRedirectChecked(true); return }
+        const data = await res.json()
+        const raw = data.session ?? data
+        const batchSessionId = raw.batch_session_id
+        if (batchSessionId && !cancelled) {
+          // Fetch batch session to get the Picqer batch ID for the route
+          const batchRes = await fetch(`/api/verpakking/batch-sessions/${batchSessionId}`)
+          if (batchRes.ok && !cancelled) {
+            const batchData = await batchRes.json()
+            const batchId = batchData.batch_id
+            if (batchId) {
+              router.replace(`/verpakkingsmodule/batch/${batchId}?view=picklist&session=${sessionId}`)
+              return
+            }
+          }
+        }
+      } catch {
+        // Non-critical — fall through to normal rendering
+      }
+      if (!cancelled) setRedirectChecked(true)
+    }
+    checkBatchRedirect()
+    return () => { cancelled = true }
+  }, [sessionId, router])
+
   // Restore batchContext from sessionStorage on mount (persists across picklist navigation)
   const [batchContext, setBatchContext] = useState<BatchContext | null>(() => {
     if (typeof window === 'undefined') return null
@@ -253,6 +286,15 @@ export default function PicklistPage({ params }: { params: Promise<{ sessionId: 
     fetchBatchContext()
     return () => { cancelled = true }
   }, [sessionId, batchIdParam])
+
+  // Show loading while checking for batch redirect
+  if (!redirectChecked) {
+    return (
+      <main className="flex-1 flex items-center justify-center">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </main>
+    )
+  }
 
   // No worker selected → show WorkerSelector
   if (!selectedWorker && !isLoadingWorker) {

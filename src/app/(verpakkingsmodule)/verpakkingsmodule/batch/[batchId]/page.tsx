@@ -4,7 +4,7 @@ import { useState, useEffect, use, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Loader2, Code2 } from 'lucide-react'
 import { useWorker } from '@/hooks/useWorker'
-import BatchOverview from '@/components/verpakking/BatchOverview'
+import BatchWorkspace from '@/components/verpakking/BatchWorkspace'
 import WorkerSelector from '@/components/verpakking/WorkerSelector'
 import type { Worker } from '@/types/verpakking'
 import { DEV_MODE_USER_IDS } from '@/lib/constants'
@@ -22,6 +22,10 @@ export default function BatchPage({ params }: { params: Promise<{ batchId: strin
   const [isLoadingSession, setIsLoadingSession] = useState(true)
   const [devMode, setDevMode] = useState(searchParams.get('dev') === '1')
   const [isCreatingDevSession, setIsCreatingDevSession] = useState(false)
+
+  // Read initial view state from search params (for refresh recovery + deep links)
+  const initialView = searchParams.get('view') === 'picklist' ? 'picklist' as const : 'overview' as const
+  const initialSessionId = searchParams.get('session') ?? null
 
   const canUseDevMode = selectedWorker && DEV_MODE_USER_IDS.includes(selectedWorker.iduser)
 
@@ -121,7 +125,7 @@ export default function BatchPage({ params }: { params: Promise<{ batchId: strin
     } finally {
       setIsCreatingDevSession(false)
     }
-  }, [selectedWorker, router])
+  }, [selectedWorker, router, batchId, t.batch.sessionCreateFailed])
 
   if (isNaN(batchId)) {
     router.replace('/verpakkingsmodule')
@@ -160,7 +164,6 @@ export default function BatchPage({ params }: { params: Promise<{ batchId: strin
     return (
       <main className="flex-1 flex items-center justify-center">
         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-        {devModeToggle}
       </main>
     )
   }
@@ -170,16 +173,10 @@ export default function BatchPage({ params }: { params: Promise<{ batchId: strin
   return (
     <main className="flex-1 flex flex-col overflow-hidden">
       <div className="w-full flex-1 flex flex-col overflow-y-auto px-6">
-        <BatchOverview
+        <BatchWorkspace
           batchSessionId={devMode ? null : batchSessionId}
           previewBatchId={(!devMode && batchSessionId) ? null : batchId}
           worker={worker}
-          onPicklistStarted={(sessionId) => {
-            router.push(`/verpakkingsmodule/picklist/${sessionId}`)
-          }}
-          onBatchClaimed={(newBatchSessionId) => {
-            setBatchSessionId(newBatchSessionId)
-          }}
           onBack={() => {
             router.push('/verpakkingsmodule')
           }}
@@ -187,6 +184,11 @@ export default function BatchPage({ params }: { params: Promise<{ batchId: strin
           onPicklistPreview={(picklistId) => {
             handleDevPicklistOpen(picklistId)
           }}
+          onBatchClaimed={(newBatchSessionId) => {
+            setBatchSessionId(newBatchSessionId)
+          }}
+          initialView={initialView}
+          initialSessionId={initialSessionId}
         />
       </div>
 
