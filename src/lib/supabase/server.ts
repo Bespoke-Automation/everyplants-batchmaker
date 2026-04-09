@@ -14,8 +14,9 @@ export async function createAuthClient() {
         },
         setAll(cookiesToSet) {
           try {
+            const domain = process.env.COOKIE_DOMAIN
             cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
+              cookieStore.set(name, value, { ...options, ...(domain && { domain }) })
             )
           } catch {
             // setAll can fail in Server Components (read-only cookies).

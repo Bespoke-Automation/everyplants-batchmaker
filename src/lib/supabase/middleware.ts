@@ -11,9 +11,10 @@ export function createMiddlewareClient(request: NextRequest, response: NextRespo
           return request.cookies.getAll()
         },
         setAll(cookiesToSet) {
+          const domain = process.env.COOKIE_DOMAIN
           cookiesToSet.forEach(({ name, value, options }) => {
             request.cookies.set(name, value)
-            response.cookies.set(name, value, options)
+            response.cookies.set(name, value, { ...options, ...(domain && { domain }) })
           })
         },
       },
