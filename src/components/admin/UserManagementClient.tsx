@@ -2,12 +2,19 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useAuth, type UserProfile } from '@/components/providers/AuthProvider'
+import { UserPlus, Trash2, Copy, Check, Loader2 } from 'lucide-react'
+import Dialog from '@/components/ui/Dialog'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 
 export default function UserManagementClient() {
   const { user } = useAuth()
   const [profiles, setProfiles] = useState<UserProfile[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<string | null>(null)
+
+  // Dialog state
+  const [createOpen, setCreateOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<UserProfile | null>(null)
 
   const fetchProfiles = useCallback(async () => {
     const res = await fetch('/api/admin/users')
@@ -23,7 +30,6 @@ export default function UserManagementClient() {
   }, [fetchProfiles])
 
   const toggleField = async (profileId: string, field: string, value: boolean) => {
-    // Prevent removing own admin
     if (field === 'is_admin' && profileId === user?.id && !value) return
 
     setSaving(profileId)
@@ -41,6 +47,15 @@ export default function UserManagementClient() {
     setSaving(null)
   }
 
+  const handleDelete = async () => {
+    if (!deleteTarget) return
+    const res = await fetch(`/api/admin/users/${deleteTarget.id}`, { method: 'DELETE' })
+    if (res.ok) {
+      setProfiles(prev => prev.filter(p => p.id !== deleteTarget.id))
+    }
+    setDeleteTarget(null)
+  }
+
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -51,9 +66,19 @@ export default function UserManagementClient() {
 
   return (
     <div className="flex-1 p-6">
-      <div className="max-w-4xl mx-auto">
-        <h2 className="text-xl font-bold mb-6">Gebruikersbeheer</h2>
-        <div className="border border-border rounded-lg overflow-hidden">
+      <div className="max-w-6xl mx-auto">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-bold">Gebruikersbeheer</h2>
+          <button
+            onClick={() => setCreateOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+          >
+            <UserPlus className="w-4 h-4" />
+            Account aanmaken
+          </button>
+        </div>
+
+        <div className="border border-border rounded-lg overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="bg-muted/50 text-sm text-muted-foreground">
@@ -64,7 +89,9 @@ export default function UserManagementClient() {
                 <th className="text-center px-4 py-3 font-medium">Floriday</th>
                 <th className="text-center px-4 py-3 font-medium">Raapmodule</th>
                 <th className="text-center px-4 py-3 font-medium">Bestellijst</th>
+                <th className="text-center px-4 py-3 font-medium">Incidenten</th>
                 <th className="text-center px-4 py-3 font-medium">Admin</th>
+                <th className="text-center px-4 py-3 font-medium w-16"></th>
               </tr>
             </thead>
             <tbody>
@@ -107,10 +134,27 @@ export default function UserManagementClient() {
                   </td>
                   <td className="px-4 py-3 text-center">
                     <Toggle
+                      checked={profile.module_incidenten}
+                      onChange={(v) => toggleField(profile.id, 'module_incidenten', v)}
+                    />
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <Toggle
                       checked={profile.is_admin}
                       onChange={(v) => toggleField(profile.id, 'is_admin', v)}
                       disabled={profile.id === user?.id}
                     />
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    {profile.id !== user?.id && (
+                      <button
+                        onClick={() => setDeleteTarget(profile)}
+                        className="p-1.5 rounded-md hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-600"
+                        title="Verwijderen"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -118,6 +162,183 @@ export default function UserManagementClient() {
           </table>
         </div>
       </div>
+
+      {/* Create User Dialog */}
+      <CreateUserDialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onSuccess={fetchProfiles}
+      />
+
+      {/* Delete Confirm */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDelete}
+        title="Gebruiker verwijderen"
+        message={`Weet je zeker dat je ${deleteTarget?.display_name} (${deleteTarget?.email}) wilt verwijderen? Dit kan niet ongedaan worden.`}
+        confirmText="Verwijderen"
+        variant="destructive"
+      />
+    </div>
+  )
+}
+
+// ─── Create User Dialog ─────────────────────────────────────────────────────
+
+function CreateUserDialog({
+  open,
+  onClose,
+  onSuccess,
+}: {
+  open: boolean
+  onClose: () => void
+  onSuccess: () => void
+}) {
+  const [email, setEmail] = useState('')
+  const [displayName, setDisplayName] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [result, setResult] = useState<{ email: string; temporary_password: string } | null>(null)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+
+    const res = await fetch('/api/admin/users/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, display_name: displayName }),
+    })
+
+    const data = await res.json()
+    setLoading(false)
+
+    if (!res.ok) {
+      setError(data.error)
+      return
+    }
+
+    setResult({ email: data.email, temporary_password: data.temporary_password })
+    onSuccess()
+  }
+
+  const handleClose = () => {
+    setEmail('')
+    setDisplayName('')
+    setError('')
+    setResult(null)
+    onClose()
+  }
+
+  return (
+    <Dialog open={open} onClose={handleClose} title="Account aanmaken">
+      <div className="p-4">
+        {result ? (
+          <div className="space-y-3">
+            <div className="bg-emerald-50 text-emerald-800 p-3 rounded-lg text-sm">
+              Account aangemaakt voor <strong>{result.email}</strong>
+            </div>
+            <div className="space-y-2">
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">E-mailadres</p>
+                <CopyField value={result.email} />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Tijdelijk wachtwoord</p>
+                <CopyField value={result.temporary_password} />
+              </div>
+            </div>
+            <div className="bg-amber-50 text-amber-800 p-3 rounded-lg text-sm">
+              Deel deze gegevens veilig met de gebruiker. Het wachtwoord wordt niet opnieuw getoond.
+            </div>
+            <div className="flex justify-end">
+              <button
+                onClick={handleClose}
+                className="px-4 py-2 text-sm font-medium bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
+              >
+                Sluiten
+              </button>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Naam</label>
+              <input
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="Volledige naam"
+                className="w-full px-3 py-2 border border-border rounded-md focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none text-sm"
+                required
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">E-mailadres</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="naam@bedrijf.com"
+                className="w-full px-3 py-2 border border-border rounded-md focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none text-sm"
+                required
+              />
+            </div>
+
+            {error && <p className="text-red-500 text-sm">{error}</p>}
+
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={handleClose}
+                className="px-4 py-2 text-sm font-medium rounded-md border border-border hover:bg-muted transition-colors"
+              >
+                Annuleren
+              </button>
+              <button
+                type="submit"
+                disabled={loading || !email || !displayName}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-primary text-white rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
+              >
+                {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+                Aanmaken
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </Dialog>
+  )
+}
+
+// ─── Shared Components ──────────────────────────────────────────────────────
+
+function CopyField({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(value)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div className="flex items-center gap-2 bg-muted rounded-md px-3 py-2">
+      <code className="text-sm flex-1 truncate">{value}</code>
+      <button
+        onClick={handleCopy}
+        className="shrink-0 p-1 rounded hover:bg-background transition-colors"
+        title="Kopiëren"
+      >
+        {copied ? (
+          <Check className="w-4 h-4 text-emerald-600" />
+        ) : (
+          <Copy className="w-4 h-4 text-muted-foreground" />
+        )}
+      </button>
     </div>
   )
 }

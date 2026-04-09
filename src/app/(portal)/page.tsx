@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Package, Box, Flower2, Shield, Leaf, ShoppingCart } from 'lucide-react'
+import { Package, Box, Flower2, Shield, Leaf, ShoppingCart, AlertTriangle, ExternalLink } from 'lucide-react'
 import { useAuth } from '@/components/providers/AuthProvider'
 
 const MODULES = [
@@ -55,6 +55,17 @@ const MODULES = [
     iconBg: 'bg-emerald-600/10 group-hover:bg-emerald-600/20',
     iconColor: 'text-emerald-600',
   },
+  {
+    key: 'module_incidenten' as const,
+    href: 'https://v0-internal-gb-ep-florafy.vercel.app/dashboard',
+    label: 'Incidenten Register',
+    description: 'Incidenten registratie en opvolging',
+    icon: AlertTriangle,
+    hoverBorder: 'hover:border-rose-500',
+    iconBg: 'bg-rose-500/10 group-hover:bg-rose-500/20',
+    iconColor: 'text-rose-600',
+    external: true,
+  },
 ]
 
 export default function PortalPage() {
@@ -80,17 +91,29 @@ export default function PortalPage() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {visibleModules.map((mod) => {
             const Icon = mod.icon
-            return (
-              <Link
-                key={mod.key}
-                href={mod.href}
-                className={`group border border-border rounded-lg p-6 ${mod.hoverBorder} hover:shadow-md transition-all bg-card`}
-              >
+            const className = `group border border-border rounded-lg p-6 ${mod.hoverBorder} hover:shadow-md transition-all bg-card`
+            const content = (
+              <>
                 <div className={`w-12 h-12 ${mod.iconBg} rounded-lg flex items-center justify-center mb-4 transition-colors`}>
                   <Icon className={`w-6 h-6 ${mod.iconColor}`} />
                 </div>
-                <h3 className="text-lg font-semibold">{mod.label}</h3>
+                <h3 className="text-lg font-semibold flex items-center gap-1.5">
+                  {mod.label}
+                  {'external' in mod && mod.external && <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />}
+                </h3>
                 <p className="text-sm text-muted-foreground mt-1">{mod.description}</p>
+              </>
+            )
+            if ('external' in mod && mod.external) {
+              return (
+                <a key={mod.key} href={mod.href} target="_blank" rel="noopener noreferrer" className={className}>
+                  {content}
+                </a>
+              )
+            }
+            return (
+              <Link key={mod.key} href={mod.href} className={className}>
+                {content}
               </Link>
             )
           })}
