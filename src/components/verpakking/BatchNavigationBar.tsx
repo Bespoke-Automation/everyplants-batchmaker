@@ -36,8 +36,10 @@ export default function BatchNavigationBar({
   const current = picklists[currentIndex]
   const completedCount = picklists.filter((pl) => pl.status === 'closed').length
 
-  // Auto-skip completed picklists (closed in Picqer)
-  const isCompleted = (pl: BatchPicklistItem) => pl.status === 'closed'
+  // Auto-skip completed picklists — check both Picqer status ('closed') and
+  // packing session status ('completed') to handle stale cache and fallback paths
+  const isCompleted = (pl: BatchPicklistItem) =>
+    pl.status === 'closed' || pl.sessionStatus === 'completed'
 
   let prevPicklist: BatchPicklistItem | null = null
   for (let i = currentIndex - 1; i >= 0; i--) {

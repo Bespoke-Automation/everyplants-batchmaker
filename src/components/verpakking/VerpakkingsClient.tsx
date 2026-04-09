@@ -346,21 +346,22 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     const currentPicklistId = session?.picklistId
     if (!currentPicklistId) return null
     const currentIndex = sortedBatchPicklists.findIndex((pl) => pl.idpicklist === currentPicklistId)
+    const isOpen = (pl: { status: string; sessionStatus?: string }) => pl.status !== 'closed' && pl.sessionStatus !== 'completed'
     if (currentIndex === -1) {
-      return sortedBatchPicklists.find((pl) => pl.status !== 'closed') ?? null
+      return sortedBatchPicklists.find(isOpen) ?? null
     }
     for (let i = currentIndex + 1; i < sortedBatchPicklists.length; i++) {
-      if (sortedBatchPicklists[i].status !== 'closed') return sortedBatchPicklists[i]
+      if (isOpen(sortedBatchPicklists[i])) return sortedBatchPicklists[i]
     }
     for (let i = 0; i < currentIndex; i++) {
-      if (sortedBatchPicklists[i].status !== 'closed') return sortedBatchPicklists[i]
+      if (isOpen(sortedBatchPicklists[i])) return sortedBatchPicklists[i]
     }
     return null
   }, [batchContext, sortedBatchPicklists, session?.picklistId])
 
   const isBatchCompleted = useMemo(() => {
     if (!batchContext || batchContext.picklists.length === 0) return false
-    return batchContext.picklists.every((pl) => pl.status === 'closed')
+    return batchContext.picklists.every((pl) => pl.status === 'closed' || pl.sessionStatus === 'completed')
   }, [batchContext])
 
   const handleExtraShipment = useCallback(() => {
