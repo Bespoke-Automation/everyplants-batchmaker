@@ -14,6 +14,7 @@ import {
   AlertTriangle,
 } from 'lucide-react'
 import { usePicklistQueue } from '@/hooks/usePicklistQueue'
+import { useTranslation } from '@/i18n/LanguageContext'
 import type { Worker, QueuePicklist } from '@/types/verpakking'
 
 interface PicklistQueueProps {
@@ -55,6 +56,7 @@ export default function PicklistQueue({
   onClearWorker,
   onSessionStarted,
 }: PicklistQueueProps) {
+  const { t } = useTranslation()
   const { picklists, isLoading, error, isClaiming, claimPicklist, refetch } =
     usePicklistQueue(worker.iduser)
 
@@ -113,10 +115,10 @@ export default function PicklistQueue({
       if (result.success && result.sessionId) {
         onSessionStarted(result.sessionId)
       } else if (!result.success) {
-        setClaimError(result.error || 'Onbekende fout bij het claimen')
+        setClaimError(result.error || t.picklistQueue.claimError)
       }
     },
-    [claimPicklist, worker.fullName, onSessionStarted]
+    [claimPicklist, worker.fullName, onSessionStarted, t]
   )
 
   const handleCancelConfirm = useCallback(() => {
@@ -134,10 +136,10 @@ export default function PicklistQueue({
       if (result.success && result.sessionId) {
         onSessionStarted(result.sessionId)
       } else if (!result.success) {
-        setClaimError(result.error || 'Onbekende fout bij het claimen')
+        setClaimError(result.error || t.picklistQueue.claimError)
       }
     },
-    [claimPicklist, worker.fullName, onSessionStarted]
+    [claimPicklist, worker.fullName, onSessionStarted, t]
   )
 
   return (
@@ -151,7 +153,7 @@ export default function PicklistQueue({
           </div>
           <div>
             <p className="font-semibold text-base">{worker.fullName}</p>
-            <p className="text-sm text-muted-foreground">Inpakker</p>
+            <p className="text-sm text-muted-foreground">{t.picklistQueue.packer}</p>
           </div>
         </div>
         <button
@@ -159,7 +161,7 @@ export default function PicklistQueue({
           className="flex items-center gap-2 px-4 py-2.5 border border-border rounded-lg hover:bg-muted transition-colors text-sm font-medium min-h-[44px]"
         >
           <ArrowRightLeft className="w-4 h-4" />
-          Wissel
+          {t.picklistQueue.switchWorker}
         </button>
       </div>
 
@@ -168,10 +170,10 @@ export default function PicklistQueue({
         <div className="flex items-center gap-2">
           <ClipboardList className="w-5 h-5 text-muted-foreground" />
           <h2 className="font-semibold text-lg">
-            Wachtrij
+            {t.picklistQueue.queue}
             {!isLoading && (
               <span className="text-muted-foreground font-normal ml-1">
-                ({picklists.length} picklist{picklists.length !== 1 ? 's' : ''})
+                ({picklists.length} {picklists.length !== 1 ? t.picklistQueue.picklists : t.picklistQueue.picklist})
               </span>
             )}
           </h2>
@@ -182,7 +184,7 @@ export default function PicklistQueue({
           className="flex items-center gap-2 px-4 py-2.5 border border-border rounded-lg hover:bg-muted transition-colors text-sm font-medium min-h-[44px] disabled:opacity-50"
         >
           <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-          Vernieuw
+          {t.picklistQueue.refresh}
         </button>
       </div>
 
@@ -194,7 +196,7 @@ export default function PicklistQueue({
           <button
             onClick={() => setClaimError(null)}
             className="shrink-0 rounded-md px-2 py-1 text-xs font-medium hover:bg-destructive/20 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
-            aria-label="Sluiten"
+            aria-label={t.common.close}
           >
             &times;
           </button>
@@ -210,7 +212,7 @@ export default function PicklistQueue({
               <AlertCircle className="w-7 h-7 text-destructive" />
             </div>
             <div>
-              <h3 className="font-bold text-lg mb-1">Fout bij laden</h3>
+              <h3 className="font-bold text-lg mb-1">{t.picklistQueue.errorTitle}</h3>
               <p className="text-muted-foreground">{error.message}</p>
             </div>
             <button
@@ -218,7 +220,7 @@ export default function PicklistQueue({
               className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors min-h-[48px]"
             >
               <RefreshCw className="w-5 h-5" />
-              Opnieuw proberen
+              {t.picklistQueue.retry}
             </button>
           </div>
         )}
@@ -227,7 +229,7 @@ export default function PicklistQueue({
         {isLoading && !error && picklists.length === 0 && (
           <div className="p-8 flex flex-col items-center justify-center gap-3">
             <Loader2 className="w-8 h-8 text-primary animate-spin" />
-            <p className="text-muted-foreground text-base">Picklists laden...</p>
+            <p className="text-muted-foreground text-base">{t.picklistQueue.loadingPicklists}</p>
           </div>
         )}
 
@@ -238,9 +240,9 @@ export default function PicklistQueue({
               <ClipboardList className="w-8 h-8 text-muted-foreground" />
             </div>
             <div>
-              <h3 className="font-bold text-lg mb-1">Wachtrij is leeg</h3>
+              <h3 className="font-bold text-lg mb-1">{t.picklistQueue.emptyTitle}</h3>
               <p className="text-muted-foreground">
-                Er zijn momenteel geen openstaande picklists.
+                {t.picklistQueue.emptyDesc}
               </p>
             </div>
             <button
@@ -248,7 +250,7 @@ export default function PicklistQueue({
               className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors min-h-[48px]"
             >
               <RefreshCw className="w-5 h-5" />
-              Vernieuw
+              {t.picklistQueue.refresh}
             </button>
           </div>
         )}
@@ -287,7 +289,7 @@ export default function PicklistQueue({
                         {pl.urgent && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-200 rounded text-xs font-medium">
                             <AlertTriangle className="w-3 h-3" />
-                            Urgent
+                            {t.picklistQueue.urgent}
                           </span>
                         )}
                       </div>
@@ -302,7 +304,7 @@ export default function PicklistQueue({
                     </span>
                     <span className="inline-flex items-center gap-1">
                       <Package className="w-4 h-4" />
-                      {pl.totalproducts} product{pl.totalproducts !== 1 ? 'en' : ''}
+                      {pl.totalproducts} {pl.totalproducts !== 1 ? t.picklistQueue.products : t.picklistQueue.product}
                     </span>
                     {pl.preferred_delivery_date && (
                       <span className="inline-flex items-center gap-1">
@@ -340,8 +342,6 @@ export default function PicklistQueue({
                       {isClaimedByMe && (
                         <button
                           onClick={() => {
-                            // For "continue" we'd need the session ID.
-                            // For now, re-claim which returns the existing session.
                             handleClaim(pl)
                           }}
                           disabled={isClaiming}
@@ -352,7 +352,7 @@ export default function PicklistQueue({
                           ) : (
                             <Play className="w-4 h-4" />
                           )}
-                          Doorgaan
+                          {t.picklistQueue.continueBtn}
                         </button>
                       )}
                       {!pl.isClaimed && confirmingId === pl.idpicklist && (
@@ -367,14 +367,14 @@ export default function PicklistQueue({
                             ) : (
                               <Play className="w-4 h-4" />
                             )}
-                            Bevestig
+                            {t.picklistQueue.confirmBtn}
                           </button>
                           <button
                             onClick={handleCancelConfirm}
                             disabled={isClaiming}
                             className="inline-flex items-center gap-2 px-4 py-2.5 border border-border text-muted-foreground rounded-lg font-medium text-sm hover:bg-muted transition-colors min-h-[44px] disabled:opacity-50"
                           >
-                            Annuleer
+                            {t.picklistQueue.cancelBtn}
                           </button>
                         </div>
                       )}
@@ -389,7 +389,7 @@ export default function PicklistQueue({
                           ) : (
                             <Play className="w-4 h-4" />
                           )}
-                          Claimen
+                          {t.picklistQueue.claimBtn}
                         </button>
                       )}
                     </div>
@@ -404,7 +404,7 @@ export default function PicklistQueue({
       {/* Footer with auto-refresh indicator */}
       <div className="border-t border-border bg-muted/30 px-4 py-2.5 flex items-center justify-center gap-2 text-sm text-muted-foreground">
         <RefreshCw className="w-3.5 h-3.5" />
-        Auto-refresh: 5s
+        {t.picklistQueue.autoRefresh}
       </div>
     </div>
   )

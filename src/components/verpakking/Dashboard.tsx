@@ -13,6 +13,7 @@ import {
   Scale,
   Layers,
 } from 'lucide-react'
+import { useTranslation } from '@/i18n/LanguageContext'
 
 interface DashboardStats {
   period: { from: string; to: string; days: number }
@@ -58,6 +59,7 @@ interface TrendsData {
 }
 
 export default function Dashboard() {
+  const { t } = useTranslation()
   const [days, setDays] = useState(30)
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -108,13 +110,13 @@ export default function Dashboard() {
     return (
       <div className="flex flex-col items-center justify-center py-16">
         <AlertCircle className="w-12 h-12 text-destructive mb-4" />
-        <h3 className="text-lg font-medium mb-2">Er ging iets mis</h3>
+        <h3 className="text-lg font-medium mb-2">{t.dashboard.errorTitle}</h3>
         <p className="text-muted-foreground mb-4">{error}</p>
         <button
           onClick={fetchStats}
           className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
         >
-          Opnieuw proberen
+          {t.dashboard.retry}
         </button>
       </div>
     )
@@ -125,8 +127,8 @@ export default function Dashboard() {
       <div className="max-w-5xl mx-auto">
         <div className="text-center py-16">
           <BarChart3 className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-          <h3 className="text-lg font-medium mb-2">Nog geen data beschikbaar</h3>
-          <p className="text-muted-foreground">Begin met inpakken om dashboard-data te verzamelen.</p>
+          <h3 className="text-lg font-medium mb-2">{t.dashboard.noDataTitle}</h3>
+          <p className="text-muted-foreground">{t.dashboard.noDataDesc}</p>
         </div>
       </div>
     )
@@ -153,7 +155,7 @@ export default function Dashboard() {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <BarChart3 className="w-6 h-6 text-primary" />
-          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <h1 className="text-2xl font-bold">{t.dashboard.title}</h1>
         </div>
         <div className="flex items-center gap-3">
           <select
@@ -161,15 +163,15 @@ export default function Dashboard() {
             onChange={(e) => setDays(parseInt(e.target.value))}
             className="px-3 py-2 border border-border rounded-md bg-background text-sm"
           >
-            <option value={7}>7 dagen</option>
-            <option value={14}>14 dagen</option>
-            <option value={30}>30 dagen</option>
-            <option value={90}>90 dagen</option>
+            <option value={7}>{t.dashboard.days7}</option>
+            <option value={14}>{t.dashboard.days14}</option>
+            <option value={30}>{t.dashboard.days30}</option>
+            <option value={90}>{t.dashboard.days90}</option>
           </select>
           <button
             onClick={fetchStats}
             className="p-2 hover:bg-muted rounded-md transition-colors"
-            title="Vernieuwen"
+            title={t.dashboard.refresh}
           >
             <RefreshCw className="w-5 h-5" />
           </button>
@@ -180,13 +182,13 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         {/* Total advices */}
         <div className="bg-white border border-border rounded-lg p-4">
-          <div className="text-sm text-muted-foreground mb-1">Totaal adviezen</div>
+          <div className="text-sm text-muted-foreground mb-1">{t.dashboard.totalAdvices}</div>
           <div className="text-2xl font-bold">{totals.total_advices}</div>
         </div>
 
         {/* Followed */}
         <div className="bg-white border border-border rounded-lg p-4">
-          <div className="text-sm text-muted-foreground mb-1">Advies gevolgd</div>
+          <div className="text-sm text-muted-foreground mb-1">{t.dashboard.adviceFollowed}</div>
           <div className="text-2xl font-bold">{outcomes.followed}</div>
           <div className="text-sm text-emerald-600">{withOutcome > 0 ? `${followedPct}%` : '—'}</div>
           {withOutcome > 0 && (
@@ -198,7 +200,7 @@ export default function Dashboard() {
 
         {/* Modified */}
         <div className="bg-white border border-border rounded-lg p-4">
-          <div className="text-sm text-muted-foreground mb-1">Advies aangepast</div>
+          <div className="text-sm text-muted-foreground mb-1">{t.dashboard.adviceModified}</div>
           <div className="text-2xl font-bold">{outcomes.modified}</div>
           <div className="text-sm text-blue-600">{withOutcome > 0 ? `${modifiedPct}%` : '—'}</div>
           {withOutcome > 0 && (
@@ -210,7 +212,7 @@ export default function Dashboard() {
 
         {/* Ignored */}
         <div className="bg-white border border-border rounded-lg p-4">
-          <div className="text-sm text-muted-foreground mb-1">Advies genegeerd</div>
+          <div className="text-sm text-muted-foreground mb-1">{t.dashboard.adviceIgnored}</div>
           <div className="text-2xl font-bold">{outcomes.ignored}</div>
           <div className="text-sm text-amber-600">{withOutcome > 0 ? `${ignoredPct}%` : '—'}</div>
           {withOutcome > 0 && (
@@ -223,34 +225,34 @@ export default function Dashboard() {
 
       {/* Outcome Distribution */}
       <div className="bg-white border border-border rounded-lg p-6 mb-8">
-        <h2 className="text-lg font-semibold mb-4">Outcome verdeling</h2>
+        <h2 className="text-lg font-semibold mb-4">{t.dashboard.outcomeDistribution}</h2>
         <div className="flex h-8 rounded-lg overflow-hidden mb-4">
           {totals.total_advices > 0 && (
             <>
               <div
                 className="bg-emerald-500"
                 style={{ width: `${(outcomes.followed / totals.total_advices) * 100}%` }}
-                title={`Gevolgd: ${outcomes.followed}`}
+                title={`${t.dashboard.followed}: ${outcomes.followed}`}
               />
               <div
                 className="bg-blue-500"
                 style={{ width: `${(outcomes.modified / totals.total_advices) * 100}%` }}
-                title={`Gewijzigd: ${outcomes.modified}`}
+                title={`${t.dashboard.modified}: ${outcomes.modified}`}
               />
               <div
                 className="bg-amber-500"
                 style={{ width: `${(outcomes.ignored / totals.total_advices) * 100}%` }}
-                title={`Genegeerd: ${outcomes.ignored}`}
+                title={`${t.dashboard.ignored}: ${outcomes.ignored}`}
               />
               <div
                 className="bg-gray-400"
                 style={{ width: `${(outcomes.no_advice / totals.total_advices) * 100}%` }}
-                title={`Geen advies: ${outcomes.no_advice}`}
+                title={`${t.dashboard.noAdvice}: ${outcomes.no_advice}`}
               />
               <div
                 className="bg-gray-200"
                 style={{ width: `${(outcomes.pending / totals.total_advices) * 100}%` }}
-                title={`Open: ${outcomes.pending}`}
+                title={`${t.dashboard.open}: ${outcomes.pending}`}
               />
             </>
           )}
@@ -258,27 +260,27 @@ export default function Dashboard() {
         <div className="flex flex-wrap gap-4 text-sm">
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 bg-emerald-500 rounded-full" />
-            <span className="text-muted-foreground">Gevolgd:</span>
+            <span className="text-muted-foreground">{t.dashboard.followed}:</span>
             <span className="font-medium">{outcomes.followed}</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 bg-blue-500 rounded-full" />
-            <span className="text-muted-foreground">Gewijzigd:</span>
+            <span className="text-muted-foreground">{t.dashboard.modified}:</span>
             <span className="font-medium">{outcomes.modified}</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 bg-amber-500 rounded-full" />
-            <span className="text-muted-foreground">Genegeerd:</span>
+            <span className="text-muted-foreground">{t.dashboard.ignored}:</span>
             <span className="font-medium">{outcomes.ignored}</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 bg-gray-400 rounded-full" />
-            <span className="text-muted-foreground">Geen advies:</span>
+            <span className="text-muted-foreground">{t.dashboard.noAdvice}:</span>
             <span className="font-medium">{outcomes.no_advice}</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 bg-gray-200 rounded-full border border-gray-300" />
-            <span className="text-muted-foreground">Open:</span>
+            <span className="text-muted-foreground">{t.dashboard.open}:</span>
             <span className="font-medium">{outcomes.pending}</span>
           </div>
         </div>
@@ -287,13 +289,13 @@ export default function Dashboard() {
       {/* Deviation Analysis */}
       {outcomes.modified > 0 && (
         <div className="bg-white border border-border rounded-lg p-6 mb-8">
-          <h2 className="text-lg font-semibold mb-4">Waarom wordt advies aangepast?</h2>
+          <h2 className="text-lg font-semibold mb-4">{t.dashboard.whyModified}</h2>
           <div className="space-y-2">
             {[
-              { label: 'Extra dozen', value: deviations.extra_boxes, color: 'bg-blue-500' },
-              { label: 'Minder dozen', value: deviations.fewer_boxes, color: 'bg-indigo-500' },
-              { label: 'Andere verpakking', value: deviations.different_packaging, color: 'bg-purple-500' },
-              { label: 'Gemengd', value: deviations.mixed, color: 'bg-pink-500' },
+              { label: t.dashboard.extraBoxes, value: deviations.extra_boxes, color: 'bg-blue-500' },
+              { label: t.dashboard.fewerBoxes, value: deviations.fewer_boxes, color: 'bg-indigo-500' },
+              { label: t.dashboard.differentPackaging, value: deviations.different_packaging, color: 'bg-purple-500' },
+              { label: t.dashboard.mixed, value: deviations.mixed, color: 'bg-pink-500' },
             ].map((item) => (
               <div key={item.label} className="flex items-center gap-3">
                 <span className="text-sm w-40 text-right">{item.label}</span>
@@ -312,23 +314,23 @@ export default function Dashboard() {
 
       {/* Confidence vs Outcome Matrix */}
       <div className="bg-white border border-border rounded-lg p-6 mb-8">
-        <h2 className="text-lg font-semibold mb-4">Confidence vs. Outcome</h2>
+        <h2 className="text-lg font-semibold mb-4">{t.dashboard.confidenceVsOutcome}</h2>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b">
-                <th className="text-left py-2">Confidence</th>
-                <th className="text-center py-2">Gevolgd</th>
-                <th className="text-center py-2">Gewijzigd</th>
-                <th className="text-center py-2">Genegeerd</th>
-                <th className="text-center py-2">Totaal</th>
-                <th className="text-center py-2">Naleving</th>
+                <th className="text-left py-2">{t.dashboard.confidence}</th>
+                <th className="text-center py-2">{t.dashboard.followed}</th>
+                <th className="text-center py-2">{t.dashboard.modified}</th>
+                <th className="text-center py-2">{t.dashboard.ignored}</th>
+                <th className="text-center py-2">{t.dashboard.total}</th>
+                <th className="text-center py-2">{t.dashboard.compliance}</th>
               </tr>
             </thead>
             <tbody>
               {/* Full match */}
               <tr className="border-b">
-                <td className="py-2">Full match</td>
+                <td className="py-2">{t.dashboard.fullMatch}</td>
                 <td className="text-center">{confidence_vs_outcome.full_match.followed}</td>
                 <td className="text-center">{confidence_vs_outcome.full_match.modified}</td>
                 <td className="text-center">{confidence_vs_outcome.full_match.ignored}</td>
@@ -356,7 +358,7 @@ export default function Dashboard() {
               </tr>
               {/* Partial match */}
               <tr className="border-b">
-                <td className="py-2">Partial match</td>
+                <td className="py-2">{t.dashboard.partialMatch}</td>
                 <td className="text-center">{confidence_vs_outcome.partial_match.followed}</td>
                 <td className="text-center">{confidence_vs_outcome.partial_match.modified}</td>
                 <td className="text-center">{confidence_vs_outcome.partial_match.ignored}</td>
@@ -387,7 +389,7 @@ export default function Dashboard() {
               </tr>
               {/* No match */}
               <tr>
-                <td className="py-2">No match</td>
+                <td className="py-2">{t.dashboard.noMatch}</td>
                 <td className="text-center">—</td>
                 <td className="text-center">—</td>
                 <td className="text-center">—</td>
@@ -402,16 +404,16 @@ export default function Dashboard() {
       {/* Top Fingerprints */}
       {top_fingerprints.length > 0 && (
         <div className="bg-white border border-border rounded-lg p-6 mb-8">
-          <h2 className="text-lg font-semibold mb-4">Meest voorkomende ordertypen</h2>
+          <h2 className="text-lg font-semibold mb-4">{t.dashboard.topOrderTypes}</h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b">
-                  <th className="text-left py-2">Pattern</th>
-                  <th className="text-center py-2">Aantal</th>
-                  <th className="text-center py-2">Gevolgd</th>
-                  <th className="text-center py-2">Gewijzigd</th>
-                  <th className="text-center py-2">Genegeerd</th>
+                  <th className="text-left py-2">{t.dashboard.pattern}</th>
+                  <th className="text-center py-2">{t.dashboard.count}</th>
+                  <th className="text-center py-2">{t.dashboard.followed}</th>
+                  <th className="text-center py-2">{t.dashboard.modified}</th>
+                  <th className="text-center py-2">{t.dashboard.ignored}</th>
                 </tr>
               </thead>
               <tbody>
@@ -436,10 +438,10 @@ export default function Dashboard() {
         <div className="bg-white border border-border rounded-lg p-6">
           <div className="flex items-center gap-2 mb-3">
             <Layers className="w-5 h-5 text-muted-foreground" />
-            <h3 className="font-semibold">Productdekking</h3>
+            <h3 className="font-semibold">{t.dashboard.productCoverage}</h3>
           </div>
           <p className="text-sm text-muted-foreground mb-3">
-            {product_coverage.classified} van {product_coverage.total_products} producten geclassificeerd
+            {product_coverage.classified} {t.common.of} {product_coverage.total_products} {t.dashboard.productsClassified}
           </p>
           <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-2">
             <div
@@ -470,10 +472,10 @@ export default function Dashboard() {
         <div className="bg-white border border-border rounded-lg p-6">
           <div className="flex items-center gap-2 mb-3">
             <Scale className="w-5 h-5 text-muted-foreground" />
-            <h3 className="font-semibold">Gewichtsproblemen</h3>
+            <h3 className="font-semibold">{t.dashboard.weightIssues}</h3>
           </div>
           <p className="text-sm text-muted-foreground mb-3">
-            {weight_issues.total_exceeded} adviezen met gewichtsoverschrijding
+            {weight_issues.total_exceeded} {t.dashboard.advicesWeightExceeded}
           </p>
           <div
             className={`text-2xl font-bold ${weight_issues.total_exceeded === 0 ? 'text-emerald-600' : 'text-amber-600'}`}
@@ -495,7 +497,7 @@ export default function Dashboard() {
         <div className="mb-8">
           <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <TrendingUp className="w-5 h-5" />
-            Trend over tijd
+            {t.dashboard.trendOverTime}
           </h3>
           <div className="bg-white border border-border rounded-lg p-4">
             <div className="flex items-end gap-1 h-40">
@@ -509,7 +511,7 @@ export default function Dashboard() {
                       <div
                         className="w-full rounded-t bg-emerald-500 transition-all"
                         style={{ height: `${barHeight}%` }}
-                        title={`${week.total} adviezen, ${week.follow_rate}% naleving`}
+                        title={`${week.total} ${t.dashboard.totalAdvices.toLowerCase()}, ${week.follow_rate}% ${t.dashboard.compliance.toLowerCase()}`}
                       />
                     </div>
                     <span className="text-xs text-muted-foreground">
@@ -520,7 +522,7 @@ export default function Dashboard() {
               })}
             </div>
             <p className="text-xs text-muted-foreground mt-2">
-              Nalevingspercentage per week — hoogte = aantal adviezen
+              {t.dashboard.compliancePerWeek}
             </p>
           </div>
         </div>
@@ -531,18 +533,18 @@ export default function Dashboard() {
         <div className="mb-8">
           <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <AlertCircle className="w-5 h-5 text-amber-500" />
-            Probleemproducten
+            {t.dashboard.problemProducts}
           </h3>
           <p className="text-sm text-muted-foreground mb-3">
-            Producten die de engine niet kan classificeren — overweeg hun attributen in Picqer aan te vullen.
+            {t.dashboard.problemProductsDesc}
           </p>
           <div className="bg-white border border-border rounded-lg overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-muted/50 border-b">
-                  <th className="text-left py-2 px-3">Productcode</th>
-                  <th className="text-left py-2 px-3">Naam</th>
-                  <th className="text-right py-2 px-3">Keer ongeclassificeerd</th>
+                  <th className="text-left py-2 px-3">{t.dashboard.productCode}</th>
+                  <th className="text-left py-2 px-3">{t.dashboard.name}</th>
+                  <th className="text-right py-2 px-3">{t.dashboard.timesUnclassified}</th>
                 </tr>
               </thead>
               <tbody>
@@ -564,20 +566,20 @@ export default function Dashboard() {
         <div className="mb-8">
           <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <Package className="w-5 h-5" />
-            Kostenimpact
+            {t.dashboard.costImpact}
           </h3>
           <div className="bg-white border border-border rounded-lg p-4">
             <div className="grid grid-cols-3 gap-4 text-center">
               <div>
-                <div className="text-sm text-muted-foreground mb-1">Advies kosten</div>
+                <div className="text-sm text-muted-foreground mb-1">{t.dashboard.advisedCost}</div>
                 <div className="text-xl font-bold">€{trends.cost_impact.total_advised_cost.toFixed(2)}</div>
               </div>
               <div>
-                <div className="text-sm text-muted-foreground mb-1">Werkelijke kosten</div>
+                <div className="text-sm text-muted-foreground mb-1">{t.dashboard.actualCost}</div>
                 <div className="text-xl font-bold">€{trends.cost_impact.total_actual_cost.toFixed(2)}</div>
               </div>
               <div>
-                <div className="text-sm text-muted-foreground mb-1">Potentiële besparing</div>
+                <div className="text-sm text-muted-foreground mb-1">{t.dashboard.potentialSavings}</div>
                 <div
                   className={`text-xl font-bold ${trends.cost_impact.potential_savings > 0 ? 'text-emerald-600' : 'text-red-600'}`}
                 >
@@ -587,8 +589,7 @@ export default function Dashboard() {
               </div>
             </div>
             <p className="text-xs text-muted-foreground mt-3 text-center">
-              Gebaseerd op {trends.cost_impact.comparable_orders} vergelijkbare orders met ingevulde
-              verpakkingskosten
+              {t.dashboard.basedOnOrders} {trends.cost_impact.comparable_orders} {t.dashboard.comparableOrders}
             </p>
           </div>
         </div>
@@ -599,16 +600,16 @@ export default function Dashboard() {
         <div className="mb-8">
           <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <Layers className="w-5 h-5" />
-            Carrier verdeling
+            {t.dashboard.carrierDistribution}
           </h3>
           <div className="bg-white border border-border rounded-lg overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-muted/50 border-b">
-                  <th className="text-left py-2 px-3">Carrier profiel</th>
-                  <th className="text-right py-2 px-3">Orders</th>
-                  <th className="text-right py-2 px-3">Gevolgd</th>
-                  <th className="text-right py-2 px-3">Naleving</th>
+                  <th className="text-left py-2 px-3">{t.dashboard.carrierProfile}</th>
+                  <th className="text-right py-2 px-3">{t.dashboard.orders}</th>
+                  <th className="text-right py-2 px-3">{t.dashboard.followed}</th>
+                  <th className="text-right py-2 px-3">{t.dashboard.compliance}</th>
                 </tr>
               </thead>
               <tbody>

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Fragment, useCallback } from 'react'
 import { RefreshCw, Sparkles, ChevronDown, ChevronRight, AlertTriangle } from 'lucide-react'
+import { useTranslation } from '@/i18n/LanguageContext'
 
 interface AdviceBox {
   packaging_id: string
@@ -44,6 +45,7 @@ interface PackagingAdvice {
 const PAGE_SIZE = 20
 
 export default function EngineLog() {
+  const { t } = useTranslation()
   const [advices, setAdvices] = useState<PackagingAdvice[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -102,11 +104,11 @@ export default function EngineLog() {
   const getConfidenceBadge = (confidence: string) => {
     switch (confidence) {
       case 'full_match':
-        return <span className="px-2 py-1 rounded-md text-xs font-medium bg-emerald-100 text-emerald-800">Volledig</span>
+        return <span className="px-2 py-1 rounded-md text-xs font-medium bg-emerald-100 text-emerald-800">{t.engine.confidenceFull}</span>
       case 'partial_match':
-        return <span className="px-2 py-1 rounded-md text-xs font-medium bg-amber-100 text-amber-800">Gedeeltelijk</span>
+        return <span className="px-2 py-1 rounded-md text-xs font-medium bg-amber-100 text-amber-800">{t.engine.confidencePartial}</span>
       case 'no_match':
-        return <span className="px-2 py-1 rounded-md text-xs font-medium bg-red-100 text-red-800">Geen match</span>
+        return <span className="px-2 py-1 rounded-md text-xs font-medium bg-red-100 text-red-800">{t.engine.confidenceNoMatch}</span>
       default:
         return <span className="px-2 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-800">{confidence}</span>
     }
@@ -115,15 +117,15 @@ export default function EngineLog() {
   const getOutcomeBadge = (outcome: string | null) => {
     switch (outcome) {
       case 'followed':
-        return <span className="px-2 py-1 rounded-md text-xs font-medium bg-emerald-100 text-emerald-800">Gevolgd</span>
+        return <span className="px-2 py-1 rounded-md text-xs font-medium bg-emerald-100 text-emerald-800">{t.engine.followed}</span>
       case 'modified':
-        return <span className="px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800">Gewijzigd</span>
+        return <span className="px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800">{t.engine.modified}</span>
       case 'ignored':
-        return <span className="px-2 py-1 rounded-md text-xs font-medium bg-amber-100 text-amber-800">Genegeerd</span>
+        return <span className="px-2 py-1 rounded-md text-xs font-medium bg-amber-100 text-amber-800">{t.engine.ignored}</span>
       case 'no_advice':
-        return <span className="px-2 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-600">Geen advies</span>
+        return <span className="px-2 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-600">{t.engine.noAdvice}</span>
       case null:
-        return <span className="px-2 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-600">Open</span>
+        return <span className="px-2 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-600">{t.status.open}</span>
       default:
         return <span className="px-2 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-800">{outcome}</span>
     }
@@ -132,15 +134,15 @@ export default function EngineLog() {
   const getDeviationBadge = (deviationType: string | null) => {
     switch (deviationType) {
       case 'none':
-        return <span className="px-2 py-1 rounded-md text-xs font-medium bg-emerald-100 text-emerald-800">Exact gevolgd</span>
+        return <span className="px-2 py-1 rounded-md text-xs font-medium bg-emerald-100 text-emerald-800">{t.engine.deviationExact}</span>
       case 'extra_boxes':
-        return <span className="px-2 py-1 rounded-md text-xs font-medium bg-amber-100 text-amber-800">Extra dozen</span>
+        return <span className="px-2 py-1 rounded-md text-xs font-medium bg-amber-100 text-amber-800">{t.engine.deviationExtra}</span>
       case 'fewer_boxes':
-        return <span className="px-2 py-1 rounded-md text-xs font-medium bg-amber-100 text-amber-800">Minder dozen</span>
+        return <span className="px-2 py-1 rounded-md text-xs font-medium bg-amber-100 text-amber-800">{t.engine.deviationFewer}</span>
       case 'different_packaging':
-        return <span className="px-2 py-1 rounded-md text-xs font-medium bg-amber-100 text-amber-800">Andere verpakking</span>
+        return <span className="px-2 py-1 rounded-md text-xs font-medium bg-amber-100 text-amber-800">{t.engine.deviationDifferent}</span>
       case 'mixed':
-        return <span className="px-2 py-1 rounded-md text-xs font-medium bg-amber-100 text-amber-800">Gemengde afwijking</span>
+        return <span className="px-2 py-1 rounded-md text-xs font-medium bg-amber-100 text-amber-800">{t.engine.deviationMixed}</span>
       default:
         return null
     }
@@ -164,7 +166,7 @@ export default function EngineLog() {
     return (
       <div className="max-w-5xl mx-auto">
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800">
-          <p className="font-medium">Fout bij ophalen engine log</p>
+          <p className="font-medium">{t.engine.logError}</p>
           <p className="text-sm mt-1">{error}</p>
         </div>
       </div>
@@ -174,13 +176,13 @@ export default function EngineLog() {
   return (
     <div className="max-w-5xl mx-auto">
       <div className="mb-6">
-        <h2 className="text-2xl font-bold mb-4">Engine Advieslog</h2>
+        <h2 className="text-2xl font-bold mb-4">{t.engine.logTitle}</h2>
 
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-3 bg-card border border-border rounded-lg p-4">
           <div className="flex items-center gap-2">
             <label htmlFor="confidence-filter" className="text-sm font-medium text-muted-foreground">
-              Confidence:
+              {t.engine.confidenceLabel}:
             </label>
             <select
               id="confidence-filter"
@@ -191,16 +193,16 @@ export default function EngineLog() {
               }}
               className="min-h-[44px] px-3 py-2 bg-background border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             >
-              <option value="">Alle</option>
-              <option value="full_match">Volledig</option>
-              <option value="partial_match">Gedeeltelijk</option>
-              <option value="no_match">Geen match</option>
+              <option value="">{t.engine.all}</option>
+              <option value="full_match">{t.engine.confidenceFull}</option>
+              <option value="partial_match">{t.engine.confidencePartial}</option>
+              <option value="no_match">{t.engine.confidenceNoMatch}</option>
             </select>
           </div>
 
           <div className="flex items-center gap-2">
             <label htmlFor="outcome-filter" className="text-sm font-medium text-muted-foreground">
-              Outcome:
+              {t.engine.outcomeLabel}:
             </label>
             <select
               id="outcome-filter"
@@ -211,12 +213,12 @@ export default function EngineLog() {
               }}
               className="min-h-[44px] px-3 py-2 bg-background border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             >
-              <option value="">Alle</option>
-              <option value="pending">Nog open</option>
-              <option value="followed">Gevolgd</option>
-              <option value="modified">Gewijzigd</option>
-              <option value="ignored">Genegeerd</option>
-              <option value="no_advice">Geen advies</option>
+              <option value="">{t.engine.all}</option>
+              <option value="pending">{t.engine.stillOpen}</option>
+              <option value="followed">{t.engine.followed}</option>
+              <option value="modified">{t.engine.modified}</option>
+              <option value="ignored">{t.engine.ignored}</option>
+              <option value="no_advice">{t.engine.noAdvice}</option>
             </select>
           </div>
 
@@ -226,7 +228,7 @@ export default function EngineLog() {
             className="min-h-[44px] px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 ml-auto"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            Vernieuwen
+            {t.engine.refresh}
           </button>
         </div>
       </div>
@@ -235,9 +237,9 @@ export default function EngineLog() {
       {advices.length === 0 ? (
         <div className="bg-card border border-border rounded-lg p-12 text-center">
           <Sparkles className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-          <h3 className="text-lg font-medium mb-2">Nog geen engine-adviezen berekend</h3>
+          <h3 className="text-lg font-medium mb-2">{t.engine.noAdvicesTitle}</h3>
           <p className="text-sm text-muted-foreground">
-            Start met inpakken om adviezen te genereren.
+            {t.engine.noAdvicesDesc}
           </p>
         </div>
       ) : (
@@ -249,22 +251,22 @@ export default function EngineLog() {
                 <thead className="bg-muted border-b border-border">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      Datum
+                      {t.engine.date}
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      Order
+                      {t.engine.order}
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      Confidence
+                      {t.engine.confidenceLabel}
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      Advies dozen
+                      {t.engine.adviceBoxes}
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      Outcome
+                      {t.engine.outcomeLabel}
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      Fingerprint
+                      {t.engine.fingerprint}
                     </th>
                   </tr>
                 </thead>
@@ -313,9 +315,9 @@ export default function EngineLog() {
                                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
                                   <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
                                   <div>
-                                    <p className="text-sm font-medium text-amber-800">Gewicht overschreden</p>
+                                    <p className="text-sm font-medium text-amber-800">{t.engine.weightExceeded}</p>
                                     <p className="text-xs text-amber-700 mt-1">
-                                      Het maximale gewicht van één of meerdere dozen is overschreden.
+                                      {t.engine.weightExceededDesc}
                                     </p>
                                   </div>
                                 </div>
@@ -324,7 +326,7 @@ export default function EngineLog() {
                               {/* Deviation badge */}
                               {advice.deviation_type && getDeviationBadge(advice.deviation_type) && (
                                 <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium text-muted-foreground">Afwijking:</span>
+                                  <span className="text-sm font-medium text-muted-foreground">{t.engine.deviationLabel}:</span>
                                   {getDeviationBadge(advice.deviation_type)}
                                 </div>
                               )}
@@ -332,7 +334,7 @@ export default function EngineLog() {
                               {/* Tags written */}
                               {advice.tags_written && advice.tags_written.length > 0 && (
                                 <div>
-                                  <span className="text-sm font-medium text-muted-foreground">Tags geschreven:</span>
+                                  <span className="text-sm font-medium text-muted-foreground">{t.engine.tagsWritten}:</span>
                                   <div className="flex flex-wrap gap-2 mt-2">
                                     {advice.tags_written.map((tag, idx) => (
                                       <span
@@ -349,7 +351,7 @@ export default function EngineLog() {
                               {/* Unclassified products warning */}
                               {advice.unclassified_products && advice.unclassified_products.length > 0 && (
                                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                                  <p className="text-sm font-medium text-amber-800">Ongeclassificeerde producten:</p>
+                                  <p className="text-sm font-medium text-amber-800">{t.engine.unclassifiedProducts}:</p>
                                   <p className="text-xs text-amber-700 mt-1">
                                     {advice.unclassified_products.join(', ')}
                                   </p>
@@ -360,7 +362,7 @@ export default function EngineLog() {
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {/* Left: Advice */}
                                 <div>
-                                  <h4 className="text-sm font-semibold mb-3 text-foreground">Advies</h4>
+                                  <h4 className="text-sm font-semibold mb-3 text-foreground">{t.engine.advice}</h4>
                                   <div className="space-y-3">
                                     {advice.advice_boxes.map((box, idx) => (
                                       <div key={idx} className="bg-background border border-border rounded-lg p-3">
@@ -380,7 +382,7 @@ export default function EngineLog() {
                                 {/* Right: Actual */}
                                 {advice.actual_boxes && advice.actual_boxes.length > 0 && (
                                   <div>
-                                    <h4 className="text-sm font-semibold mb-3 text-foreground">Werkelijk</h4>
+                                    <h4 className="text-sm font-semibold mb-3 text-foreground">{t.engine.actual}</h4>
                                     <div className="space-y-3">
                                       {advice.actual_boxes.map((box, idx) => (
                                         <div key={idx} className="bg-background border border-border rounded-lg p-3">
@@ -412,7 +414,7 @@ export default function EngineLog() {
           {/* Pagination */}
           <div className="mt-4 flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              Pagina {page + 1} van {totalPages || 1} ({total} resultaten)
+              {t.engine.page} {page + 1} {t.engine.of} {totalPages || 1} ({total} {t.engine.results})
             </p>
             <div className="flex items-center gap-2">
               <button
@@ -420,14 +422,14 @@ export default function EngineLog() {
                 disabled={page === 0 || loading}
                 className="min-h-[44px] px-4 py-2 bg-background border border-border rounded-md hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed text-sm"
               >
-                Vorige
+                {t.engine.previous}
               </button>
               <button
                 onClick={() => setPage(page + 1)}
                 disabled={page >= totalPages - 1 || loading}
                 className="min-h-[44px] px-4 py-2 bg-background border border-border rounded-md hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed text-sm"
               >
-                Volgende
+                {t.engine.next}
               </button>
             </div>
           </div>

@@ -14,6 +14,7 @@ import {
   Boxes,
   RefreshCw,
 } from 'lucide-react'
+import { useTranslation } from '@/i18n/LanguageContext'
 
 interface PreviewProduct {
   picqer_product_id: number
@@ -108,14 +109,14 @@ function formatCents(cents: number | undefined): string {
   return `€${(cents / 100).toFixed(2)}`
 }
 
-function confidenceBadge(confidence: string) {
+function confidenceBadge(confidence: string, t: ReturnType<typeof useTranslation>['t']) {
   switch (confidence) {
     case 'full_match':
-      return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700"><CheckCircle2 className="w-3 h-3" /> Volledig</span>
+      return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700"><CheckCircle2 className="w-3 h-3" /> {t.engine.confidenceFull}</span>
     case 'partial_match':
-      return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700"><AlertTriangle className="w-3 h-3" /> Gedeeltelijk</span>
+      return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700"><AlertTriangle className="w-3 h-3" /> {t.engine.confidencePartial}</span>
     case 'no_match':
-      return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700"><AlertCircle className="w-3 h-3" /> Geen match</span>
+      return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700"><AlertCircle className="w-3 h-3" /> {t.engine.confidenceNoMatch}</span>
     default:
       return null
   }
@@ -128,6 +129,7 @@ interface EnginePreviewPanelProps {
 }
 
 export default function EnginePreviewPanel({ picklistId, picklistDisplayId, onBack }: EnginePreviewPanelProps) {
+  const { t } = useTranslation()
   const [data, setData] = useState<PreviewResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -163,7 +165,7 @@ export default function EnginePreviewPanel({ picklistId, picklistDisplayId, onBa
       <div className="flex-1 flex items-center justify-center py-20">
         <div className="text-center">
           <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-3" />
-          <p className="text-muted-foreground">Engine berekening laden voor {picklistDisplayId}...</p>
+          <p className="text-muted-foreground">{t.engine.previewLoading} {picklistDisplayId}...</p>
         </div>
       </div>
     )
@@ -173,14 +175,14 @@ export default function EnginePreviewPanel({ picklistId, picklistDisplayId, onBa
     return (
       <div className="p-6">
         <button onClick={onBack} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary mb-4">
-          <ArrowLeft className="w-4 h-4" /> Terug
+          <ArrowLeft className="w-4 h-4" /> {t.engine.back}
         </button>
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
           <div>
-            <p className="font-medium text-red-800">Fout bij berekening</p>
+            <p className="font-medium text-red-800">{t.engine.previewError}</p>
             <p className="text-sm text-red-600 mt-1">{error}</p>
-            <button onClick={fetchPreview} className="mt-2 text-sm text-red-700 underline hover:no-underline">Opnieuw proberen</button>
+            <button onClick={fetchPreview} className="mt-2 text-sm text-red-700 underline hover:no-underline">{t.engine.previewRetry}</button>
           </div>
         </div>
       </div>
@@ -195,24 +197,24 @@ export default function EnginePreviewPanel({ picklistId, picklistDisplayId, onBa
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button onClick={onBack} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary">
-            <ArrowLeft className="w-4 h-4" /> Terug
+            <ArrowLeft className="w-4 h-4" /> {t.engine.back}
           </button>
           <div>
-            <h2 className="text-lg font-semibold">Engine Preview — {picklistDisplayId}</h2>
+            <h2 className="text-lg font-semibold">{t.engine.previewTitle} — {picklistDisplayId}</h2>
             <p className="text-sm text-muted-foreground">
               Order {order.orderid} · {order.deliveryname} · {order.deliverycity}, {order.deliverycountry}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {confidenceBadge(preview.confidence)}
+          {confidenceBadge(preview.confidence, t)}
           {preview.cost_data_available ? (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
-              <DollarSign className="w-3 h-3" /> Kosten beschikbaar
+              <DollarSign className="w-3 h-3" /> {t.engine.costAvailable}
             </span>
           ) : (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
-              Geen kostdata
+              {t.engine.noCostData}
             </span>
           )}
           <button onClick={fetchPreview} className="p-2 text-muted-foreground hover:text-primary rounded-lg hover:bg-muted transition-colors">
@@ -230,15 +232,15 @@ export default function EnginePreviewPanel({ picklistId, picklistDisplayId, onBa
         }`}>
           <Package className="w-4 h-4 shrink-0 mt-0.5" />
           <div>
-            <span className="font-medium">Single-SKU order</span>
+            <span className="font-medium">{t.engine.singleSkuOrder}</span>
             {preview.default_packaging ? (
-              <span> — standaard verpakking: <strong>{preview.default_packaging.packaging_name}</strong>
+              <span> — {t.engine.defaultPackaging}: <strong>{preview.default_packaging.packaging_name}</strong>
                 {preview.default_packaging.facturatie_box_sku && (
                   <span className="font-mono text-xs ml-1">({preview.default_packaging.facturatie_box_sku})</span>
                 )}
               </span>
             ) : (
-              <span> — <strong>geen standaard verpakking ingesteld</strong> (stel in via Instellingen → Default verpakkingen)</span>
+              <span> — <strong>{t.engine.noDefaultPackaging}</strong> ({t.engine.noDefaultPackagingHint})</span>
             )}
           </div>
         </div>
@@ -248,7 +250,7 @@ export default function EnginePreviewPanel({ picklistId, picklistDisplayId, onBa
       {preview.weight_exceeded && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center gap-2 text-sm text-amber-700">
           <Scale className="w-4 h-4 shrink-0" />
-          <span className="font-medium">Gewicht overschreden — de aanbevolen verpakking is mogelijk te zwaar</span>
+          <span className="font-medium">{t.engine.weightWarning}</span>
         </div>
       )}
 
@@ -257,7 +259,7 @@ export default function EnginePreviewPanel({ picklistId, picklistDisplayId, onBa
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-700">
           <div className="flex items-center gap-2 font-medium mb-1">
             <AlertTriangle className="w-4 h-4 shrink-0" />
-            Niet-geclassificeerde producten
+            {t.engine.unclassifiedWarning}
           </div>
           <div className="flex flex-wrap gap-1 mt-1">
             {preview.unclassified_products.map(pc => (
@@ -272,7 +274,7 @@ export default function EnginePreviewPanel({ picklistId, picklistDisplayId, onBa
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700">
           <div className="flex items-center gap-2 font-medium mb-1">
             <Package className="w-4 h-4 shrink-0" />
-            Overgeslagen verpakkingsproducten
+            {t.engine.excludedPackaging}
           </div>
           <div className="flex flex-wrap gap-1 mt-1">
             {preview.excluded_packaging.map(pc => (
@@ -288,7 +290,7 @@ export default function EnginePreviewPanel({ picklistId, picklistDisplayId, onBa
           {/* Products */}
           <div className="bg-card border border-border rounded-lg overflow-hidden">
             <div className="px-4 py-3 border-b border-border bg-muted/30">
-              <h3 className="font-semibold flex items-center gap-2"><Package className="w-4 h-4" /> Producten ({products.length})</h3>
+              <h3 className="font-semibold flex items-center gap-2"><Package className="w-4 h-4" /> {t.engine.products} ({products.length})</h3>
             </div>
             <div className="divide-y divide-border">
               {products.map(p => (
@@ -307,7 +309,7 @@ export default function EnginePreviewPanel({ picklistId, picklistDisplayId, onBa
           {preview.shipping_units_detected.length > 0 && (
             <div className="bg-card border border-border rounded-lg overflow-hidden">
               <div className="px-4 py-3 border-b border-border bg-muted/30">
-                <h3 className="font-semibold flex items-center gap-2"><Boxes className="w-4 h-4" /> Verzendeenheden</h3>
+                <h3 className="font-semibold flex items-center gap-2"><Boxes className="w-4 h-4" /> {t.engine.shippingUnits}</h3>
               </div>
               <div className="divide-y divide-border">
                 {preview.shipping_units_detected.map(su => (
@@ -328,11 +330,11 @@ export default function EnginePreviewPanel({ picklistId, picklistDisplayId, onBa
             <div className="px-4 py-3 border-b border-emerald-200 bg-emerald-50">
               <h3 className="font-semibold text-emerald-800 flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4" />
-                Aanbeveling ({preview.advice_boxes.length} {preview.advice_boxes.length === 1 ? 'doos' : 'dozen'})
+                {t.engine.recommendation} ({preview.advice_boxes.length} {preview.advice_boxes.length === 1 ? t.engine.box : t.engine.boxes})
               </h3>
             </div>
             {preview.advice_boxes.length === 0 ? (
-              <div className="px-4 py-6 text-center text-muted-foreground text-sm">Geen aanbeveling mogelijk</div>
+              <div className="px-4 py-6 text-center text-muted-foreground text-sm">{t.engine.noRecommendation}</div>
             ) : (
               <div className="divide-y divide-border">
                 {preview.advice_boxes.map((box, i) => (
@@ -346,10 +348,10 @@ export default function EnginePreviewPanel({ picklistId, picklistDisplayId, onBa
                     {/* Cost breakdown */}
                     {box.total_cost !== undefined && box.total_cost > 0 && (
                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground mb-2">
-                        <span>Materiaal: {formatCents(box.box_cost)}</span>
+                        <span>{t.engine.material}: {formatCents(box.box_cost)}</span>
                         <span>Pick: {formatCents(box.box_pick_cost)}</span>
                         <span>Pack: {formatCents(box.box_pack_cost)}</span>
-                        <span>Transport: {formatCents(box.transport_cost)}</span>
+                        <span>{t.engine.transport}: {formatCents(box.transport_cost)}</span>
                         {box.carrier_code && <span className="flex items-center gap-1"><Truck className="w-3 h-3" /> {box.carrier_code}</span>}
                         {box.weight_grams !== undefined && <span className="flex items-center gap-1"><Scale className="w-3 h-3" /> {(box.weight_grams / 1000).toFixed(1)}kg</span>}
                         {box.weight_bracket && <span>({box.weight_bracket})</span>}
@@ -370,7 +372,7 @@ export default function EnginePreviewPanel({ picklistId, picklistDisplayId, onBa
             {/* Total cost */}
             {preview.advice_boxes.length > 1 && (
               <div className="px-4 py-2 border-t border-emerald-200 bg-emerald-50/50 flex justify-between items-center text-sm">
-                <span className="font-medium text-emerald-700">Totaal</span>
+                <span className="font-medium text-emerald-700">{t.engine.total}</span>
                 <span className="font-bold text-emerald-800">
                   {formatCents(preview.advice_boxes.reduce((sum, b) => sum + (b.total_cost ?? 0), 0))}
                 </span>
@@ -384,22 +386,22 @@ export default function EnginePreviewPanel({ picklistId, picklistDisplayId, onBa
       {preview.all_matches.length > 0 && (
         <div className="bg-card border border-border rounded-lg overflow-hidden">
           <div className="px-4 py-3 border-b border-border bg-muted/30">
-            <h3 className="font-semibold">Alle matchende verpakkingen ({preview.all_matches.length})</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">Gesorteerd op totale kosten (goedkoopst eerst)</p>
+            <h3 className="font-semibold">{t.engine.allMatches} ({preview.all_matches.length})</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">{t.engine.sortedByCost}</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-muted/20 text-left">
-                  <th className="px-4 py-2 font-medium">Verpakking</th>
-                  <th className="px-4 py-2 font-medium text-right">Materiaal</th>
+                  <th className="px-4 py-2 font-medium">{t.engine.packaging}</th>
+                  <th className="px-4 py-2 font-medium text-right">{t.engine.material}</th>
                   <th className="px-4 py-2 font-medium text-right">Pick</th>
                   <th className="px-4 py-2 font-medium text-right">Pack</th>
-                  <th className="px-4 py-2 font-medium text-right">Transport</th>
-                  <th className="px-4 py-2 font-medium text-right">Totaal</th>
-                  <th className="px-4 py-2 font-medium">Carrier</th>
-                  <th className="px-4 py-2 font-medium text-center">Past alles</th>
-                  <th className="px-4 py-2 font-medium text-right">Max kg</th>
+                  <th className="px-4 py-2 font-medium text-right">{t.engine.transport}</th>
+                  <th className="px-4 py-2 font-medium text-right">{t.engine.total}</th>
+                  <th className="px-4 py-2 font-medium">{t.engine.carrier}</th>
+                  <th className="px-4 py-2 font-medium text-center">{t.engine.fitsAll}</th>
+                  <th className="px-4 py-2 font-medium text-right">{t.engine.maxKg}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -415,10 +417,10 @@ export default function EnginePreviewPanel({ picklistId, picklistDisplayId, onBa
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{m.packaging_name}</span>
                           {isRecommended && (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-200 text-emerald-800">AANBEVOLEN</span>
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-200 text-emerald-800">{t.engine.recommended}</span>
                           )}
                           {isCheapest && !isRecommended && (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-200 text-blue-800">GOEDKOOPST</span>
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-200 text-blue-800">{t.engine.cheapest}</span>
                           )}
                         </div>
                         {m.facturatie_box_sku && (
@@ -454,19 +456,19 @@ export default function EnginePreviewPanel({ picklistId, picklistDisplayId, onBa
       {preview.alternatives.length > 0 && (
         <div className="bg-card border border-border rounded-lg overflow-hidden">
           <div className="px-4 py-3 border-b border-border bg-muted/30">
-            <h3 className="font-semibold">Alternatieven (single-box opties)</h3>
+            <h3 className="font-semibold">{t.engine.alternatives}</h3>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-muted/20 text-left">
-                  <th className="px-4 py-2 font-medium">Verpakking</th>
-                  <th className="px-4 py-2 font-medium text-right">Materiaal</th>
+                  <th className="px-4 py-2 font-medium">{t.engine.packaging}</th>
+                  <th className="px-4 py-2 font-medium text-right">{t.engine.material}</th>
                   <th className="px-4 py-2 font-medium text-right">Pick</th>
                   <th className="px-4 py-2 font-medium text-right">Pack</th>
-                  <th className="px-4 py-2 font-medium text-right">Transport</th>
-                  <th className="px-4 py-2 font-medium text-right">Totaal</th>
-                  <th className="px-4 py-2 font-medium">Carrier</th>
+                  <th className="px-4 py-2 font-medium text-right">{t.engine.transport}</th>
+                  <th className="px-4 py-2 font-medium text-right">{t.engine.total}</th>
+                  <th className="px-4 py-2 font-medium">{t.engine.carrier}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -479,10 +481,10 @@ export default function EnginePreviewPanel({ picklistId, picklistDisplayId, onBa
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{alt.name}</span>
                         {alt.is_recommended && (
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-200 text-emerald-800">AANBEVOLEN</span>
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-200 text-emerald-800">{t.engine.recommended}</span>
                         )}
                         {alt.is_cheapest && !alt.is_recommended && (
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-200 text-blue-800">GOEDKOOPST</span>
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-200 text-blue-800">{t.engine.cheapest}</span>
                         )}
                       </div>
                     </td>
