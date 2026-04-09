@@ -15,6 +15,7 @@ export interface UserProfile {
   module_raapmodule: boolean
   module_bestellijst: boolean
   module_incidenten: boolean
+  module_finance: boolean
   picqer_user_id: number | null
 }
 

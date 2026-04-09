@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Package, Box, Flower2, Shield, Leaf, ShoppingCart, AlertTriangle, ExternalLink } from 'lucide-react'
+import { Package, Box, Flower2, Shield, Leaf, ShoppingCart, AlertTriangle, Banknote, ExternalLink } from 'lucide-react'
 import { useAuth } from '@/components/providers/AuthProvider'
 
 const MODULES = [
@@ -64,6 +64,17 @@ const MODULES = [
     hoverBorder: 'hover:border-rose-500',
     iconBg: 'bg-rose-500/10 group-hover:bg-rose-500/20',
     iconColor: 'text-rose-600',
+    external: true,
+  },
+  {
+    key: 'module_finance' as const,
+    href: 'https://finance.everyplants.com',
+    label: 'Finance',
+    description: 'Facturatie en financieel beheer',
+    icon: Banknote,
+    hoverBorder: 'hover:border-indigo-500',
+    iconBg: 'bg-indigo-500/10 group-hover:bg-indigo-500/20',
+    iconColor: 'text-indigo-600',
     external: true,
   },
 ]

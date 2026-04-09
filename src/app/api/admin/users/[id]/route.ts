@@ -14,6 +14,7 @@ const ALLOWED_FIELDS = [
   'module_raapmodule',
   'module_bestellijst',
   'module_incidenten',
+  'module_finance',
 ]
 
 export async function PATCH(

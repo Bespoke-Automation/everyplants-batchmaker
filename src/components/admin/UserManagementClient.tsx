@@ -90,6 +90,7 @@ export default function UserManagementClient() {
                 <th className="text-center px-4 py-3 font-medium">Raapmodule</th>
                 <th className="text-center px-4 py-3 font-medium">Bestellijst</th>
                 <th className="text-center px-4 py-3 font-medium">Incidenten</th>
+                <th className="text-center px-4 py-3 font-medium">Finance</th>
                 <th className="text-center px-4 py-3 font-medium">Admin</th>
                 <th className="text-center px-4 py-3 font-medium w-16"></th>
               </tr>
@@ -136,6 +137,12 @@ export default function UserManagementClient() {
                     <Toggle
                       checked={profile.module_incidenten}
                       onChange={(v) => toggleField(profile.id, 'module_incidenten', v)}
+                    />
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <Toggle
+                      checked={profile.module_finance}
+                      onChange={(v) => toggleField(profile.id, 'module_finance', v)}
                     />
                   </td>
                   <td className="px-4 py-3 text-center">
