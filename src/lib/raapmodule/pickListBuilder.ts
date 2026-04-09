@@ -22,9 +22,29 @@ export interface PickListItem {
   picklist_ids: number[]
 }
 
+export interface TimeRangeFilter {
+  time_from?: string  // HH:mm
+  time_to?: string    // HH:mm
+}
+
+/** Filter batches by created_at time of day (HH:mm) */
+function filterBatchesByTime<T extends { created_at: string }>(
+  batches: T[],
+  timeRange?: TimeRangeFilter
+): T[] {
+  if (!timeRange?.time_from && !timeRange?.time_to) return batches
+  return batches.filter(batch => {
+    const time = batch.created_at.slice(11, 16) // extract HH:mm from ISO string
+    if (timeRange.time_from && time < timeRange.time_from) return false
+    if (timeRange.time_to && time > timeRange.time_to) return false
+    return true
+  })
+}
+
 export async function buildPickList(
   category: RaapCategory,
-  vervoerder_id?: string | string[]
+  vervoerder_id?: string | string[],
+  timeRange?: TimeRangeFilter
 ): Promise<PickListItem[]> {
   // 1. Get location name -> category map + packaging barcodes to exclude
   const [locationNameMap, packagingBarcodes] = await Promise.all([
@@ -49,10 +69,11 @@ export async function buildPickList(
     }
   }
 
-  // 3. Fetch open batches
-  const batches = await getPicklistBatches({ status: 'open' })
+  // 3. Fetch open batches and apply time filter
+  const allBatches = await getPicklistBatches({ status: 'open' })
+  const batches = filterBatchesByTime(allBatches, timeRange)
 
-  console.log(`[pickListBuilder] Building pick list for category="${category}", ${batches.length} open batches, ${locationNameMap.size} mapped locations`)
+  console.log(`[pickListBuilder] Building pick list for category="${category}", ${batches.length}/${allBatches.length} batches (time filter: ${timeRange?.time_from || '*'}-${timeRange?.time_to || '*'}), ${locationNameMap.size} mapped locations`)
 
   const aggregated = new Map<string, PickListItem>()
 
@@ -159,13 +180,15 @@ export interface PickListItemByBatch {
 
 /** Build pick list with items kept separate per batch (not aggregated) */
 export async function buildPickListByBatch(
-  category: RaapCategory
+  category: RaapCategory,
+  timeRange?: TimeRangeFilter
 ): Promise<PickListItemByBatch[]> {
   const [locationNameMap, packagingBarcodes] = await Promise.all([
     getCategoryLocationNameMap(),
     getPackagingBarcodes(),
   ])
-  const batches = await getPicklistBatches({ status: 'open' })
+  const allBatches = await getPicklistBatches({ status: 'open' })
+  const batches = filterBatchesByTime(allBatches, timeRange)
   const items: PickListItemByBatch[] = []
 
   for (const batch of batches) {

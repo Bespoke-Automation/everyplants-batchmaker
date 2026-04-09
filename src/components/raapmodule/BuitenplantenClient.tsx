@@ -34,14 +34,20 @@ export default function BuitenplantenClient() {
   const [isDownloading, setIsDownloading] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [timeFrom, setTimeFrom] = useState<string>('')
+  const [timeTo, setTimeTo] = useState<string>('')
   const saveTimers = useRef<Record<string, NodeJS.Timeout>>({})
 
   const load = useCallback(async () => {
     setIsLoading(true)
     setError(null)
     try {
+      const timeParams = new URLSearchParams()
+      if (timeFrom) timeParams.set('time_from', timeFrom)
+      if (timeTo) timeParams.set('time_to', timeTo)
+      const qs = timeParams.toString()
       const [pickRes, pickedRes, adjRes] = await Promise.all([
-        fetch('/api/raapmodule/products/buitenplanten'),
+        fetch(`/api/raapmodule/products/buitenplanten${qs ? `?${qs}` : ''}`),
         fetch('/api/raapmodule/picked-items'),
         fetch('/api/raapmodule/buitenplanten-adjustments'),
       ])
@@ -71,7 +77,7 @@ export default function BuitenplantenClient() {
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [timeFrom, timeTo])
 
   useEffect(() => { load() }, [load])
 
@@ -174,7 +180,11 @@ export default function BuitenplantenClient() {
   const handleDownload = async () => {
     setIsDownloading(true)
     try {
-      const res = await fetch('/api/raapmodule/export/buitenplanten')
+      const exportParams = new URLSearchParams()
+      if (timeFrom) exportParams.set('time_from', timeFrom)
+      if (timeTo) exportParams.set('time_to', timeTo)
+      const exportQs = exportParams.toString()
+      const res = await fetch(`/api/raapmodule/export/buitenplanten${exportQs ? `?${exportQs}` : ''}`)
       if (res.ok) {
         const blob = await res.blob()
         const url = URL.createObjectURL(blob)
@@ -225,6 +235,30 @@ export default function BuitenplantenClient() {
             <p className="text-sm text-muted-foreground">
               {items.length - pickedKeys.size} product(en) te rapen
             </p>
+          </div>
+          <div className="flex items-center gap-1.5 text-sm">
+            <label className="text-muted-foreground">Van</label>
+            <input
+              type="time"
+              value={timeFrom}
+              onChange={(e) => setTimeFrom(e.target.value)}
+              className="px-2 py-1.5 border border-border rounded-md bg-background text-sm"
+            />
+            <label className="text-muted-foreground">Tot</label>
+            <input
+              type="time"
+              value={timeTo}
+              onChange={(e) => setTimeTo(e.target.value)}
+              className="px-2 py-1.5 border border-border rounded-md bg-background text-sm"
+            />
+            {(timeFrom || timeTo) && (
+              <button
+                onClick={() => { setTimeFrom(''); setTimeTo('') }}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Wis
+              </button>
+            )}
           </div>
           <button onClick={load} className="p-1.5 hover:bg-muted rounded-md transition-colors">
             <RefreshCw className="w-4 h-4" />

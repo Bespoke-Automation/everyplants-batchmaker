@@ -1,13 +1,19 @@
 import { NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
-import { buildPickList } from '@/lib/raapmodule/pickListBuilder'
+import { buildPickList, type TimeRangeFilter } from '@/lib/raapmodule/pickListBuilder'
 import { getPickedItems, cleanupClosedPicklistItems } from '@/lib/supabase/raapPickedItems'
 import { getAdjustments } from '@/lib/supabase/buitenplantenAdjustments'
 import { fetchPicklist } from '@/lib/picqer/client'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url)
+  const timeRange: TimeRangeFilter = {
+    time_from: searchParams.get('time_from') || undefined,
+    time_to: searchParams.get('time_to') || undefined,
+  }
+
   try {
     // 1. Get current tracked picked items
     const pickedItems = await getPickedItems()
@@ -37,7 +43,7 @@ export async function GET() {
 
     // 4. Build full buitenplanten pick list + get adjustments
     const [allItems, adjData] = await Promise.all([
-      buildPickList('buitenplanten'),
+      buildPickList('buitenplanten', undefined, timeRange),
       getAdjustments(),
     ])
 
