@@ -57,7 +57,7 @@ const MODULES = [
   },
   {
     key: 'module_incidenten' as const,
-    href: 'https://v0-internal-gb-ep-florafy.vercel.app/dashboard',
+    href: 'https://issues.everyplants.com/dashboard',
     label: 'Incidenten Register',
     description: 'Incidenten registratie en opvolging',
     icon: AlertTriangle,
