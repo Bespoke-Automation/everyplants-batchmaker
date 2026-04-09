@@ -295,6 +295,17 @@ export default function PicklistPage({ params }: { params: Promise<{ sessionId: 
         }}
         workerName={selectedWorker!.fullName}
         batchContext={batchContext ?? undefined}
+        onPicklistClosed={(picklistId) => {
+          setBatchContext(prev => {
+            if (!prev) return prev
+            return {
+              ...prev,
+              picklists: prev.picklists.map(pl =>
+                pl.idpicklist === picklistId ? { ...pl, status: 'closed' } : pl
+              ),
+            }
+          })
+        }}
       />
     </main>
   )

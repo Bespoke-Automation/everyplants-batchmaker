@@ -199,6 +199,7 @@ interface VerpakkingsClientProps {
   onBack: () => void
   workerName: string
   batchContext?: BatchContextProps
+  onPicklistClosed?: (picklistId: number) => void
 }
 
 const BADGE_STYLES: Record<PrinterStatus, string> = {
@@ -222,7 +223,7 @@ function StationBadge({ station, onClick, label }: { station: PackingStation | n
   )
 }
 
-export default function VerpakkingsClient({ sessionId, onBack, workerName, batchContext }: VerpakkingsClientProps) {
+export default function VerpakkingsClient({ sessionId, onBack, workerName, batchContext, onPicklistClosed }: VerpakkingsClientProps) {
   const router = useRouter()
   const { t, language } = useTranslation()
 
@@ -346,7 +347,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
     const currentPicklistId = session?.picklistId
     if (!currentPicklistId) return null
     const currentIndex = sortedBatchPicklists.findIndex((pl) => pl.idpicklist === currentPicklistId)
-    const isOpen = (pl: { status: string; sessionStatus?: string }) => pl.status !== 'closed' && pl.sessionStatus !== 'completed'
+    const isOpen = (pl: { status: string }) => pl.status !== 'closed'
     if (currentIndex === -1) {
       return sortedBatchPicklists.find(isOpen) ?? null
     }
@@ -361,7 +362,7 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
 
   const isBatchCompleted = useMemo(() => {
     if (!batchContext || batchContext.picklists.length === 0) return false
-    return batchContext.picklists.every((pl) => pl.status === 'closed' || pl.sessionStatus === 'completed')
+    return batchContext.picklists.every((pl) => pl.status === 'closed')
   }, [batchContext])
 
   const handleExtraShipment = useCallback(() => {
@@ -1712,6 +1713,8 @@ export default function VerpakkingsClient({ sessionId, onBack, workerName, batch
       }
       // Update local picklist status so UI reflects the closed state
       setPicklist(prev => prev ? { ...prev, status: 'closed' } : prev)
+      // Update batchContext so navigation skips this picklist
+      if (session?.picklistId) onPicklistClosed?.(session.picklistId)
       // Mark session as completed
       await completeSession()
       setScanFeedback({ message: t.packing.picklistClosed, type: 'success' })
