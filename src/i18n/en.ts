@@ -29,6 +29,7 @@ const en: Dictionary = {
     queue: 'Batches',
     history: 'History',
     engineLog: 'Engine Log',
+    insights: 'Insights',
     dashboard: 'Dashboard',
     settings: 'Settings',
     comments: 'Comments',

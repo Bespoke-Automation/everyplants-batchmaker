@@ -65,6 +65,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
     { href: '/verpakkingsmodule', label: t.layout.queue },
     { href: '/verpakkingsmodule/geschiedenis', label: t.layout.history },
     { href: '/verpakkingsmodule/engine-log', label: t.layout.engineLog },
+    { href: '/verpakkingsmodule/insights', label: t.layout.insights },
     { href: '/verpakkingsmodule/dashboard', label: t.layout.dashboard },
     { href: '/verpakkingsmodule/instellingen', label: t.layout.settings },
   ]

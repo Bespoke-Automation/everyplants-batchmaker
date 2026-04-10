@@ -31,6 +31,7 @@ const nl = {
     queue: 'Batches',
     history: 'Geschiedenis',
     engineLog: 'Engine Log',
+    insights: 'Insights',
     dashboard: 'Dashboard',
     settings: 'Instellingen',
     comments: 'Opmerkingen',
