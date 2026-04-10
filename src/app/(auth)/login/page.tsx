@@ -23,7 +23,11 @@ export default function LoginPage() {
       })
 
       if (authError) {
-        setError('Ongeldig e-mailadres of wachtwoord')
+        if (authError.status === 429 || authError.code === 'over_request_rate_limit') {
+          setError('Te veel loginpogingen. Wacht ongeveer 5 minuten en probeer opnieuw.')
+        } else {
+          setError('Ongeldig e-mailadres of wachtwoord')
+        }
         setLoading(false)
       } else {
         // Hard redirect so middleware picks up the new Supabase cookies
