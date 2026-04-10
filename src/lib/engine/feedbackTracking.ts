@@ -24,6 +24,13 @@ export interface SessionOutcomeResult {
  * Record the outcome of a packing session by comparing
  * actual boxes vs engine-advised boxes.
  * Called when all boxes in a session are shipped (session completed).
+ *
+ * The advice record is resolved in two steps:
+ *   1. Via packaging_advice_id set on any of the session boxes (happy path —
+ *      this is how the VerpakkingsClient threads the reference through).
+ *   2. Fallback: look up the most recent non-invalidated advice for the same
+ *      picklist_id. This covers flows where the box → advice link was never
+ *      set (race conditions, alternative completion paths, historical records).
  */
 export async function recordSessionOutcome(sessionId: string): Promise<SessionOutcomeResult | null> {
   // 1. Fetch the full session (boxes + products)
@@ -39,17 +46,36 @@ export async function recordSessionOutcome(sessionId: string): Promise<SessionOu
     })),
   }))
 
-  // 3. Find the packaging_advice record (via packaging_advice_id on any box)
-  const adviceId = session.packing_session_boxes
-    .map(b => b.packaging_advice_id)
-    .find(id => id != null)
+  // 3. Find the packaging_advice record — try the box link first
+  let adviceId: string | null =
+    session.packing_session_boxes.map(b => b.packaging_advice_id).find(id => id != null) ?? null
+
+  // 4. Fallback: resolve via picklist_id when no box has an advice link
+  if (!adviceId && session.picklist_id) {
+    const { data: fallbackAdvice } = await supabase
+      .schema('batchmaker')
+      .from('packaging_advice')
+      .select('id')
+      .eq('picklist_id', session.picklist_id)
+      .neq('status', 'invalidated')
+      .order('calculated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (fallbackAdvice) {
+      adviceId = fallbackAdvice.id as string
+      console.log(
+        `[feedbackTracking] Resolved advice ${adviceId} via picklist_id fallback (no box link)`,
+      )
+    }
+  }
 
   if (!adviceId) {
-    // No engine advice was used — no comparison needed
+    // No engine advice was used at all — no comparison needed
     return null
   }
 
-  // 4. Fetch the advice record
+  // 5. Fetch the advice record
   const { data: advice } = await supabase
     .schema('batchmaker')
     .from('packaging_advice')

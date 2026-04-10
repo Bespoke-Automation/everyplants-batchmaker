@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getPackingSession, updatePackingSession, updateBox } from '@/lib/supabase/packingSessions'
 import { fetchPicklist, getShipment } from '@/lib/picqer/client'
+import { recordSessionOutcome } from '@/lib/engine/feedbackTracking'
 
 export const dynamic = 'force-dynamic'
 
@@ -74,6 +75,7 @@ export async function PUT(
     const updatedSession = await updatePackingSession(id, allowedFields)
 
     // B5: If status is being set to 'completed', check if all products are packed
+    // and record the engine-advice outcome for feedback tracking.
     let warning: string | undefined
     if (body.status === 'completed') {
       try {
@@ -91,6 +93,15 @@ export async function PUT(
       } catch (completenessError) {
         console.error('[verpakking] Error checking product completeness:', completenessError)
         // Non-blocking: don't fail the update
+      }
+
+      // Record feedback outcome (non-blocking). This path was previously missed
+      // because the PUT completion flow bypassed tryCompleteSession entirely,
+      // leaving ~66% of completed sessions without an outcome recorded.
+      try {
+        await recordSessionOutcome(id)
+      } catch (feedbackError) {
+        console.error('[verpakking] Error recording session outcome:', feedbackError)
       }
     }
 

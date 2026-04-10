@@ -1757,6 +1757,7 @@ export async function calculateAdvice(
     country_code: countryCode ?? null,
     cost_data_available: result.cost_data_available,
     reasoning: result.reasoning,
+    advice_source: result.source,
   }
 
   const { data: inserted, error: insertError } = await supabase
