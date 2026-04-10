@@ -4,10 +4,6 @@ import { createMiddlewareClient } from '@/lib/supabase/middleware'
 
 export async function middleware(request: NextRequest) {
   const response = NextResponse.next({ request })
-  const supabase = createMiddlewareClient(request, response)
-
-  // Refresh session — critical for SSR auth cookie management
-  const { data: { user } } = await supabase.auth.getUser()
 
   const isLoginPage = request.nextUrl.pathname === '/login'
   const isApiRoute = request.nextUrl.pathname.startsWith('/api')
@@ -15,20 +11,19 @@ export async function middleware(request: NextRequest) {
   // API routes pass through (Inngest uses signing keys, others are internal)
   if (isApiRoute) return response
 
-  // Redirect authenticated user away from login
-  if (isLoginPage && user) {
-    return NextResponse.redirect(new URL('/', request.url))
-  }
-
-  // Allow login page
+  // Login page: no token refresh needed — avoid rate limit loops
   if (isLoginPage) return response
 
-  // Redirect to login if not authenticated
-  if (!user) {
-    return NextResponse.redirect(new URL('/login', request.url))
-  }
+  const supabase = createMiddlewareClient(request, response)
 
-  return response
+  // Refresh session — critical for SSR auth cookie management
+  const { data: { user } } = await supabase.auth.getUser()
+
+  // Redirect authenticated user away from login
+  if (user) return response
+
+  // Redirect to login if not authenticated
+  return NextResponse.redirect(new URL('/login', request.url))
 }
 
 export const config = {
