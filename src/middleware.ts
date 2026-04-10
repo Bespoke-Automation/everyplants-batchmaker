@@ -11,8 +11,14 @@ export async function middleware(request: NextRequest) {
   // API routes pass through (Inngest uses signing keys, others are internal)
   if (isApiRoute) return response
 
-  // Login page: no token refresh needed — avoid rate limit loops
-  if (isLoginPage) return response
+  // Login page: clear stale auth cookies to prevent browser-side refresh token spam
+  if (isLoginPage) {
+    const cookieNames = request.cookies.getAll().map(c => c.name).filter(n => n.startsWith('sb-'))
+    for (const name of cookieNames) {
+      response.cookies.delete(name)
+    }
+    return response
+  }
 
   const supabase = createMiddlewareClient(request, response)
 
