@@ -660,8 +660,12 @@ const nl = {
 
     // PackingStationSettings
     stations: 'Werkstations',
-    stationsDescription: 'Koppel werkstations aan PrintNode printers voor automatisch label printen.',
-    importFromPicqer: 'Importeer uit Picqer',
+    stationsDescription: 'Koppel werkstations aan PrintNode printers voor automatisch label printen. Wijzigingen blijven lokaal en worden niet teruggesynchroniseerd naar Picqer.',
+    importFromPicqer: 'Importeer nieuwe uit Picqer',
+    importFromPicqerTooltip: 'Voegt alleen nieuwe werkstations uit Picqer toe. Bestaande werkstations worden nooit overschreven.',
+    importSuccessSingular: '1 nieuw werkstation geïmporteerd uit Picqer. Bestaande werkstations zijn ongewijzigd gebleven.',
+    importSuccessPlural: '{count} nieuwe werkstations geïmporteerd uit Picqer. Bestaande werkstations zijn ongewijzigd gebleven.',
+    importNoneFound: 'Geen nieuwe werkstations gevonden. Alle Picqer-werkstations staan al in het systeem.',
     newStation: 'Nieuw werkstation',
     editStation: 'Werkstation bewerken',
     deleteStationConfirm: 'Werkstation verwijderen?',
@@ -675,6 +679,9 @@ const nl = {
     couldNotFetchPrintersFromPrintNode: 'Kon printers niet ophalen van PrintNode',
     noStationsConfigured: 'Nog geen werkstations geconfigureerd.',
     noStationsHint: 'Maak een werkstation aan en koppel een printer voor automatisch label printen.',
+    printerConflict: 'Deze printer is al gekoppeld aan "{name}". Elk werkstation moet een eigen printer hebben. Kies een andere printer of wijzig eerst "{name}".',
+    stationSaveFailed: 'Opslaan mislukt. Probeer het opnieuw of neem contact op met de beheerder als het probleem aanhoudt.',
+    stationDeleteFailed: 'Verwijderen mislukt. Probeer het opnieuw.',
   },
   history: {
     title: 'Batch Geschiedenis',

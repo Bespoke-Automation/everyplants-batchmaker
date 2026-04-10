@@ -5,6 +5,11 @@ export const dynamic = 'force-dynamic'
 
 /**
  * POST /api/verpakking/packing-stations/create
+ *
+ * Maakt een nieuw werkstation aan. Elk werkstation moet een eigen printer
+ * hebben — als de gekozen printer al aan een ander actief werkstation hangt
+ * wordt een 409 conflict teruggegeven met de naam van het conflicterende
+ * werkstation zodat de UI dat kan tonen.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -13,8 +18,30 @@ export async function POST(request: NextRequest) {
 
     if (!name || !printnode_printer_id) {
       return NextResponse.json(
-        { error: 'name and printnode_printer_id are required' },
+        { error: 'Naam en printer zijn verplicht.' },
         { status: 400 },
+      )
+    }
+
+    // Check of deze printer al gekoppeld is aan een actief werkstation
+    const { data: conflict, error: conflictError } = await supabase
+      .schema('batchmaker')
+      .from('packing_stations')
+      .select('id, name')
+      .eq('printnode_printer_id', printnode_printer_id)
+      .eq('is_active', true)
+      .maybeSingle()
+
+    if (conflictError) throw conflictError
+
+    if (conflict) {
+      return NextResponse.json(
+        {
+          error: 'printer_conflict',
+          conflictStationName: conflict.name,
+          message: `Deze printer is al gekoppeld aan "${conflict.name}".`,
+        },
+        { status: 409 },
       )
     }
 
@@ -35,7 +62,10 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('[packing-stations] Error creating station:', error)
     return NextResponse.json(
-      { error: 'Failed to create packing station', details: error instanceof Error ? error.message : 'Unknown error' },
+      {
+        error: 'Werkstation aanmaken mislukt.',
+        details: error instanceof Error ? error.message : 'Onbekende fout',
+      },
       { status: 500 },
     )
   }

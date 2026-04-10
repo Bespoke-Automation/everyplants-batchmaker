@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, Loader2, Printer, AlertCircle, Monitor, Wifi, WifiOff, RefreshCw } from 'lucide-react'
+import { Plus, Trash2, Loader2, Printer, AlertCircle, Monitor, Wifi, WifiOff, Download, CheckCircle2, Info } from 'lucide-react'
 import { useTranslation } from '@/i18n/LanguageContext'
 
 interface PackingStation {
@@ -29,13 +29,15 @@ export default function PackingStationSettings() {
   const [printersError, setPrintersError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
-  const [syncResult, setSyncResult] = useState<string | null>(null)
+  const [syncResult, setSyncResult] = useState<{ message: string; variant: 'success' | 'info' | 'error' } | null>(null)
 
   // Form state
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [formName, setFormName] = useState('')
   const [formPrinterId, setFormPrinterId] = useState<number | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const fetchStations = useCallback(async () => {
     try {
@@ -78,39 +80,52 @@ export default function PackingStationSettings() {
     if (!formName.trim() || !formPrinterId) return
 
     setIsSaving(true)
+    setFormError(null)
     try {
       const printer = printers.find((p) => p.id === formPrinterId)
-
-      if (editingId) {
-        await fetch('/api/verpakking/packing-stations/update', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+      const url = editingId
+        ? '/api/verpakking/packing-stations/update'
+        : '/api/verpakking/packing-stations/create'
+      const method = editingId ? 'PUT' : 'POST'
+      const body = editingId
+        ? {
             id: editingId,
             name: formName.trim(),
             printnode_printer_id: formPrinterId,
             printnode_printer_name: printer?.name ?? null,
-          }),
-        })
-      } else {
-        await fetch('/api/verpakking/packing-stations/create', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+          }
+        : {
             name: formName.trim(),
             printnode_printer_id: formPrinterId,
             printnode_printer_name: printer?.name ?? null,
-          }),
-        })
+          }
+
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        if (res.status === 409 && data.conflictStationName) {
+          setFormError(
+            t.settings.printerConflict.replaceAll('{name}', data.conflictStationName),
+          )
+        } else {
+          setFormError(data.message || data.error || t.settings.stationSaveFailed)
+        }
+        return
       }
 
       setShowForm(false)
       setEditingId(null)
       setFormName('')
       setFormPrinterId(null)
+      setFormError(null)
       await fetchStations()
     } catch {
-      // silent
+      setFormError(t.settings.stationSaveFailed)
     } finally {
       setIsSaving(false)
     }
@@ -119,15 +134,20 @@ export default function PackingStationSettings() {
   const handleDelete = async (id: string) => {
     if (!confirm(t.settings.deleteStationConfirm)) return
 
+    setDeleteError(null)
     try {
-      await fetch('/api/verpakking/packing-stations/delete', {
+      const res = await fetch('/api/verpakking/packing-stations/delete', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id }),
       })
+      if (!res.ok) {
+        setDeleteError(t.settings.stationDeleteFailed)
+        return
+      }
       await fetchStations()
     } catch {
-      // silent
+      setDeleteError(t.settings.stationDeleteFailed)
     }
   }
 
@@ -135,6 +155,7 @@ export default function PackingStationSettings() {
     setEditingId(station.id)
     setFormName(station.name)
     setFormPrinterId(station.printnode_printer_id)
+    setFormError(null)
     setShowForm(true)
   }
 
@@ -145,13 +166,30 @@ export default function PackingStationSettings() {
       const res = await fetch('/api/verpakking/packing-stations/sync', { method: 'POST' })
       const data = await res.json()
       if (!res.ok) {
-        setSyncResult(`${t.common.error}: ${data.error}`)
-      } else {
-        setSyncResult(data.message)
+        setSyncResult({
+          message: data.message || data.error || t.settings.syncFailed,
+          variant: 'error',
+        })
+        return
+      }
+      const created = data.created ?? 0
+      if (created > 0) {
+        setSyncResult({
+          message:
+            created === 1
+              ? t.settings.importSuccessSingular
+              : t.settings.importSuccessPlural.replace('{count}', String(created)),
+          variant: 'success',
+        })
         await fetchStations()
+      } else {
+        setSyncResult({
+          message: t.settings.importNoneFound,
+          variant: 'info',
+        })
       }
     } catch {
-      setSyncResult(t.settings.syncFailed)
+      setSyncResult({ message: t.settings.syncFailed, variant: 'error' })
     } finally {
       setIsSyncing(false)
     }
@@ -178,9 +216,10 @@ export default function PackingStationSettings() {
           <button
             onClick={handleSyncFromPicqer}
             disabled={isSyncing}
+            title={t.settings.importFromPicqerTooltip}
             className="flex items-center gap-2 px-4 py-2 min-h-[44px] border border-border rounded-lg text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50"
           >
-            <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+            <Download className={`w-4 h-4 ${isSyncing ? 'animate-pulse' : ''}`} />
             {t.settings.importFromPicqer}
           </button>
           <button
@@ -189,6 +228,7 @@ export default function PackingStationSettings() {
               setEditingId(null)
               setFormName('')
               setFormPrinterId(null)
+              setFormError(null)
             }}
             className="flex items-center gap-2 px-4 py-2 min-h-[44px] bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
           >
@@ -198,11 +238,33 @@ export default function PackingStationSettings() {
         </div>
       </div>
 
-      {/* Sync result */}
+      {/* Import result */}
       {syncResult && (
-        <div className="flex items-center gap-2 px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
-          <RefreshCw className="w-4 h-4 flex-shrink-0" />
-          {syncResult}
+        <div
+          className={`flex items-start gap-2 px-3 py-2.5 border rounded-lg text-sm ${
+            syncResult.variant === 'success'
+              ? 'bg-green-50 border-green-200 text-green-800'
+              : syncResult.variant === 'error'
+                ? 'bg-red-50 border-red-200 text-red-800'
+                : 'bg-blue-50 border-blue-200 text-blue-800'
+          }`}
+        >
+          {syncResult.variant === 'success' ? (
+            <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          ) : syncResult.variant === 'error' ? (
+            <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          ) : (
+            <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          )}
+          <span>{syncResult.message}</span>
+        </div>
+      )}
+
+      {/* Delete error */}
+      {deleteError && (
+        <div className="flex items-start gap-2 px-3 py-2.5 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+          <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <span>{deleteError}</span>
         </div>
       )}
 
@@ -247,7 +309,10 @@ export default function PackingStationSettings() {
             ) : (
               <select
                 value={formPrinterId ?? ''}
-                onChange={(e) => setFormPrinterId(e.target.value ? Number(e.target.value) : null)}
+                onChange={(e) => {
+                  setFormPrinterId(e.target.value ? Number(e.target.value) : null)
+                  setFormError(null)
+                }}
                 className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               >
                 <option value="">{t.settings.selectPrinter}</option>
@@ -259,6 +324,13 @@ export default function PackingStationSettings() {
               </select>
             )}
           </div>
+
+          {formError && (
+            <div className="flex items-start gap-2 px-3 py-2.5 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+              <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <span>{formError}</span>
+            </div>
+          )}
 
           <div className="flex items-center gap-2 pt-2">
             <button
@@ -273,6 +345,7 @@ export default function PackingStationSettings() {
               onClick={() => {
                 setShowForm(false)
                 setEditingId(null)
+                setFormError(null)
               }}
               className="px-4 py-2 min-h-[44px] text-sm rounded-lg hover:bg-muted transition-colors"
             >

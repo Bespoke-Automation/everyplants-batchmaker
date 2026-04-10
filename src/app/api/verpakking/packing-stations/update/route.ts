@@ -5,6 +5,11 @@ export const dynamic = 'force-dynamic'
 
 /**
  * PUT /api/verpakking/packing-stations/update
+ *
+ * Wijzigt een bestaand werkstation. Als de nieuwe printer al aan een ander
+ * actief werkstation hangt wordt een 409 conflict teruggegeven. De huidige
+ * rij wordt uitgesloten van de check zodat het opnieuw opslaan zonder
+ * printer-wijziging geen false positive geeft.
  */
 export async function PUT(request: NextRequest) {
   try {
@@ -12,7 +17,32 @@ export async function PUT(request: NextRequest) {
     const { id, name, printnode_printer_id, printnode_printer_name, is_active } = body
 
     if (!id) {
-      return NextResponse.json({ error: 'id is required' }, { status: 400 })
+      return NextResponse.json({ error: 'id is verplicht.' }, { status: 400 })
+    }
+
+    // Check conflict alleen als de gebruiker daadwerkelijk een printer meegeeft
+    if (printnode_printer_id !== undefined) {
+      const { data: conflict, error: conflictError } = await supabase
+        .schema('batchmaker')
+        .from('packing_stations')
+        .select('id, name')
+        .eq('printnode_printer_id', printnode_printer_id)
+        .eq('is_active', true)
+        .neq('id', id)
+        .maybeSingle()
+
+      if (conflictError) throw conflictError
+
+      if (conflict) {
+        return NextResponse.json(
+          {
+            error: 'printer_conflict',
+            conflictStationName: conflict.name,
+            message: `Deze printer is al gekoppeld aan "${conflict.name}".`,
+          },
+          { status: 409 },
+        )
+      }
     }
 
     const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
@@ -35,7 +65,10 @@ export async function PUT(request: NextRequest) {
   } catch (error) {
     console.error('[packing-stations] Error updating station:', error)
     return NextResponse.json(
-      { error: 'Failed to update packing station', details: error instanceof Error ? error.message : 'Unknown error' },
+      {
+        error: 'Werkstation bijwerken mislukt.',
+        details: error instanceof Error ? error.message : 'Onbekende fout',
+      },
       { status: 500 },
     )
   }
