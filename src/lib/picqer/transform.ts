@@ -3,7 +3,7 @@ import { TransformedOrder, OrderTag } from '@/types/order'
 import { DAYS } from '@/constants'
 
 // Retailer names that appear as tags
-const RETAILER_TAGS = [
+export const RETAILER_TAGS = [
   'Green Bubble',
   'Everspring',
   'Ogreen',
@@ -11,6 +11,48 @@ const RETAILER_TAGS = [
   'Trendyplants',
   'Plantura',
 ]
+
+/**
+ * Picqer tag IDs per retailer. Tag IDs are immutable in Picqer; tag names are
+ * editable by users. ALWAYS prefer ID-based matching for routing/security
+ * decisions; reserve name-based matching for display only.
+ *
+ * Verified against production Picqer (green-bubble) on 2026-04-11.
+ */
+export const RETAILER_TAG_IDS: Record<string, number> = {
+  Florafy: 252017,
+  // Trendyplants, Green Bubble, etc. — to be added when needed
+}
+
+/**
+ * Extract retailer tag from a Picqer order's tags object (Record<string, PicqerTag>).
+ * Returns the human-readable tag title. Used for logging and display.
+ *
+ * For routing decisions (like Shopify sync), prefer getRetailerTagIdFromOrder
+ * because tag IDs are stable across renames.
+ */
+export function getRetailerTagFromOrder(order: PicqerOrder): string | null {
+  const titles = Object.values(order.tags ?? {}).map(t => t.title)
+  return titles.find(t => RETAILER_TAGS.includes(t)) ?? null
+}
+
+/**
+ * Extract a retailer match from a Picqer order using tag IDs (not names).
+ * Returns both the id and title so callers can route + log without re-querying.
+ * Returns null when no recognised retailer tag id is present on the order.
+ */
+export function getRetailerByTagId(
+  order: PicqerOrder,
+  knownTagIds: Record<string, number>,
+): { tagId: number; retailerTag: string } | null {
+  const orderTagIds = Object.values(order.tags ?? {}).map(t => t.idtag)
+  for (const [retailer, id] of Object.entries(knownTagIds)) {
+    if (orderTagIds.includes(id)) {
+      return { tagId: id, retailerTag: retailer }
+    }
+  }
+  return null
+}
 
 /**
  * Get value from orderfields by field ID

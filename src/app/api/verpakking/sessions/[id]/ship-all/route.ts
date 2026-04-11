@@ -12,6 +12,7 @@ import {
 import { supabase } from '@/lib/supabase/client'
 import { tryAutoPrint } from '@/lib/printnode/autoPrint'
 import { tryCompleteSession } from '@/lib/verpakking/tryCompleteSession'
+import { triggerShopifyTrackingSync } from '@/inngest/functions/syncShopifyTracking'
 
 export const dynamic = 'force-dynamic'
 
@@ -215,6 +216,16 @@ export async function POST(
           console.error(`[ship-all] Background label processing failed for box ${box.boxId}:`, err)
         })
       }
+    }
+
+    // Phase 4: Trigger Shopify tracking sync (debounced) — patches Picqer Shopify
+    // sync limitation where only the first shipment tracking is pushed. Only relevant
+    // when >1 shipment was actually created. Non-blocking.
+    const successfulShipmentCount = results.filter(r => r.success).length
+    if (successfulShipmentCount >= 2) {
+      triggerShopifyTrackingSync(session.picklist_id, 'ship-all').catch(err => {
+        console.error(`[ship-all] Failed to trigger Shopify tracking sync for picklist ${session.picklist_id}:`, err)
+      })
     }
 
     // Step 3: Try to complete session

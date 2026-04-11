@@ -12,6 +12,7 @@ import { supabase } from '@/lib/supabase/client'
 import { logActivity } from '@/lib/supabase/activityLog'
 import { getRequestUser } from '@/lib/supabase/getRequestUser'
 import { tryAutoPrint } from '@/lib/printnode/autoPrint'
+import { triggerShopifyTrackingSync } from '@/inngest/functions/syncShopifyTracking'
 
 export const dynamic = 'force-dynamic'
 
@@ -204,6 +205,13 @@ export async function POST(
     // This does NOT block the response to the frontend
     processLabelInBackground(sessionId, boxId, shipmentId, labelPdfUrl, packingStationId).catch((err) => {
       console.error('[verpakking] Background label processing failed:', err)
+    })
+
+    // Step 7b: Trigger Shopify tracking sync (debounced at Inngest side). Fires on every
+    // single-box ship — the Inngest function itself checks if >=2 shipments exist before
+    // patching. Debounce 10s groups multiple individual ship calls into one sync run.
+    triggerShopifyTrackingSync(session.picklist_id, 'ship-single').catch(err => {
+      console.error(`[verpakking] Failed to trigger Shopify tracking sync for picklist ${session.picklist_id}:`, err)
     })
 
     // Step 8: Try to complete session
