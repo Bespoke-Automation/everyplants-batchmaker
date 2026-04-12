@@ -18,6 +18,7 @@ interface Args {
   days: number
   retailer: string
   dryRun: boolean
+  noNotify: boolean
 }
 
 function parseArgs(): Args {
@@ -30,14 +31,15 @@ function parseArgs(): Args {
     days: Number(get('--days', '30')),
     retailer: get('--retailer', 'Florafy')!,
     dryRun: args.includes('--dry-run'),
+    noNotify: args.includes('--no-notify'),
   }
 }
 
 async function main() {
-  const { days, retailer, dryRun } = parseArgs()
+  const { days, retailer, dryRun, noNotify } = parseArgs()
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
-  console.log(`[backfill] searching completed orders since ${since} for retailer ${retailer}${dryRun ? ' (dry run)' : ''}`)
+  console.log(`[backfill] searching completed orders since ${since} for retailer ${retailer}${dryRun ? ' (dry run)' : ''}${noNotify ? ' (no customer notifications)' : ''}`)
 
   const orders = await fetchOrdersByStatus('completed', since)
   console.log(`[backfill] fetched ${orders.length} completed orders since ${since}`)
@@ -69,7 +71,7 @@ async function main() {
 
       if (!dryRun) {
         try {
-          await triggerShopifyTrackingSync(picklist.idpicklist, `backfill-${days}d`)
+          await triggerShopifyTrackingSync(picklist.idpicklist, `backfill-${days}d`, noNotify ? false : undefined)
           fixedCount++
           // Small delay to spread Inngest events
           await new Promise(r => setTimeout(r, 250))

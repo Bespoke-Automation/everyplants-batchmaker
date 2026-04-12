@@ -60,10 +60,12 @@ export const syncShopifyTracking = inngest.createFunction(
   },
   { event: 'shopify/tracking.sync' },
   async ({ event, step, logger }) => {
-    const { picqerPicklistId, triggeredBy } = event.data as {
+    const { picqerPicklistId, triggeredBy, notifyCustomer: notifyOverride } = event.data as {
       picqerPicklistId: number
       triggeredBy?: string
+      notifyCustomer?: boolean
     }
+    const shouldNotify = notifyOverride !== undefined ? notifyOverride : true
 
     if (!picqerPicklistId || typeof picqerPicklistId !== 'number') {
       logger.error(`[shopify-sync] invalid picklist id in event: ${picqerPicklistId}`)
@@ -334,7 +336,7 @@ export const syncShopifyTracking = inngest.createFunction(
             numbers: merged.map(p => p.number),
             urls: merged.map(p => p.url),
           },
-          true, // notify_customer — klant krijgt update-mail met alle trackings
+          shouldNotify,
         )
       } catch (e) {
         // Wrap and rethrow so Inngest retries see the original
@@ -495,10 +497,11 @@ async function logSync(row: SyncLogRow): Promise<void> {
 export async function triggerShopifyTrackingSync(
   picqerPicklistId: number,
   triggeredBy: string,
+  notifyCustomer?: boolean,
 ): Promise<void> {
   await inngest.send({
     name: 'shopify/tracking.sync',
-    data: { picqerPicklistId, triggeredBy },
+    data: { picqerPicklistId, triggeredBy, ...(notifyCustomer !== undefined && { notifyCustomer }) },
   })
 }
 
