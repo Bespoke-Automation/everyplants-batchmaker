@@ -12,6 +12,7 @@ import {
   Info,
   Library,
   Brain,
+  Users,
   Sparkles,
 } from 'lucide-react'
 import type { ComplianceTrendPoint, OverviewResponse } from '@/lib/engine/insights'
@@ -317,7 +318,7 @@ export default function InsightsOverview() {
       </div>
 
       {/* Navigation to sub-pages */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Link
           href="/verpakkingsmodule/insights/patterns"
           className="group block border border-border rounded-lg bg-card p-5 hover:border-primary hover:shadow-sm transition-all"
@@ -329,8 +330,7 @@ export default function InsightsOverview() {
             <div className="flex-1">
               <h3 className="font-medium group-hover:text-primary">Geleerde Patronen</h3>
               <p className="text-sm text-muted-foreground mt-0.5">
-                Product-combinaties die het systeem heeft leren inpakken. Handmatig activeren,
-                deactiveren en drempels aanpassen.
+                Product-combinaties die het systeem heeft leren inpakken.
               </p>
             </div>
           </div>
@@ -347,8 +347,24 @@ export default function InsightsOverview() {
             <div className="flex-1">
               <h3 className="font-medium group-hover:text-primary">Fingerprint Library</h3>
               <p className="text-sm text-muted-foreground mt-0.5">
-                Alle unieke shipping-unit combinaties uit de laatste {INSIGHTS_WINDOW_DAYS} dagen,
-                sorteerbaar op volume, follow-rate en kosten.
+                Shipping-unit combinaties uit de laatste {INSIGHTS_WINDOW_DAYS} dagen.
+              </p>
+            </div>
+          </div>
+        </Link>
+
+        <Link
+          href="/verpakkingsmodule/insights/workers"
+          className="group block border border-border rounded-lg bg-card p-5 hover:border-primary hover:shadow-sm transition-all"
+        >
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+              <Users className="w-5 h-5 text-orange-600" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-medium group-hover:text-primary">Medewerker prestaties</h3>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Follow-rate per werknemer, trends en vergelijking met gemiddelde.
               </p>
             </div>
           </div>

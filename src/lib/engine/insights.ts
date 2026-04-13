@@ -729,10 +729,305 @@ export async function getFingerprintDetail(
   }
 }
 
-// getWorkerStats was removed in review (B3): the was_override semantics
-// didn't match "override rate" and the endpoint wasn't wired to any UI.
-// Worker-level compliance should aggregate packaging_advice.outcome on
-// the session level — to be re-implemented in Fase 3 with the proper math.
+// ── Worker Compliance (Fase 3) ───────────────────────────────────────────────
+
+export interface WorkerComplianceRow {
+  workerId: number
+  workerName: string
+  totalSessions: number
+  sessionsWithOutcome: number
+  followed: number
+  modified: number
+  ignored: number
+  followRate: number | null // null if no sessions with outcome
+  vsAverage: number // delta in percentage points vs overall average
+  needsAttention: boolean // follow rate > 10pp below average
+}
+
+export interface WorkerDetailData {
+  worker: WorkerComplianceRow
+  recentSessions: Array<{
+    sessionId: string
+    picklistId: number
+    completedAt: string | null
+    outcome: AdviceOutcome | null
+    confidence: AdviceConfidence | null
+    adviceBoxes: string[]
+    actualBoxes: string[]
+  }>
+  weeklyTrend: Array<{
+    week: string
+    total: number
+    followed: number
+    followRate: number
+  }>
+}
+
+/**
+ * Worker compliance overview — aggregates packaging_advice.outcome at the
+ * session level per worker. Uses the most recent non-invalidated advice per
+ * picklist to avoid double-counting when the engine re-runs.
+ */
+export async function getWorkerComplianceStats(): Promise<WorkerComplianceRow[]> {
+  // Fetch completed sessions
+  const { data: sessions, error: sessionsError } = await supabase
+    .schema('batchmaker')
+    .from('packing_sessions')
+    .select('id, picklist_id, assigned_to, assigned_to_name')
+    .eq('status', 'completed')
+
+  if (sessionsError) throw sessionsError
+
+  // Fetch all resolved advice with outcome
+  const picklistIds = Array.from(
+    new Set((sessions ?? []).map((s) => s.picklist_id as number)),
+  )
+
+  if (picklistIds.length === 0) return []
+
+  // Chunk picklist IDs to stay within PostgREST URL limits
+  const CHUNK_SIZE = 150
+  const adviceByPicklist = new Map<
+    number,
+    { outcome: AdviceOutcome; calculated_at: string }
+  >()
+
+  for (let i = 0; i < picklistIds.length; i += CHUNK_SIZE) {
+    const chunk = picklistIds.slice(i, i + CHUNK_SIZE)
+    const { data: adviceRows, error: adviceError } = await supabase
+      .schema('batchmaker')
+      .from('packaging_advice')
+      .select('picklist_id, outcome, calculated_at')
+      .in('picklist_id', chunk)
+      .not('outcome', 'is', null)
+      .neq('status', 'invalidated')
+      .order('calculated_at', { ascending: false })
+
+    if (adviceError) throw adviceError
+
+    // Keep only the most recent advice per picklist (avoid double-counting)
+    for (const row of adviceRows ?? []) {
+      const plId = row.picklist_id as number
+      if (!adviceByPicklist.has(plId)) {
+        adviceByPicklist.set(plId, {
+          outcome: row.outcome as AdviceOutcome,
+          calculated_at: row.calculated_at as string,
+        })
+      }
+    }
+  }
+
+  // Aggregate per worker
+  const workers = new Map<
+    number,
+    {
+      name: string
+      total: number
+      withOutcome: number
+      followed: number
+      modified: number
+      ignored: number
+    }
+  >()
+
+  for (const s of sessions ?? []) {
+    const workerId = s.assigned_to as number
+    const name = s.assigned_to_name as string
+    const w = workers.get(workerId) ?? {
+      name,
+      total: 0,
+      withOutcome: 0,
+      followed: 0,
+      modified: 0,
+      ignored: 0,
+    }
+    w.total++
+
+    const advice = adviceByPicklist.get(s.picklist_id as number)
+    if (advice) {
+      w.withOutcome++
+      if (advice.outcome === 'followed') w.followed++
+      else if (advice.outcome === 'modified') w.modified++
+      else if (advice.outcome === 'ignored') w.ignored++
+    }
+
+    workers.set(workerId, w)
+  }
+
+  // Compute overall average follow rate
+  let totalFollowed = 0
+  let totalWithOutcome = 0
+  for (const w of workers.values()) {
+    totalFollowed += w.followed
+    totalWithOutcome += w.withOutcome
+  }
+  const avgFollowRate = totalWithOutcome === 0 ? 0 : (totalFollowed / totalWithOutcome) * 100
+
+  const rows: WorkerComplianceRow[] = []
+  for (const [workerId, w] of workers.entries()) {
+    const followRate = w.withOutcome === 0 ? null : (w.followed / w.withOutcome) * 100
+    const vsAverage = followRate === null ? 0 : followRate - avgFollowRate
+    rows.push({
+      workerId,
+      workerName: w.name,
+      totalSessions: w.total,
+      sessionsWithOutcome: w.withOutcome,
+      followed: w.followed,
+      modified: w.modified,
+      ignored: w.ignored,
+      followRate,
+      vsAverage,
+      needsAttention: followRate !== null && followRate < avgFollowRate - 10,
+    })
+  }
+
+  return rows.sort((a, b) => b.totalSessions - a.totalSessions)
+}
+
+/**
+ * Detailed view for a single worker: compliance stats + recent sessions with
+ * outcome + weekly trend over the last 12 weeks.
+ */
+export async function getWorkerDetail(workerId: number): Promise<WorkerDetailData | null> {
+  // Fetch recent completed sessions for this worker
+  const { data: sessions, error: sessionsError } = await supabase
+    .schema('batchmaker')
+    .from('packing_sessions')
+    .select('id, picklist_id, assigned_to_name, completed_at')
+    .eq('assigned_to', workerId)
+    .eq('status', 'completed')
+    .order('completed_at', { ascending: false })
+    .limit(100) // last 100 sessions for trend + recent list
+
+  if (sessionsError) throw sessionsError
+  if (!sessions || sessions.length === 0) return null
+
+  const workerName = sessions[0].assigned_to_name as string
+  const picklistIds = sessions.map((s) => s.picklist_id as number)
+
+  // Fetch advice for these picklists
+  const CHUNK_SIZE = 150
+  const adviceByPicklist = new Map<
+    number,
+    {
+      outcome: AdviceOutcome
+      confidence: AdviceConfidence
+      adviceBoxes: string[]
+      actualBoxes: string[]
+      calculated_at: string
+    }
+  >()
+
+  for (let i = 0; i < picklistIds.length; i += CHUNK_SIZE) {
+    const chunk = picklistIds.slice(i, i + CHUNK_SIZE)
+    const { data: adviceRows, error: adviceError } = await supabase
+      .schema('batchmaker')
+      .from('packaging_advice')
+      .select(
+        'picklist_id, outcome, confidence, advice_boxes, actual_boxes, calculated_at',
+      )
+      .in('picklist_id', chunk)
+      .not('outcome', 'is', null)
+      .neq('status', 'invalidated')
+      .order('calculated_at', { ascending: false })
+
+    if (adviceError) throw adviceError
+
+    for (const row of adviceRows ?? []) {
+      const plId = row.picklist_id as number
+      if (!adviceByPicklist.has(plId)) {
+        const advBoxes = (row.advice_boxes as Array<{ packaging_name?: string }>) ?? []
+        const actBoxes = (row.actual_boxes as Array<{ packaging_name?: string }>) ?? []
+        adviceByPicklist.set(plId, {
+          outcome: row.outcome as AdviceOutcome,
+          confidence: row.confidence as AdviceConfidence,
+          adviceBoxes: advBoxes.map((b) => b.packaging_name ?? '?'),
+          actualBoxes: actBoxes.map((b) => b.packaging_name ?? '?'),
+          calculated_at: row.calculated_at as string,
+        })
+      }
+    }
+  }
+
+  // Build recent sessions list (last 20)
+  const recentSessions = sessions.slice(0, 20).map((s) => {
+    const advice = adviceByPicklist.get(s.picklist_id as number)
+    return {
+      sessionId: s.id as string,
+      picklistId: s.picklist_id as number,
+      completedAt: s.completed_at as string | null,
+      outcome: advice?.outcome ?? null,
+      confidence: advice?.confidence ?? null,
+      adviceBoxes: advice?.adviceBoxes ?? [],
+      actualBoxes: advice?.actualBoxes ?? [],
+    }
+  })
+
+  // Aggregate stats
+  let followed = 0
+  let modified = 0
+  let ignored = 0
+  let withOutcome = 0
+
+  for (const s of sessions) {
+    const advice = adviceByPicklist.get(s.picklist_id as number)
+    if (advice) {
+      withOutcome++
+      if (advice.outcome === 'followed') followed++
+      else if (advice.outcome === 'modified') modified++
+      else if (advice.outcome === 'ignored') ignored++
+    }
+  }
+
+  const followRate = withOutcome === 0 ? null : (followed / withOutcome) * 100
+
+  // Weekly trend (last 12 weeks, Amsterdam time)
+  const weekBuckets = new Map<string, { total: number; followed: number }>()
+  for (const s of sessions) {
+    const completedAt = s.completed_at as string | null
+    if (!completedAt) continue
+
+    const weekKey = amsterdamMondayKey(completedAt)
+    const bucket = weekBuckets.get(weekKey) ?? { total: 0, followed: 0 }
+    bucket.total++
+    const advice = adviceByPicklist.get(s.picklist_id as number)
+    if (advice?.outcome === 'followed') bucket.followed++
+    weekBuckets.set(weekKey, bucket)
+  }
+
+  const weeklyTrend = Array.from(weekBuckets.entries())
+    .map(([week, b]) => ({
+      week,
+      total: b.total,
+      followed: b.followed,
+      followRate: b.total === 0 ? 0 : (b.followed / b.total) * 100,
+    }))
+    .sort((a, b) => a.week.localeCompare(b.week))
+    .slice(-12)
+
+  // Get overall average for vsAverage calculation
+  const allStats = await getWorkerComplianceStats()
+  const avgFollowRate =
+    allStats.reduce((sum, w) => sum + (w.followRate ?? 0), 0) /
+    Math.max(1, allStats.filter((w) => w.followRate !== null).length)
+
+  return {
+    worker: {
+      workerId,
+      workerName,
+      totalSessions: sessions.length,
+      sessionsWithOutcome: withOutcome,
+      followed,
+      modified,
+      ignored,
+      followRate,
+      vsAverage: followRate === null ? 0 : followRate - avgFollowRate,
+      needsAttention: followRate !== null && followRate < avgFollowRate - 10,
+    },
+    recentSessions,
+    weeklyTrend,
+  }
+}
 
 // ── Learned Packing Patterns ─────────────────────────────────────────────────
 

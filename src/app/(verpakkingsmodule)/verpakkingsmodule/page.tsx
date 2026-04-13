@@ -12,6 +12,7 @@ import VerpakkingsClient from '@/components/verpakking/VerpakkingsClient'
 import EnginePreviewPanel from '@/components/verpakking/EnginePreviewPanel'
 import { DEV_MODE_USER_IDS } from '@/lib/constants'
 import { useTranslation } from '@/i18n/LanguageContext'
+import WorkerScoreWidget from '@/components/verpakking/insights/WorkerScoreWidget'
 
 export default function VerpakkingsmodulePage() {
   const router = useRouter()
@@ -152,6 +153,12 @@ export default function VerpakkingsmodulePage() {
   return (
     <main className="flex-1 flex flex-col overflow-hidden">
       <div className="w-full flex-1 flex flex-col overflow-y-auto px-6">
+        {/* Worker score widget — shows follow rate badge next to the queue */}
+        {selectedWorker && (
+          <div className="flex justify-end pt-3 pb-1">
+            <WorkerScoreWidget workerId={selectedWorker.iduser} />
+          </div>
+        )}
         <BatchQueue
           worker={selectedWorker}
           onClearWorker={clearWorker}
