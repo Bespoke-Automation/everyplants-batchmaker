@@ -708,7 +708,8 @@ export function usePackingSession(sessionId: string | null) {
     [sessionId]
   )
 
-  // Poll box label statuses after shipment to show label progress
+  // Poll box label statuses after shipment to show label progress.
+  // Also detects background session completion (from non-blocking tryCompleteSession).
   const labelPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pollLabelStatuses = useCallback((shippedBoxIds: string[]) => {
     if (!sessionId || shippedBoxIds.length === 0) return
@@ -724,6 +725,7 @@ export function usePackingSession(sessionId: string | null) {
         if (!res.ok) return
         const data = await res.json()
         const boxes: Array<{ id: string; status: string; label_url: string | null }> = data.boxes ?? []
+        const serverSessionStatus: string | null = data.sessionStatus ?? null
 
         let allDone = true
         for (const boxId of shippedBoxIds) {
@@ -745,6 +747,11 @@ export function usePackingSession(sessionId: string | null) {
               }
             })
           }
+        }
+
+        // Detect background session completion (tryCompleteSession ran async)
+        if (serverSessionStatus === 'completed') {
+          setSession((prev) => prev && prev.status !== 'completed' ? { ...prev, status: 'completed' } : prev)
         }
 
         if (allDone || attempts >= maxAttempts) {

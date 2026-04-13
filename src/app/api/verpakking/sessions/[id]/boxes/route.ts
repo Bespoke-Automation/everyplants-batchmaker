@@ -6,7 +6,8 @@ export const dynamic = 'force-dynamic'
 
 /**
  * GET /api/verpakking/sessions/[id]/boxes
- * Lightweight fetch of box statuses and label URLs (used for label polling after shipment)
+ * Lightweight fetch of box statuses and label URLs (used for label polling after shipment).
+ * Also returns session status so the frontend can detect background completion.
  */
 export async function GET(
   _request: NextRequest,
@@ -15,15 +16,26 @@ export async function GET(
   try {
     const { id: sessionId } = await params
 
-    const { data, error } = await supabase
-      .schema('batchmaker')
-      .from('packing_session_boxes')
-      .select('id, status, label_url')
-      .eq('session_id', sessionId)
+    const [boxesResult, sessionResult] = await Promise.all([
+      supabase
+        .schema('batchmaker')
+        .from('packing_session_boxes')
+        .select('id, status, label_url')
+        .eq('session_id', sessionId),
+      supabase
+        .schema('batchmaker')
+        .from('packing_sessions')
+        .select('status')
+        .eq('id', sessionId)
+        .single(),
+    ])
 
-    if (error) throw error
+    if (boxesResult.error) throw boxesResult.error
 
-    return NextResponse.json({ boxes: data })
+    return NextResponse.json({
+      boxes: boxesResult.data,
+      sessionStatus: sessionResult.data?.status ?? null,
+    })
   } catch (error) {
     return NextResponse.json(
       { error: 'Failed to fetch boxes', details: error instanceof Error ? error.message : 'Unknown error' },

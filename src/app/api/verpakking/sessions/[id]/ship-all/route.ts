@@ -153,30 +153,39 @@ export async function POST(
     const weights = boxWeights as Record<string, number> | undefined
     const results: BoxResult[] = []
     const shipmentMap = new Map<string, number>() // boxId → shipmentId
-    let sessionCompleted = false
-    let closeWarning: string | undefined
 
     console.log(`[ship-all] Shipping ${closedBoxes.length} boxes`)
 
-    // Phase 1: Claim all boxes serially (atomic locks)
+    // Phase 1: Claim boxes (atomic locks — safe to parallelize since each targets a different box ID)
     const boxesToShip: typeof closedBoxes = []
-    for (const box of closedBoxes) {
-      if (box.shipment_id) {
-        results.push({
-          boxId: box.id,
-          success: true,
-          trackingCode: box.tracking_code,
-          labelUrl: box.label_url,
-        })
-        continue
-      }
+    const alreadyShipped = closedBoxes.filter(b => b.shipment_id)
+    const needsClaiming = closedBoxes.filter(b => !b.shipment_id)
 
-      const claimed = await claimBoxForShipping(box.id)
-      if (!claimed) {
-        results.push({ boxId: box.id, success: false, error: 'Box is al geclaimd door een ander proces' })
-        continue
+    for (const box of alreadyShipped) {
+      results.push({
+        boxId: box.id,
+        success: true,
+        trackingCode: box.tracking_code,
+        labelUrl: box.label_url,
+      })
+    }
+
+    if (needsClaiming.length > 0) {
+      const claimResults = await Promise.allSettled(
+        needsClaiming.map(box => claimBoxForShipping(box.id).then(claimed => ({ box, claimed })))
+      )
+      for (const result of claimResults) {
+        if (result.status === 'fulfilled') {
+          if (result.value.claimed) {
+            boxesToShip.push(result.value.box)
+          } else {
+            results.push({ boxId: result.value.box.id, success: false, error: 'Box is al geclaimd door een ander proces' })
+          }
+        } else {
+          const box = needsClaiming[claimResults.indexOf(result)]
+          results.push({ boxId: box.id, success: false, error: 'Claim failed: ' + (result.reason instanceof Error ? result.reason.message : 'Unknown') })
+        }
       }
-      boxesToShip.push(box)
     }
 
     // Phase 2: Create shipments in parallel (only Picqer createShipment — no label fetching)
@@ -228,28 +237,22 @@ export async function POST(
       })
     }
 
-    // Step 3: Try to complete session
-    try {
-      const completionResult = await tryCompleteSession(sessionId, session.picklist_id)
-      sessionCompleted = completionResult.sessionCompleted
-      if (completionResult.warning) {
-        closeWarning = (closeWarning || '') + completionResult.warning
+    // Step 3: Try to complete session in background (non-blocking).
+    // The frontend detects completion via label polling (boxes endpoint includes sessionStatus).
+    tryCompleteSession(sessionId, session.picklist_id).then(result => {
+      if (result.sessionCompleted) {
+        console.log(`[ship-all] Session ${sessionId} completed in background`)
       }
-
-      return NextResponse.json({
-        boxes: results,
-        sessionCompleted,
-        ...(closeWarning && { warning: closeWarning }),
-        ...(completionResult.outcome && { outcome: completionResult.outcome, deviationType: completionResult.deviationType }),
-      })
-    } catch (e) {
-      console.error('[ship-all] Error checking session completion:', e)
-    }
+      if (result.warning) {
+        console.warn(`[ship-all] Session completion warning: ${result.warning}`)
+      }
+    }).catch(e => {
+      console.error('[ship-all] Background session completion error:', e)
+    })
 
     return NextResponse.json({
       boxes: results,
-      sessionCompleted,
-      ...(closeWarning && { warning: closeWarning }),
+      sessionCompleted: false, // completion happens async — frontend detects via polling
     })
   } catch (error) {
     console.error('[ship-all] Error:', error)
