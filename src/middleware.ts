@@ -5,8 +5,11 @@ import { createMiddlewareClient } from '@/lib/supabase/middleware'
 export async function middleware(request: NextRequest) {
   const response = NextResponse.next({ request })
 
-  const isLoginPage = request.nextUrl.pathname === '/login'
   const isApiRoute = request.nextUrl.pathname.startsWith('/api')
+  const isLoginPage = request.nextUrl.pathname === '/login'
+  const isPublicAuthPage = ['/wachtwoord-vergeten', '/nieuw-wachtwoord', '/auth/callback'].some(
+    p => request.nextUrl.pathname.startsWith(p)
+  )
 
   // API routes pass through (Inngest uses signing keys, others are internal)
   if (isApiRoute) return response
@@ -19,6 +22,9 @@ export async function middleware(request: NextRequest) {
     }
     return response
   }
+
+  // Password reset pages: allow without auth (no cookie clearing!)
+  if (isPublicAuthPage) return response
 
   const supabase = createMiddlewareClient(request, response)
 
