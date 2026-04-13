@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useAuth, type UserProfile } from '@/components/providers/AuthProvider'
-import { UserPlus, Trash2, Copy, Check, Loader2 } from 'lucide-react'
+import { UserPlus, Trash2, KeyRound, Copy, Check, Loader2 } from 'lucide-react'
 import Dialog from '@/components/ui/Dialog'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
 
@@ -15,6 +15,7 @@ export default function UserManagementClient() {
   // Dialog state
   const [createOpen, setCreateOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<UserProfile | null>(null)
+  const [resetTarget, setResetTarget] = useState<UserProfile | null>(null)
 
   const fetchProfiles = useCallback(async () => {
     const res = await fetch('/api/admin/users')
@@ -153,15 +154,24 @@ export default function UserManagementClient() {
                     />
                   </td>
                   <td className="px-4 py-3 text-center">
-                    {profile.id !== user?.id && (
+                    <div className="flex items-center justify-center gap-1">
                       <button
-                        onClick={() => setDeleteTarget(profile)}
-                        className="p-1.5 rounded-md hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-600"
-                        title="Verwijderen"
+                        onClick={() => setResetTarget(profile)}
+                        className="p-1.5 rounded-md hover:bg-amber-50 transition-colors text-muted-foreground hover:text-amber-600"
+                        title="Wachtwoord resetten"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <KeyRound className="w-4 h-4" />
                       </button>
-                    )}
+                      {profile.id !== user?.id && (
+                        <button
+                          onClick={() => setDeleteTarget(profile)}
+                          className="p-1.5 rounded-md hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-600"
+                          title="Verwijderen"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -186,6 +196,12 @@ export default function UserManagementClient() {
         message={`Weet je zeker dat je ${deleteTarget?.display_name} (${deleteTarget?.email}) wilt verwijderen? Dit kan niet ongedaan worden.`}
         confirmText="Verwijderen"
         variant="destructive"
+      />
+
+      {/* Reset Password Dialog */}
+      <ResetPasswordDialog
+        target={resetTarget}
+        onClose={() => setResetTarget(null)}
       />
     </div>
   )
@@ -315,6 +331,101 @@ function CreateUserDialog({
               </button>
             </div>
           </form>
+        )}
+      </div>
+    </Dialog>
+  )
+}
+
+// ─── Reset Password Dialog ──────────────────────────────────────────────────
+
+function ResetPasswordDialog({
+  target,
+  onClose,
+}: {
+  target: UserProfile | null
+  onClose: () => void
+}) {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [result, setResult] = useState<{ email: string; temporary_password: string } | null>(null)
+
+  const handleReset = async () => {
+    if (!target) return
+    setError('')
+    setLoading(true)
+
+    const res = await fetch(`/api/admin/users/${target.id}/reset-password`, {
+      method: 'POST',
+    })
+
+    const data = await res.json()
+    setLoading(false)
+
+    if (!res.ok) {
+      setError(data.error)
+      return
+    }
+
+    setResult({ email: data.email, temporary_password: data.temporary_password })
+  }
+
+  const handleClose = () => {
+    setError('')
+    setResult(null)
+    onClose()
+  }
+
+  return (
+    <Dialog open={!!target} onClose={handleClose} title="Wachtwoord resetten">
+      <div className="p-4">
+        {result ? (
+          <div className="space-y-3">
+            <div className="bg-emerald-50 text-emerald-800 p-3 rounded-lg text-sm">
+              Wachtwoord gereset voor <strong>{result.email}</strong>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Tijdelijk wachtwoord</p>
+              <CopyField value={result.temporary_password} />
+            </div>
+            <div className="bg-amber-50 text-amber-800 p-3 rounded-lg text-sm">
+              Deel dit wachtwoord veilig met de gebruiker. Het wordt niet opnieuw getoond.
+            </div>
+            <div className="flex justify-end">
+              <button
+                onClick={handleClose}
+                className="px-4 py-2 text-sm font-medium bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
+              >
+                Sluiten
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Weet je zeker dat je het wachtwoord van <strong>{target?.display_name}</strong> ({target?.email}) wilt resetten? Er wordt een nieuw tijdelijk wachtwoord gegenereerd.
+            </p>
+
+            {error && <p className="text-red-500 text-sm">{error}</p>}
+
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={handleClose}
+                className="px-4 py-2 text-sm font-medium rounded-md border border-border hover:bg-muted transition-colors"
+              >
+                Annuleren
+              </button>
+              <button
+                onClick={handleReset}
+                disabled={loading}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-amber-500 text-white rounded-md hover:bg-amber-600 transition-colors disabled:opacity-50"
+              >
+                {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+                Wachtwoord resetten
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </Dialog>
