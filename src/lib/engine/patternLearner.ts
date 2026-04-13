@@ -16,11 +16,11 @@ import { supabase } from '@/lib/supabase/client'
 import { classifyOrderProducts } from './packagingEngine'
 import type { OrderProduct, ShippingUnitEntry, AdviceBox } from './packagingEngine'
 import type { CostEntry } from './costProvider'
+import { getEngineSettings } from './engineSettings'
 import crypto from 'crypto'
 
-const PROMOTION_THRESHOLD = 3  // times_seen needed to promote to 'active'
-const INVALIDATION_OVERRIDE_RATIO = 0.5  // override ratio that triggers invalidation
-const INVALIDATION_MIN_OBSERVATIONS = 6  // minimum total observations before override ratio applies
+// Thresholds live in batchmaker.engine_settings so operators can tune them
+// from the UI without a code deploy. See getEngineSettings() for the reader.
 
 // === Fingerprint building ===
 
@@ -230,6 +230,9 @@ async function upsertPattern(
   sessionId: string,
   wasOverride: boolean
 ): Promise<void> {
+  // Load runtime thresholds (cached 5 min, falls back to defaults on DB error)
+  const settings = await getEngineSettings()
+
   // Find existing non-invalidated pattern for this fingerprint
   const { data: existing } = await supabase
     .schema('batchmaker')
@@ -260,7 +263,10 @@ async function upsertPattern(
       // Check if override ratio exceeds threshold
       const totalObs = existing.times_seen + existing.times_overridden + 1
       const overrideRatio = (existing.times_overridden + 1) / totalObs
-      if (totalObs >= INVALIDATION_MIN_OBSERVATIONS && overrideRatio > INVALIDATION_OVERRIDE_RATIO) {
+      if (
+        totalObs >= settings.invalidation_min_observations &&
+        overrideRatio > settings.invalidation_override_ratio
+      ) {
         updates.status = 'invalidated'
         updates.invalidated_at = new Date().toISOString()
         updates.invalidation_reason = `Override ratio ${(overrideRatio * 100).toFixed(0)}% exceeds threshold`
@@ -270,7 +276,7 @@ async function upsertPattern(
       updates.times_seen = existing.times_seen + 1
 
       // Check if pattern should be promoted
-      if (existing.status === 'learning' && existing.times_seen + 1 >= PROMOTION_THRESHOLD) {
+      if (existing.status === 'learning' && existing.times_seen + 1 >= settings.promotion_threshold) {
         updates.status = 'active'
         updates.promoted_at = new Date().toISOString()
         console.log(`[patternLearner] Promoted pattern ${existing.id} to active (${existing.times_seen + 1} observations)`)

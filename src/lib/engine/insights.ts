@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase/client'
+import { getEngineSettings } from './engineSettings'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -732,3 +733,401 @@ export async function getFingerprintDetail(
 // didn't match "override rate" and the endpoint wasn't wired to any UI.
 // Worker-level compliance should aggregate packaging_advice.outcome on
 // the session level — to be re-implemented in Fase 3 with the proper math.
+
+// ── Learned Packing Patterns ─────────────────────────────────────────────────
+
+export type LearnedPatternStatus = 'learning' | 'active' | 'invalidated'
+
+export interface LearnedPatternBoxUnit {
+  name: string
+  qty: number
+}
+
+export interface LearnedPatternBox {
+  packaging_id: string
+  packaging_name: string
+  idpackaging: number
+  units: LearnedPatternBoxUnit[]
+}
+
+export interface LearnedPatternProductEntry {
+  productcode: string
+  productName: string | null
+  quantity: number
+}
+
+export interface LearnedPatternRow {
+  id: string
+  fingerprint: string
+  products: LearnedPatternProductEntry[]
+  boxPattern: LearnedPatternBox[]
+  status: LearnedPatternStatus
+  timesSeen: number
+  timesOverridden: number
+  overrideRatio: number
+  promotionProgress: number // 0-1, how close to promotion_threshold
+  lastSeenAt: string
+  promotedAt: string | null
+  invalidatedAt: string | null
+  invalidationReason: string | null
+  isDrifting: boolean // active + override ratio climbing toward invalidation threshold
+}
+
+export interface LearnedPatternDetail extends LearnedPatternRow {
+  recentSessions: Array<{
+    session_id: string
+    picklist_id: number | null
+    completed_at: string | null
+    assigned_to_name: string | null
+  }>
+}
+
+export interface LearnedPatternsFilters {
+  status?: LearnedPatternStatus | 'all'
+  minTimesSeen?: number
+  search?: string // matches productcode or product name substring
+}
+
+/**
+ * Parse a product-level fingerprint like "333016255:2|278823421:1" into
+ * individual entries. Handles whitespace and returns an empty array on
+ * malformed input (which shouldn't happen for engine-written data).
+ */
+function parseProductFingerprint(fingerprint: string): Array<{ productcode: string; quantity: number }> {
+  if (!fingerprint) return []
+  return fingerprint
+    .split('|')
+    .map((part) => {
+      const [code, qtyStr] = part.split(':')
+      const quantity = Number(qtyStr)
+      if (!code || Number.isNaN(quantity)) return null
+      return { productcode: code.trim(), quantity }
+    })
+    .filter((x): x is { productcode: string; quantity: number } => x !== null)
+}
+
+/**
+ * Resolve a set of productcodes to their product names via the
+ * batchmaker.product_attributes cache. Returns a Map for O(1) lookup.
+ * Missing codes are silently omitted — the caller should fall back to
+ * the productcode for display.
+ */
+async function resolveProductNames(productcodes: string[]): Promise<Map<string, string>> {
+  if (productcodes.length === 0) return new Map()
+  const unique = Array.from(new Set(productcodes))
+
+  const { data, error } = await supabase
+    .schema('batchmaker')
+    .from('product_attributes')
+    .select('productcode, product_name')
+    .in('productcode', unique)
+
+  if (error) {
+    console.warn('[insights] resolveProductNames error:', error)
+    return new Map()
+  }
+
+  const map = new Map<string, string>()
+  for (const row of data ?? []) {
+    if (row.productcode && row.product_name) {
+      map.set(row.productcode as string, row.product_name as string)
+    }
+  }
+  return map
+}
+
+function buildLearnedPatternRow(
+  raw: {
+    id: string
+    fingerprint: string
+    box_pattern: unknown
+    times_seen: number
+    times_overridden: number
+    status: LearnedPatternStatus
+    last_seen_at: string
+    promoted_at: string | null
+    invalidated_at: string | null
+    invalidation_reason: string | null
+  },
+  productNames: Map<string, string>,
+  settings: { invalidation_override_ratio: number; promotion_threshold: number },
+): LearnedPatternRow {
+  const parsed = parseProductFingerprint(raw.fingerprint)
+  const products: LearnedPatternProductEntry[] = parsed.map((p) => ({
+    productcode: p.productcode,
+    productName: productNames.get(p.productcode) ?? null,
+    quantity: p.quantity,
+  }))
+
+  const boxPattern = Array.isArray(raw.box_pattern)
+    ? (raw.box_pattern as LearnedPatternBox[])
+    : []
+
+  const totalObs = raw.times_seen + raw.times_overridden
+  const overrideRatio = totalObs === 0 ? 0 : raw.times_overridden / totalObs
+  const promotionProgress =
+    raw.status === 'learning'
+      ? Math.min(1, raw.times_seen / settings.promotion_threshold)
+      : 1
+
+  // Pattern is "drifting" when it's active and the override ratio is climbing
+  // toward the invalidation threshold (within 20 percentage points).
+  const isDrifting =
+    raw.status === 'active' &&
+    overrideRatio >= Math.max(0, settings.invalidation_override_ratio - 0.2)
+
+  return {
+    id: raw.id,
+    fingerprint: raw.fingerprint,
+    products,
+    boxPattern,
+    status: raw.status,
+    timesSeen: raw.times_seen,
+    timesOverridden: raw.times_overridden,
+    overrideRatio,
+    promotionProgress,
+    lastSeenAt: raw.last_seen_at,
+    promotedAt: raw.promoted_at,
+    invalidatedAt: raw.invalidated_at,
+    invalidationReason: raw.invalidation_reason,
+    isDrifting,
+  }
+}
+
+/**
+ * List learned packing patterns with product names resolved and promotion
+ * progress calculated. Sorted by status priority (active → learning →
+ * invalidated), then by times_seen desc.
+ */
+export async function getLearnedPatterns(
+  filters: LearnedPatternsFilters = {},
+): Promise<LearnedPatternRow[]> {
+  const settings = await getEngineSettings()
+
+  let query = supabase
+    .schema('batchmaker')
+    .from('learned_packing_patterns')
+    .select(
+      'id, fingerprint, box_pattern, times_seen, times_overridden, status, last_seen_at, promoted_at, invalidated_at, invalidation_reason',
+    )
+
+  if (filters.status && filters.status !== 'all') {
+    query = query.eq('status', filters.status)
+  }
+  if (filters.minTimesSeen && filters.minTimesSeen > 0) {
+    query = query.gte('times_seen', filters.minTimesSeen)
+  }
+
+  const { data, error } = await query.order('last_seen_at', { ascending: false })
+  if (error) throw error
+
+  const rawRows = data ?? []
+
+  // Collect all productcodes for name resolution
+  const allCodes = new Set<string>()
+  for (const row of rawRows) {
+    for (const p of parseProductFingerprint(row.fingerprint as string)) {
+      allCodes.add(p.productcode)
+    }
+  }
+  const productNames = await resolveProductNames(Array.from(allCodes))
+
+  let rows = rawRows.map((r) =>
+    buildLearnedPatternRow(
+      {
+        id: r.id as string,
+        fingerprint: r.fingerprint as string,
+        box_pattern: r.box_pattern,
+        times_seen: r.times_seen as number,
+        times_overridden: r.times_overridden as number,
+        status: r.status as LearnedPatternStatus,
+        last_seen_at: r.last_seen_at as string,
+        promoted_at: r.promoted_at as string | null,
+        invalidated_at: r.invalidated_at as string | null,
+        invalidation_reason: r.invalidation_reason as string | null,
+      },
+      productNames,
+      settings,
+    ),
+  )
+
+  // Client-side search filter (substring match on productcode or resolved name)
+  if (filters.search && filters.search.trim()) {
+    const q = filters.search.toLowerCase().trim()
+    rows = rows.filter(
+      (r) =>
+        r.fingerprint.toLowerCase().includes(q) ||
+        r.products.some(
+          (p) =>
+            p.productcode.toLowerCase().includes(q) ||
+            (p.productName?.toLowerCase().includes(q) ?? false),
+        ) ||
+        r.boxPattern.some((b) => b.packaging_name.toLowerCase().includes(q)),
+    )
+  }
+
+  // Sort: active (priority 0) → learning (1) → invalidated (2); then times_seen desc
+  const statusOrder: Record<LearnedPatternStatus, number> = {
+    active: 0,
+    learning: 1,
+    invalidated: 2,
+  }
+  rows.sort((a, b) => {
+    const diff = statusOrder[a.status] - statusOrder[b.status]
+    if (diff !== 0) return diff
+    return b.timesSeen - a.timesSeen
+  })
+
+  return rows
+}
+
+/**
+ * Get a single learned pattern with its recent sessions (the sessions that
+ * trained it or use it today). Limited to 20 sessions for the drill-down.
+ */
+export async function getLearnedPatternDetail(
+  id: string,
+): Promise<LearnedPatternDetail | null> {
+  const settings = await getEngineSettings()
+
+  const { data: raw, error } = await supabase
+    .schema('batchmaker')
+    .from('learned_packing_patterns')
+    .select(
+      'id, fingerprint, box_pattern, times_seen, times_overridden, status, last_seen_at, promoted_at, invalidated_at, invalidation_reason',
+    )
+    .eq('id', id)
+    .maybeSingle()
+
+  if (error) throw error
+  if (!raw) return null
+
+  const codes = parseProductFingerprint(raw.fingerprint as string).map((p) => p.productcode)
+  const productNames = await resolveProductNames(codes)
+
+  const row = buildLearnedPatternRow(
+    {
+      id: raw.id as string,
+      fingerprint: raw.fingerprint as string,
+      box_pattern: raw.box_pattern,
+      times_seen: raw.times_seen as number,
+      times_overridden: raw.times_overridden as number,
+      status: raw.status as LearnedPatternStatus,
+      last_seen_at: raw.last_seen_at as string,
+      promoted_at: raw.promoted_at as string | null,
+      invalidated_at: raw.invalidated_at as string | null,
+      invalidation_reason: raw.invalidation_reason as string | null,
+    },
+    productNames,
+    settings,
+  )
+
+  // Fetch recent sessions that match this fingerprint via packaging_advice
+  // (we don't have a direct FK from learned_packing_patterns to sessions)
+  const { data: adviceRows } = await supabase
+    .schema('batchmaker')
+    .from('packaging_advice')
+    .select('id, picklist_id, calculated_at, learned_pattern_id')
+    .eq('learned_pattern_id', id)
+    .order('calculated_at', { ascending: false })
+    .limit(20)
+
+  const picklistIds = Array.from(
+    new Set((adviceRows ?? []).map((r) => r.picklist_id as number).filter((p) => p !== null)),
+  )
+
+  let sessionsByPicklist = new Map<
+    number,
+    { session_id: string; completed_at: string | null; assigned_to_name: string | null }
+  >()
+
+  if (picklistIds.length > 0) {
+    const { data: sessions } = await supabase
+      .schema('batchmaker')
+      .from('packing_sessions')
+      .select('id, picklist_id, completed_at, assigned_to_name')
+      .in('picklist_id', picklistIds)
+
+    sessionsByPicklist = new Map(
+      (sessions ?? []).map((s) => [
+        s.picklist_id as number,
+        {
+          session_id: s.id as string,
+          completed_at: s.completed_at as string | null,
+          assigned_to_name: s.assigned_to_name as string | null,
+        },
+      ]),
+    )
+  }
+
+  const recentSessions = (adviceRows ?? [])
+    .map((r) => {
+      const picklistId = r.picklist_id as number | null
+      if (picklistId === null) return null
+      const session = sessionsByPicklist.get(picklistId)
+      return {
+        session_id: session?.session_id ?? '',
+        picklist_id: picklistId,
+        completed_at: session?.completed_at ?? null,
+        assigned_to_name: session?.assigned_to_name ?? null,
+      }
+    })
+    .filter((s): s is NonNullable<typeof s> => s !== null)
+
+  return { ...row, recentSessions }
+}
+
+/**
+ * Flip a learned pattern to invalidated status. The reason is optional but
+ * recommended for the audit trail.
+ */
+export async function invalidateLearnedPattern(id: string, reason?: string): Promise<void> {
+  const { error } = await supabase
+    .schema('batchmaker')
+    .from('learned_packing_patterns')
+    .update({
+      status: 'invalidated',
+      invalidated_at: new Date().toISOString(),
+      invalidation_reason: reason ?? 'Manually invalidated via Insights UI',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+
+  if (error) throw error
+}
+
+/**
+ * Reactivate an invalidated pattern. Moves it back to 'learning' if it hasn't
+ * been observed enough, otherwise directly to 'active'. Resets invalidation
+ * fields so the pattern has a clean slate.
+ */
+export async function reactivateLearnedPattern(id: string): Promise<void> {
+  const settings = await getEngineSettings()
+
+  // Fetch current times_seen to decide which status to move to
+  const { data: current, error: readError } = await supabase
+    .schema('batchmaker')
+    .from('learned_packing_patterns')
+    .select('times_seen')
+    .eq('id', id)
+    .single()
+
+  if (readError) throw readError
+
+  const nextStatus: LearnedPatternStatus =
+    (current.times_seen as number) >= settings.promotion_threshold ? 'active' : 'learning'
+
+  const { error } = await supabase
+    .schema('batchmaker')
+    .from('learned_packing_patterns')
+    .update({
+      status: nextStatus,
+      invalidated_at: null,
+      invalidation_reason: null,
+      promoted_at: nextStatus === 'active' ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+
+  if (error) throw error
+}

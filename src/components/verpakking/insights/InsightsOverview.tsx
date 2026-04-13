@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   Info,
   Library,
+  Brain,
   Sparkles,
 } from 'lucide-react'
 import type { ComplianceTrendPoint, OverviewResponse } from '@/lib/engine/insights'
@@ -308,23 +309,43 @@ export default function InsightsOverview() {
       </div>
 
       {/* Navigation to sub-pages */}
-      <Link
-        href="/verpakkingsmodule/insights/library"
-        className="group block border border-border rounded-lg bg-card p-5 hover:border-primary hover:shadow-sm transition-all"
-      >
-        <div className="flex items-start gap-3">
-          <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
-            <Library className="w-5 h-5 text-blue-600" />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Link
+          href="/verpakkingsmodule/insights/patterns"
+          className="group block border border-border rounded-lg bg-card p-5 hover:border-primary hover:shadow-sm transition-all"
+        >
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 bg-violet-50 rounded-lg flex items-center justify-center flex-shrink-0">
+              <Brain className="w-5 h-5 text-violet-600" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-medium group-hover:text-primary">Geleerde Patronen</h3>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Product-combinaties die het systeem heeft leren inpakken. Handmatig activeren,
+                deactiveren en drempels aanpassen.
+              </p>
+            </div>
           </div>
-          <div className="flex-1">
-            <h3 className="font-medium group-hover:text-primary">Fingerprint Library</h3>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              Alle unieke shipping-unit combinaties uit de laatste {INSIGHTS_WINDOW_DAYS} dagen,
-              sorteerbaar op volume, follow-rate en kosten.
-            </p>
+        </Link>
+
+        <Link
+          href="/verpakkingsmodule/insights/library"
+          className="group block border border-border rounded-lg bg-card p-5 hover:border-primary hover:shadow-sm transition-all"
+        >
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
+              <Library className="w-5 h-5 text-blue-600" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-medium group-hover:text-primary">Fingerprint Library</h3>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Alle unieke shipping-unit combinaties uit de laatste {INSIGHTS_WINDOW_DAYS} dagen,
+                sorteerbaar op volume, follow-rate en kosten.
+              </p>
+            </div>
           </div>
-        </div>
-      </Link>
+        </Link>
+      </div>
     </div>
   )
 }
