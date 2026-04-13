@@ -16,6 +16,8 @@ import {
 } from 'lucide-react'
 import type { ComplianceTrendPoint, OverviewResponse } from '@/lib/engine/insights'
 import { INSIGHTS_WINDOW_DAYS } from '@/lib/engine/insights'
+import ActionQueue from './ActionQueue'
+import WeeklyBrief from './WeeklyBrief'
 
 function formatPct(n: number): string {
   return `${n.toFixed(1)}%`
@@ -157,6 +159,12 @@ export default function InsightsOverview() {
           </div>
         </div>
       )}
+
+      {/* Weekly Brief */}
+      <WeeklyBrief />
+
+      {/* Action Queue */}
+      <ActionQueue />
 
       {/* Gap Meter */}
       <section className="border border-border rounded-lg bg-card p-6">
