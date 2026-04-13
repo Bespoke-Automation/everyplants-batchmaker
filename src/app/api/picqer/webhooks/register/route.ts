@@ -5,8 +5,8 @@ import { listWebhooks, createWebhook, deleteWebhook, reactivateWebhook } from '@
 import { PICQER_STOCK_WEBHOOK_EVENTS } from '@/lib/floriday/stock-sync-config'
 import { PICQER_ORDER_WEBHOOK_EVENTS } from '@/lib/verpakking/box-tag-config'
 
-const STOCK_WEBHOOK_ADDRESS = 'https://everyplants-batchmaker.vercel.app/api/picqer/webhooks/stock'
-const ORDER_WEBHOOK_ADDRESS = 'https://everyplants-batchmaker.vercel.app/api/picqer/webhooks/orders'
+const STOCK_WEBHOOK_ADDRESS = 'https://system.everyplants.com/api/picqer/webhooks/stock'
+const ORDER_WEBHOOK_ADDRESS = 'https://system.everyplants.com/api/picqer/webhooks/orders'
 
 /**
  * GET: List all registered webhooks.
