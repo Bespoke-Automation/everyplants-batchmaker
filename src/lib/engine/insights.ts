@@ -766,6 +766,7 @@ export interface LearnedPatternRow {
   timesOverridden: number
   overrideRatio: number
   promotionProgress: number // 0-1, how close to promotion_threshold
+  promotionThreshold: number // the threshold value from engine_settings
   lastSeenAt: string
   promotedAt: string | null
   invalidatedAt: string | null
@@ -811,28 +812,37 @@ function parseProductFingerprint(fingerprint: string): Array<{ productcode: stri
  * batchmaker.product_attributes cache. Returns a Map for O(1) lookup.
  * Missing codes are silently omitted — the caller should fall back to
  * the productcode for display.
+ *
+ * Chunks the `.in()` query into batches of 150 to stay well within
+ * PostgREST's URL length limit (~15 KB on Supabase).
  */
 async function resolveProductNames(productcodes: string[]): Promise<Map<string, string>> {
   if (productcodes.length === 0) return new Map()
   const unique = Array.from(new Set(productcodes))
-
-  const { data, error } = await supabase
-    .schema('batchmaker')
-    .from('product_attributes')
-    .select('productcode, product_name')
-    .in('productcode', unique)
-
-  if (error) {
-    console.warn('[insights] resolveProductNames error:', error)
-    return new Map()
-  }
+  const CHUNK_SIZE = 150
 
   const map = new Map<string, string>()
-  for (const row of data ?? []) {
-    if (row.productcode && row.product_name) {
-      map.set(row.productcode as string, row.product_name as string)
+
+  for (let i = 0; i < unique.length; i += CHUNK_SIZE) {
+    const chunk = unique.slice(i, i + CHUNK_SIZE)
+    const { data, error } = await supabase
+      .schema('batchmaker')
+      .from('product_attributes')
+      .select('productcode, product_name')
+      .in('productcode', chunk)
+
+    if (error) {
+      console.warn('[insights] resolveProductNames chunk error:', error)
+      continue
+    }
+
+    for (const row of data ?? []) {
+      if (row.productcode && row.product_name) {
+        map.set(row.productcode as string, row.product_name as string)
+      }
     }
   }
+
   return map
 }
 
@@ -886,6 +896,7 @@ function buildLearnedPatternRow(
     timesOverridden: raw.times_overridden,
     overrideRatio,
     promotionProgress,
+    promotionThreshold: settings.promotion_threshold,
     lastSeenAt: raw.last_seen_at,
     promotedAt: raw.promoted_at,
     invalidatedAt: raw.invalidated_at,
@@ -1082,7 +1093,7 @@ export async function getLearnedPatternDetail(
  * recommended for the audit trail.
  */
 export async function invalidateLearnedPattern(id: string, reason?: string): Promise<void> {
-  const { error } = await supabase
+  const { error, count } = await supabase
     .schema('batchmaker')
     .from('learned_packing_patterns')
     .update({
@@ -1092,42 +1103,49 @@ export async function invalidateLearnedPattern(id: string, reason?: string): Pro
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)
+    .neq('status', 'invalidated') // don't overwrite existing invalidation reason/timestamp
 
   if (error) throw error
+  if (count === 0) {
+    console.warn(`[insights] invalidateLearnedPattern: pattern ${id} was already invalidated or not found`)
+  }
 }
 
 /**
- * Reactivate an invalidated pattern. Moves it back to 'learning' if it hasn't
- * been observed enough, otherwise directly to 'active'. Resets invalidation
- * fields so the pattern has a clean slate.
+ * Reactivate an invalidated pattern. Reads times_seen to decide the target
+ * status (learning vs active), then writes with a status guard
+ * `.eq('status', 'invalidated')` so a concurrent change can't be stomped.
  */
 export async function reactivateLearnedPattern(id: string): Promise<void> {
   const settings = await getEngineSettings()
+  const now = new Date().toISOString()
 
-  // Fetch current times_seen to decide which status to move to
   const { data: current, error: readError } = await supabase
     .schema('batchmaker')
     .from('learned_packing_patterns')
     .select('times_seen')
     .eq('id', id)
-    .single()
+    .eq('status', 'invalidated')
+    .maybeSingle()
 
   if (readError) throw readError
+  if (!current) return // already reactivated or not found
 
   const nextStatus: LearnedPatternStatus =
     (current.times_seen as number) >= settings.promotion_threshold ? 'active' : 'learning'
 
-  const { error } = await supabase
+  const { error: updateError } = await supabase
     .schema('batchmaker')
     .from('learned_packing_patterns')
     .update({
       status: nextStatus,
       invalidated_at: null,
       invalidation_reason: null,
-      promoted_at: nextStatus === 'active' ? new Date().toISOString() : null,
-      updated_at: new Date().toISOString(),
+      promoted_at: nextStatus === 'active' ? now : null,
+      updated_at: now,
     })
     .eq('id', id)
+    .eq('status', 'invalidated') // guard: only update if still invalidated
 
-  if (error) throw error
+  if (updateError) throw updateError
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   ArrowLeft,
@@ -13,6 +13,7 @@ import {
   Copy,
   Package,
 } from 'lucide-react'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import type {
   LearnedPatternDetail,
   LearnedPatternStatus,
@@ -45,6 +46,14 @@ export default function LearnedPatternDetailView({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
+  // Confirm dialog state
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [confirmTitle, setConfirmTitle] = useState('')
+  const [confirmMessage, setConfirmMessage] = useState('')
+  const [confirmVariant, setConfirmVariant] = useState<'default' | 'destructive'>('default')
+  const [confirmLoading, setConfirmLoading] = useState(false)
+  const confirmActionRef = useRef<(() => Promise<void>) | null>(null)
+
   const fetchDetail = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -68,26 +77,37 @@ export default function LearnedPatternDetailView({ id }: { id: string }) {
     fetchDetail()
   }, [fetchDetail])
 
-  const handleAction = async (
+  const requestAction = (
     action: 'invalidate' | 'reactivate',
-    confirmMessage: string,
+    title: string,
+    message: string,
+    variant: 'default' | 'destructive' = 'default',
   ) => {
-    if (!confirm(confirmMessage)) return
-    try {
-      const res = await fetch(`/api/verpakking/insights/patterns/${id}/actions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        alert(`Actie mislukt: ${err.error ?? res.statusText}`)
-        return
+    setConfirmTitle(title)
+    setConfirmMessage(message)
+    setConfirmVariant(variant)
+    confirmActionRef.current = async () => {
+      setConfirmLoading(true)
+      try {
+        const res = await fetch(`/api/verpakking/insights/patterns/${id}/actions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action }),
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          setError(`Actie mislukt: ${err.error ?? res.statusText}`)
+          return
+        }
+        await fetchDetail()
+      } catch (err) {
+        setError(`Actie mislukt: ${err instanceof Error ? err.message : 'Onbekende fout'}`)
+      } finally {
+        setConfirmLoading(false)
+        setConfirmOpen(false)
       }
-      await fetchDetail()
-    } catch (err) {
-      alert(`Actie mislukt: ${err instanceof Error ? err.message : 'Onbekende fout'}`)
     }
+    setConfirmOpen(true)
   }
 
   const handleCopyFingerprint = async () => {
@@ -309,9 +329,11 @@ export default function LearnedPatternDetailView({ id }: { id: string }) {
           {data.status !== 'invalidated' ? (
             <button
               onClick={() =>
-                handleAction(
+                requestAction(
                   'invalidate',
-                  `Deactiveer dit patroon?\n\nDe engine zal het niet meer adviseren. Je kunt het later opnieuw activeren.`,
+                  'Patroon deactiveren?',
+                  'De engine zal dit patroon niet meer adviseren. Je kunt het later opnieuw activeren.',
+                  'destructive',
                 )
               }
               className="px-3 py-2 text-sm border border-red-200 bg-red-50 text-red-700 rounded hover:bg-red-100 transition-colors"
@@ -321,9 +343,10 @@ export default function LearnedPatternDetailView({ id }: { id: string }) {
           ) : (
             <button
               onClick={() =>
-                handleAction(
+                requestAction(
                   'reactivate',
-                  `Activeer dit patroon opnieuw?\n\nHet patroon wordt weer beschikbaar voor het engine-advies.`,
+                  'Patroon heractiveren?',
+                  'Het patroon wordt weer beschikbaar voor het engine-advies.',
                 )
               }
               className="px-3 py-2 text-sm border border-emerald-200 bg-emerald-50 text-emerald-700 rounded hover:bg-emerald-100 transition-colors"
@@ -333,6 +356,17 @@ export default function LearnedPatternDetailView({ id }: { id: string }) {
           )}
         </div>
       </section>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onClose={() => { setConfirmOpen(false); setConfirmLoading(false) }}
+        onConfirm={async () => { if (confirmActionRef.current) await confirmActionRef.current() }}
+        title={confirmTitle}
+        message={confirmMessage}
+        variant={confirmVariant}
+        isLoading={confirmLoading}
+        confirmText={confirmVariant === 'destructive' ? 'Deactiveren' : 'Activeren'}
+      />
     </div>
   )
 }

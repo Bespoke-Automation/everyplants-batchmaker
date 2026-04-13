@@ -285,7 +285,7 @@ export default function InsightsOverview() {
             />
           </div>
           <p className="text-xs text-muted-foreground mt-4">
-            Promotie bij 3× identiek ingepakt · Invalidation bij ≥50% override
+            Drempels configureerbaar via Geleerde Patronen → Drempels aanpassen
           </p>
         </section>
 

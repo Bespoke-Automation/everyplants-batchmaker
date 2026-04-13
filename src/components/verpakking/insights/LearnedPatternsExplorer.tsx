@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import {
@@ -17,17 +17,12 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import type {
   LearnedPatternRow,
   LearnedPatternStatus,
 } from '@/lib/engine/insights'
-
-interface SettingRow {
-  key: 'invalidation_override_ratio' | 'invalidation_min_observations' | 'promotion_threshold'
-  value: number
-  description: string | null
-  updated_at: string
-}
+import type { EngineSettingRow } from '@/lib/engine/engineSettings'
 
 const STATUS_META: Record<
   LearnedPatternStatus,
@@ -76,9 +71,28 @@ export default function LearnedPatternsExplorer() {
     return Number.isNaN(n) ? 0 : n
   })
   const [search, setSearch] = useState(() => searchParams.get('q') ?? '')
+  const [debouncedSearch, setDebouncedSearch] = useState(search)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Debounce search: update debouncedSearch 400ms after last keystroke
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => setDebouncedSearch(search), 400)
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [search])
+
+  // Confirm dialog state
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [confirmTitle, setConfirmTitle] = useState('')
+  const [confirmMessage, setConfirmMessage] = useState('')
+  const [confirmVariant, setConfirmVariant] = useState<'default' | 'destructive'>('default')
+  const [confirmLoading, setConfirmLoading] = useState(false)
+  const confirmActionRef = useRef<(() => Promise<void>) | null>(null)
 
   // Settings panel state
-  const [settings, setSettings] = useState<SettingRow[]>([])
+  const [settings, setSettings] = useState<EngineSettingRow[]>([])
   const [settingsLoading, setSettingsLoading] = useState(false)
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -88,10 +102,10 @@ export default function LearnedPatternsExplorer() {
     const params = new URLSearchParams()
     if (statusFilter !== 'all') params.set('status', statusFilter)
     if (minTimesSeen > 0) params.set('min', String(minTimesSeen))
-    if (search.trim()) params.set('q', search.trim())
+    if (debouncedSearch.trim()) params.set('q', debouncedSearch.trim())
     const qs = params.toString()
     router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false })
-  }, [statusFilter, minTimesSeen, search, pathname, router])
+  }, [statusFilter, minTimesSeen, debouncedSearch, pathname, router])
 
   useEffect(() => {
     syncUrl()
@@ -104,7 +118,7 @@ export default function LearnedPatternsExplorer() {
       const params = new URLSearchParams()
       if (statusFilter !== 'all') params.set('status', statusFilter)
       if (minTimesSeen > 0) params.set('min', String(minTimesSeen))
-      if (search.trim()) params.set('q', search.trim())
+      if (debouncedSearch.trim()) params.set('q', debouncedSearch.trim())
 
       const res = await fetch(`/api/verpakking/insights/patterns?${params.toString()}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -115,7 +129,7 @@ export default function LearnedPatternsExplorer() {
     } finally {
       setLoading(false)
     }
-  }, [statusFilter, minTimesSeen, search])
+  }, [statusFilter, minTimesSeen, debouncedSearch])
 
   useEffect(() => {
     fetchRows()
@@ -142,7 +156,7 @@ export default function LearnedPatternsExplorer() {
     }
   }, [settingsOpen, settings.length, fetchSettings])
 
-  const handleSettingChange = async (key: SettingRow['key'], value: number) => {
+  const handleSettingChange = async (key: EngineSettingRow['key'], value: number) => {
     setSavingKey(key)
     setSettingsError(null)
     try {
@@ -166,27 +180,38 @@ export default function LearnedPatternsExplorer() {
     }
   }
 
-  const handleAction = async (
+  const requestAction = (
     patternId: string,
     action: 'invalidate' | 'reactivate',
-    confirmMessage: string,
+    title: string,
+    message: string,
+    variant: 'default' | 'destructive' = 'default',
   ) => {
-    if (!confirm(confirmMessage)) return
-    try {
-      const res = await fetch(`/api/verpakking/insights/patterns/${patternId}/actions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
-      })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        alert(`Actie mislukt: ${data.error ?? res.statusText}`)
-        return
+    setConfirmTitle(title)
+    setConfirmMessage(message)
+    setConfirmVariant(variant)
+    confirmActionRef.current = async () => {
+      setConfirmLoading(true)
+      try {
+        const res = await fetch(`/api/verpakking/insights/patterns/${patternId}/actions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action }),
+        })
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}))
+          setError(`Actie mislukt: ${data.error ?? res.statusText}`)
+          return
+        }
+        await fetchRows()
+      } catch (err) {
+        setError(`Actie mislukt: ${err instanceof Error ? err.message : 'Onbekende fout'}`)
+      } finally {
+        setConfirmLoading(false)
+        setConfirmOpen(false)
       }
-      await fetchRows()
-    } catch (err) {
-      alert(`Actie mislukt: ${err instanceof Error ? err.message : 'Onbekende fout'}`)
     }
+    setConfirmOpen(true)
   }
 
   const counts = useMemo(() => {
@@ -269,7 +294,7 @@ export default function LearnedPatternsExplorer() {
               <div className="text-sm text-muted-foreground">Laden...</div>
             ) : (
               settings.map((s) => (
-                <SettingRowControl
+                <EngineSettingRowControl
                   key={s.key}
                   row={s}
                   saving={savingKey === s.key}
@@ -345,23 +370,37 @@ export default function LearnedPatternsExplorer() {
               key={row.id}
               row={row}
               onInvalidate={() =>
-                handleAction(
+                requestAction(
                   row.id,
                   'invalidate',
-                  `Weet je zeker dat je dit patroon wilt deactiveren?\n\n${row.products.map((p) => `${p.quantity}× ${p.productName ?? p.productcode}`).join(' + ')}\n\nDe engine zal het niet meer adviseren.`,
+                  'Patroon deactiveren?',
+                  `${row.products.map((p) => `${p.quantity}× ${p.productName ?? p.productcode}`).join(' + ')}\n\nDe engine zal dit patroon niet meer adviseren.`,
+                  'destructive',
                 )
               }
               onReactivate={() =>
-                handleAction(
+                requestAction(
                   row.id,
                   'reactivate',
-                  `Weet je zeker dat je dit patroon opnieuw wilt activeren?\n\nHet patroon wordt weer beschikbaar voor het engine-advies.`,
+                  'Patroon heractiveren?',
+                  'Het patroon wordt weer beschikbaar voor het engine-advies.',
                 )
               }
             />
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onClose={() => { setConfirmOpen(false); setConfirmLoading(false) }}
+        onConfirm={async () => { if (confirmActionRef.current) await confirmActionRef.current() }}
+        title={confirmTitle}
+        message={confirmMessage}
+        variant={confirmVariant}
+        isLoading={confirmLoading}
+        confirmText={confirmVariant === 'destructive' ? 'Deactiveren' : 'Activeren'}
+      />
     </div>
   )
 }
@@ -385,12 +424,12 @@ function StatusCard({
   )
 }
 
-function SettingRowControl({
+function EngineSettingRowControl({
   row,
   saving,
   onChange,
 }: {
-  row: SettingRow
+  row: EngineSettingRow
   saving: boolean
   onChange: (value: number) => void
 }) {
@@ -493,7 +532,7 @@ function PatternCard({
                   />
                 </div>
                 <span>
-                  {row.timesSeen}/{Math.max(row.timesSeen, Math.round(row.timesSeen / (row.promotionProgress || 1)))}
+                  {row.timesSeen}/{row.promotionThreshold}
                 </span>
               </div>
             )}
