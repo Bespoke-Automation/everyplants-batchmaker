@@ -145,10 +145,10 @@ export async function mapFulfillmentOrderToPicqer(
           tradeItem.tradeItemName?.nl
         )
 
-        // Prijs uit SalesOrder: pricePerPiece × piecesPerPackage (stuks per collo)
+        // Prijs en aantal uit SalesOrder
         const pricePerPiece = so.pricePerPiece?.value || 0
         const piecesPerPackage = so.packingConfiguration?.piecesPerPackage || 1
-        const pricePerPackage = pricePerPiece * piecesPerPackage
+        const totalPieces = item.numberOfPackages * piecesPerPackage
 
         if (!product) {
           // Use placeholder — order will stay in concept for manual resolution
@@ -159,15 +159,15 @@ export async function mapFulfillmentOrderToPicqer(
           })
           products.push({
             idproduct: UNKNOWN_PRODUCT.idproduct,
-            amount: item.numberOfPackages,
-            price: pricePerPackage,
+            amount: totalPieces,
+            price: pricePerPiece,
           })
           productNames.push(`${UNKNOWN_PRODUCT.name} (${tradeItem.supplierArticleCode})`)
         } else {
           products.push({
             idproduct: product.idproduct,
-            amount: item.numberOfPackages,
-            price: pricePerPackage,
+            amount: totalPieces,
+            price: pricePerPiece,
           })
           productNames.push(product.name)
         }
