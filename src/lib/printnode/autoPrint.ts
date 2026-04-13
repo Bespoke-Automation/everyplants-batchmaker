@@ -73,6 +73,8 @@ export async function tryAutoPrint(
 
     if (!printer) {
       console.warn(`[autoPrint] Printer ${printerId} for station "${stationName}" not found in PrintNode`)
+      // Invalidate cache so the next call re-checks (could be a transient PrintNode issue)
+      printerCache.delete(packingStationId)
       return
     }
     if (printer.computer?.state !== 'connected') {

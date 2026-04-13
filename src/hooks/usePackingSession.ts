@@ -749,9 +749,29 @@ export function usePackingSession(sessionId: string | null) {
           }
         }
 
-        // Detect background session completion (tryCompleteSession ran async)
+        // Detect background session completion (tryCompleteSession ran async).
+        // Pick up outcome, warning, and deviationType persisted by tryCompleteSession.
         if (serverSessionStatus === 'completed') {
           setSession((prev) => prev && prev.status !== 'completed' ? { ...prev, status: 'completed' } : prev)
+
+          const serverWarning: string | undefined = data.warning
+          const serverOutcome: string | undefined = data.outcome
+          const serverDeviationType: string | undefined = data.deviationType
+
+          if (serverWarning) {
+            setWarnings((prev) => prev.includes(serverWarning) ? prev : [...prev, serverWarning])
+          }
+          if (serverOutcome) {
+            setShipProgress((prev) => {
+              const next = new Map(prev)
+              for (const [key, value] of next) {
+                if (value.status === 'shipped' && !value.outcome) {
+                  next.set(key, { ...value, outcome: serverOutcome, deviationType: serverDeviationType })
+                }
+              }
+              return next
+            })
+          }
         }
 
         if (allDone || attempts >= maxAttempts) {

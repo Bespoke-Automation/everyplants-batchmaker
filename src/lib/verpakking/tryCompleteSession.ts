@@ -163,19 +163,23 @@ export async function tryCompleteSession(
     closeWarning = (closeWarning || '') + `Picklist close error: ${e instanceof Error ? e.message : 'Unknown error'}. `
   }
 
-  // Complete session in Supabase
-  await updatePackingSession(sessionId, {
-    status: 'completed',
-    completed_at: new Date().toISOString(),
-  })
-
-  // Record feedback (non-blocking)
+  // Record feedback
   let outcomeData: { outcome: string; deviationType: string } | null = null
   try {
     outcomeData = await recordSessionOutcome(sessionId)
   } catch (e) {
     console.error('[tryCompleteSession] Error recording session outcome:', e)
   }
+
+  // Complete session in Supabase — persist outcome and warning so the frontend
+  // can pick them up via polling (needed when tryCompleteSession runs in background)
+  await updatePackingSession(sessionId, {
+    status: 'completed',
+    completed_at: new Date().toISOString(),
+    ...(closeWarning && { completion_warning: closeWarning }),
+    ...(outcomeData?.outcome && { outcome: outcomeData.outcome }),
+    ...(outcomeData?.deviationType && { deviation_type: outcomeData.deviationType }),
+  })
 
   // Analyze for capacity learning (non-blocking)
   try {

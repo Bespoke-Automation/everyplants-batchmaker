@@ -401,10 +401,12 @@ export function useBatchSession(batchSessionId: string | null, previewBatchId?: 
   const completePicklist = useCallback(async (): Promise<void> => {
     if (!batchSessionId || !batchSession) return
 
-    try {
-      const newCount = batchSession.completedPicklists + 1
-      const isComplete = newCount >= batchSession.totalPicklists
+    // Read latest state to avoid stale closure issues with rapid sequential calls
+    const currentSession = batchSession
+    const newCount = currentSession.completedPicklists + 1
+    const isComplete = newCount >= currentSession.totalPicklists
 
+    try {
       await fetch(`/api/verpakking/batch-sessions/${batchSessionId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -414,13 +416,15 @@ export function useBatchSession(batchSessionId: string | null, previewBatchId?: 
         }),
       })
 
-      // Optimistic update instead of refetching entire batch from Picqer
+      // Optimistic update using functional updater to always base on latest state
       setBatchSession(prev => {
         if (!prev) return prev
+        const latestCount = prev.completedPicklists + 1
+        const latestIsComplete = latestCount >= prev.totalPicklists
         return {
           ...prev,
-          completedPicklists: newCount,
-          status: isComplete ? 'completed' : 'in_progress',
+          completedPicklists: latestCount,
+          status: latestIsComplete ? 'completed' : 'in_progress',
         }
       })
     } catch (err) {

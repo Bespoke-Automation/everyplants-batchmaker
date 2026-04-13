@@ -25,16 +25,20 @@ export async function GET(
       supabase
         .schema('batchmaker')
         .from('packing_sessions')
-        .select('status')
+        .select('status, completion_warning, outcome, deviation_type')
         .eq('id', sessionId)
         .single(),
     ])
 
     if (boxesResult.error) throw boxesResult.error
 
+    const session = sessionResult.data
     return NextResponse.json({
       boxes: boxesResult.data,
-      sessionStatus: sessionResult.data?.status ?? null,
+      sessionStatus: session?.status ?? null,
+      ...(session?.completion_warning && { warning: session.completion_warning }),
+      ...(session?.outcome && { outcome: session.outcome }),
+      ...(session?.deviation_type && { deviationType: session.deviation_type }),
     })
   } catch (error) {
     return NextResponse.json(
