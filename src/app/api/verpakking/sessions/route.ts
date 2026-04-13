@@ -143,30 +143,28 @@ export async function POST(request: NextRequest) {
     // Claim the picklist in Supabase (checks for existing claims)
     const session = await claimPicklist(picklistId, assignedTo, assignedToName, !!devMode)
 
-    // Update session with optional fields and Picqer metadata
-    {
-      const { updatePackingSession } = await import('@/lib/supabase/packingSessions')
-      await updatePackingSession(session.id, {
-        ...(orderId && { order_id: orderId }),
-        ...(!orderId && picqerOrderId && { order_id: picqerOrderId }),
-        ...(orderReference && { order_reference: orderReference }),
-        ...(retailer && { retailer }),
-        ...(deliveryCountry && { delivery_country: deliveryCountry }),
-        ...(picklistid ? { picklistid } : picqerPicklistId ? { picklistid: picqerPicklistId } : {}),
-        ...(batchSessionId && { batch_session_id: batchSessionId }),
-      })
-    }
-
-    // Assign the picklist to the worker in Picqer (skip in dev mode)
+    // Update session metadata and assign picklist in Picqer in parallel (independent operations)
+    const { updatePackingSession } = await import('@/lib/supabase/packingSessions')
     let picqerAssignWarning: string | undefined
-    if (!devMode) {
-      try {
-        await assignPicklist(picklistId, assignedTo)
-      } catch (assignError) {
-        console.error('[verpakking] Failed to assign picklist in Picqer:', assignError)
-        picqerAssignWarning = 'Session created but Picqer assignment failed. Please assign manually in Picqer.'
-      }
-    }
+
+    const updatePromise = updatePackingSession(session.id, {
+      ...(orderId && { order_id: orderId }),
+      ...(!orderId && picqerOrderId && { order_id: picqerOrderId }),
+      ...(orderReference && { order_reference: orderReference }),
+      ...(retailer && { retailer }),
+      ...(deliveryCountry && { delivery_country: deliveryCountry }),
+      ...(picklistid ? { picklistid } : picqerPicklistId ? { picklistid: picqerPicklistId } : {}),
+      ...(batchSessionId && { batch_session_id: batchSessionId }),
+    })
+
+    const assignPromise = !devMode
+      ? assignPicklist(picklistId, assignedTo).catch((assignError) => {
+          console.error('[verpakking] Failed to assign picklist in Picqer:', assignError)
+          picqerAssignWarning = 'Session created but Picqer assignment failed. Please assign manually in Picqer.'
+        })
+      : Promise.resolve()
+
+    await Promise.all([updatePromise, assignPromise])
 
     return NextResponse.json({ ...session, warning: picqerAssignWarning })
   } catch (error) {

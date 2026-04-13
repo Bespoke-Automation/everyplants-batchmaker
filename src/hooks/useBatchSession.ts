@@ -363,15 +363,26 @@ export function useBatchSession(batchSessionId: string | null, previewBatchId?: 
 
         // Update batch session status to in_progress if still claimed
         if (batchSession?.status === 'claimed') {
-          await fetch(`/api/verpakking/batch-sessions/${batchSessionId}`, {
+          fetch(`/api/verpakking/batch-sessions/${batchSessionId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ status: 'in_progress' }),
-          })
+          }).catch(err => console.error('Failed to update batch session status:', err))
         }
 
-        // Refetch to update picklist states
-        await fetchBatchSession()
+        // Optimistic update: mark picklist as active locally instead of refetching entire batch from Picqer
+        setBatchSession(prev => {
+          if (!prev) return prev
+          return {
+            ...prev,
+            status: prev.status === 'claimed' ? 'in_progress' : prev.status,
+            picklists: prev.picklists.map(pl =>
+              pl.idpicklist === picklistId
+                ? { ...pl, sessionId: data.id, sessionStatus: 'active' }
+                : pl
+            ),
+          }
+        })
 
         return { success: true, sessionId: data.id }
       } catch (err) {
@@ -381,7 +392,7 @@ export function useBatchSession(batchSessionId: string | null, previewBatchId?: 
         setIsStartingPicklist(false)
       }
     },
-    [batchSessionId, batchSession?.status, fetchBatchSession]
+    [batchSessionId, batchSession?.status]
   )
 
   /**
@@ -403,11 +414,19 @@ export function useBatchSession(batchSessionId: string | null, previewBatchId?: 
         }),
       })
 
-      await fetchBatchSession()
+      // Optimistic update instead of refetching entire batch from Picqer
+      setBatchSession(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          completedPicklists: newCount,
+          status: isComplete ? 'completed' : 'in_progress',
+        }
+      })
     } catch (err) {
       console.error('Error completing picklist in batch:', err)
     }
-  }, [batchSessionId, batchSession, fetchBatchSession])
+  }, [batchSessionId, batchSession])
 
   /**
    * Download batch PDF and open in new tab
