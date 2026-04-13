@@ -48,7 +48,8 @@ export async function POST(
     })
 
     if (updateError) {
-      return NextResponse.json({ error: 'Wachtwoord resetten mislukt' }, { status: 500 })
+      console.error('updateUserById error:', updateError)
+      return NextResponse.json({ error: `Wachtwoord resetten mislukt: ${updateError.message}` }, { status: 500 })
     }
 
     await logActivity({

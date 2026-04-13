@@ -67,7 +67,7 @@ export default function UserManagementClient() {
 
   return (
     <div className="flex-1 p-6">
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-7xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-bold">Gebruikersbeheer</h2>
           <button
@@ -79,21 +79,21 @@ export default function UserManagementClient() {
           </button>
         </div>
 
-        <div className="border border-border rounded-lg overflow-x-auto">
-          <table className="w-full">
+        <div className="border border-border rounded-lg overflow-hidden">
+          <table className="w-full table-fixed">
             <thead>
-              <tr className="bg-muted/50 text-sm text-muted-foreground">
-                <th className="text-left px-4 py-3 font-medium">Naam</th>
-                <th className="text-left px-4 py-3 font-medium">E-mail</th>
-                <th className="text-center px-4 py-3 font-medium">Batchmaker</th>
-                <th className="text-center px-4 py-3 font-medium">Verpakking</th>
-                <th className="text-center px-4 py-3 font-medium">Floriday</th>
-                <th className="text-center px-4 py-3 font-medium">Raapmodule</th>
-                <th className="text-center px-4 py-3 font-medium">Bestellijst</th>
-                <th className="text-center px-4 py-3 font-medium">Incidenten</th>
-                <th className="text-center px-4 py-3 font-medium">Finance</th>
-                <th className="text-center px-4 py-3 font-medium">Admin</th>
-                <th className="text-center px-4 py-3 font-medium w-16"></th>
+              <tr className="bg-muted/50 text-xs text-muted-foreground">
+                <th className="text-left px-3 py-2 font-medium w-[120px]">Naam</th>
+                <th className="text-left px-3 py-2 font-medium w-[180px]">E-mail</th>
+                <th className="text-center px-1 py-2 font-medium">Batch</th>
+                <th className="text-center px-1 py-2 font-medium">Verpak</th>
+                <th className="text-center px-1 py-2 font-medium">Floriday</th>
+                <th className="text-center px-1 py-2 font-medium">Raap</th>
+                <th className="text-center px-1 py-2 font-medium">Bestel</th>
+                <th className="text-center px-1 py-2 font-medium">Incid.</th>
+                <th className="text-center px-1 py-2 font-medium">Fin.</th>
+                <th className="text-center px-1 py-2 font-medium">Admin</th>
+                <th className="text-center px-1 py-2 font-medium w-[70px]">Acties</th>
               </tr>
             </thead>
             <tbody>
@@ -102,58 +102,58 @@ export default function UserManagementClient() {
                   key={profile.id}
                   className={`border-t border-border ${saving === profile.id ? 'opacity-50' : ''}`}
                 >
-                  <td className="px-4 py-3 text-sm font-medium">{profile.display_name}</td>
-                  <td className="px-4 py-3 text-sm text-muted-foreground">{profile.email}</td>
-                  <td className="px-4 py-3 text-center">
+                  <td className="px-3 py-2 text-sm font-medium truncate">{profile.display_name}</td>
+                  <td className="px-3 py-2 text-sm text-muted-foreground truncate">{profile.email}</td>
+                  <td className="px-1 py-2 text-center">
                     <Toggle
                       checked={profile.module_batchmaker}
                       onChange={(v) => toggleField(profile.id, 'module_batchmaker', v)}
                     />
                   </td>
-                  <td className="px-4 py-3 text-center">
+                  <td className="px-1 py-2 text-center">
                     <Toggle
                       checked={profile.module_verpakkingsmodule}
                       onChange={(v) => toggleField(profile.id, 'module_verpakkingsmodule', v)}
                     />
                   </td>
-                  <td className="px-4 py-3 text-center">
+                  <td className="px-1 py-2 text-center">
                     <Toggle
                       checked={profile.module_floriday}
                       onChange={(v) => toggleField(profile.id, 'module_floriday', v)}
                     />
                   </td>
-                  <td className="px-4 py-3 text-center">
+                  <td className="px-1 py-2 text-center">
                     <Toggle
                       checked={profile.module_raapmodule}
                       onChange={(v) => toggleField(profile.id, 'module_raapmodule', v)}
                     />
                   </td>
-                  <td className="px-4 py-3 text-center">
+                  <td className="px-1 py-2 text-center">
                     <Toggle
                       checked={profile.module_bestellijst}
                       onChange={(v) => toggleField(profile.id, 'module_bestellijst', v)}
                     />
                   </td>
-                  <td className="px-4 py-3 text-center">
+                  <td className="px-1 py-2 text-center">
                     <Toggle
                       checked={profile.module_incidenten}
                       onChange={(v) => toggleField(profile.id, 'module_incidenten', v)}
                     />
                   </td>
-                  <td className="px-4 py-3 text-center">
+                  <td className="px-1 py-2 text-center">
                     <Toggle
                       checked={profile.module_finance}
                       onChange={(v) => toggleField(profile.id, 'module_finance', v)}
                     />
                   </td>
-                  <td className="px-4 py-3 text-center">
+                  <td className="px-1 py-2 text-center">
                     <Toggle
                       checked={profile.is_admin}
                       onChange={(v) => toggleField(profile.id, 'is_admin', v)}
                       disabled={profile.id === user?.id}
                     />
                   </td>
-                  <td className="px-4 py-3 text-center">
+                  <td className="px-1 py-2 text-center">
                     <div className="flex items-center justify-center gap-1">
                       <button
                         onClick={() => setResetTarget(profile)}
