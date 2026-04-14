@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Filter, Calendar, ChevronDown, X, Loader2, Search } from 'lucide-react'
+import { Filter, Calendar, ChevronDown, X, Loader2, Search, Ban } from 'lucide-react'
 import { FilterState, ALL_RETAILERS } from '@/types/filters'
 import { SortOrder } from '@/hooks/useFilters'
 import { COUNTRIES, COUNTRY_NAMES, DAYS } from '@/constants'
+import { EXCLUDED_TAGS } from '@/lib/picqer/types'
 import { Preset } from '@/types/preset'
 import PresetNameDialog from '@/components/ui/PresetNameDialog'
 import { PostalRegion } from '@/lib/supabase/postalRegions'
@@ -509,6 +510,11 @@ export default function FilterPanel({
                 Alleen deze tags
               </label>
             )}
+          </div>
+
+          <div className="flex items-start gap-1 text-xs text-muted-foreground">
+            <Ban className="w-3 h-3 mt-0.5 shrink-0" />
+            <span>Uitgesloten: {EXCLUDED_TAGS.join(', ')}</span>
           </div>
 
           {/* Bezorgland Dropdown */}
