@@ -4,6 +4,7 @@ import { processSingleOrderBatch } from "@/inngest/functions/processSingleOrderB
 import { syncPicqerTags } from "@/inngest/functions/syncPicqerTags"
 import { autoAssignBoxTags } from "@/inngest/functions/autoAssignBoxTags"
 import { syncShopifyTracking } from "@/inngest/functions/syncShopifyTracking"
+import { healStuckPackingSessions } from "@/inngest/functions/healStuckPackingSessions"
 
 export const maxDuration = 300 // 5 minutes per step execution
 
@@ -14,6 +15,7 @@ export const { GET, POST, PUT } = serve({
     syncPicqerTags,
     autoAssignBoxTags,
     syncShopifyTracking,
+    healStuckPackingSessions,
   ],
   signingKey: process.env.INNGEST_SIGNING_KEY,
 })

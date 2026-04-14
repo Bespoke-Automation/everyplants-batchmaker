@@ -583,6 +583,16 @@ npm run lint     # Run ESLint
 - Response format: `NextResponse.json({ data/error, message? })`
 - Error codes: 400=validation, 409=conflict/duplicate, 422=business logic, 500=server, 502=external service
 
+### Geen fire-and-forget in API routes
+Op Vercel serverless wordt de function container afgebroken zodra `NextResponse.json(...)` terugkeert. Een los `.then().catch()` of `void somePromise()` na de response krijgt vaak geen tijd om te voltooien — zeker bij Picqer/Supabase/storage calls die meerdere seconden duren.
+
+Kies één van deze drie patronen voor background werk:
+1. **`await` vóór de response** — simpel, voegt latency toe. Gebruik voor kritieke completion-steps (picklist sluiten, order status updaten).
+2. **`after(() => { ... })` uit `next/server`** — Vercel houdt de function expliciet in leven voor de callback. Gebruik voor werk dat mág wachten op de response maar zeker moet voltooien (bijv. session completion na ship-all).
+3. **Inngest event** — `inngest.send({ name, data })` voor werk dat minuten mag duren, gedebounced mag zijn, of retries nodig heeft.
+
+De `healStuckPackingSessions` cron vangt regressies op, maar vertrouw daar niet blind op — dat is een vangnet, geen primaire flow.
+
 ### Database Patterns
 - Alle queries via `supabase.schema('batchmaker').from('table')`
 - Upsert met `onConflict` voor sync operaties

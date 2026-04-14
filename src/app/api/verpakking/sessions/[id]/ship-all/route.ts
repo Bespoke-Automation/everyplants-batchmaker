@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import {
   getBoxesBySession,
   getPackingSession,
@@ -237,17 +237,23 @@ export async function POST(
       })
     }
 
-    // Step 3: Try to complete session in background (non-blocking).
+    // Step 3: Try to complete session AFTER the response is sent. Using Next.js
+    // `after()` keeps the function alive for the callback on Vercel serverless —
+    // a plain `.then()` fire-and-forget would be killed once the response returns,
+    // leaving Picqer `pickall`/`close` calls unfinished (bug: see commit history).
     // The frontend detects completion via label polling (boxes endpoint includes sessionStatus).
-    tryCompleteSession(sessionId, session.picklist_id).then(result => {
-      if (result.sessionCompleted) {
-        console.log(`[ship-all] Session ${sessionId} completed in background`)
+    after(async () => {
+      try {
+        const result = await tryCompleteSession(sessionId, session.picklist_id)
+        if (result.sessionCompleted) {
+          console.log(`[ship-all] Session ${sessionId} completed in background`)
+        }
+        if (result.warning) {
+          console.warn(`[ship-all] Session completion warning: ${result.warning}`)
+        }
+      } catch (e) {
+        console.error('[ship-all] Background session completion error:', e)
       }
-      if (result.warning) {
-        console.warn(`[ship-all] Session completion warning: ${result.warning}`)
-      }
-    }).catch(e => {
-      console.error('[ship-all] Background session completion error:', e)
     })
 
     return NextResponse.json({
