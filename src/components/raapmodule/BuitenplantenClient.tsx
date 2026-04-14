@@ -36,6 +36,10 @@ export default function BuitenplantenClient() {
   const [error, setError] = useState<string | null>(null)
   const [timeFrom, setTimeFrom] = useState<string>('')
   const [timeTo, setTimeTo] = useState<string>('')
+  const timeFromRef = useRef(timeFrom)
+  const timeToRef = useRef(timeTo)
+  timeFromRef.current = timeFrom
+  timeToRef.current = timeTo
   const saveTimers = useRef<Record<string, NodeJS.Timeout>>({})
 
   const load = useCallback(async () => {
@@ -43,8 +47,8 @@ export default function BuitenplantenClient() {
     setError(null)
     try {
       const timeParams = new URLSearchParams()
-      if (timeFrom) timeParams.set('time_from', timeFrom)
-      if (timeTo) timeParams.set('time_to', timeTo)
+      if (timeFromRef.current) timeParams.set('time_from', timeFromRef.current)
+      if (timeToRef.current) timeParams.set('time_to', timeToRef.current)
       const qs = timeParams.toString()
       const [pickRes, pickedRes, adjRes] = await Promise.all([
         fetch(`/api/raapmodule/products/buitenplanten${qs ? `?${qs}` : ''}`),
@@ -77,7 +81,7 @@ export default function BuitenplantenClient() {
     } finally {
       setIsLoading(false)
     }
-  }, [timeFrom, timeTo])
+  }, [])
 
   useEffect(() => { load() }, [load])
 
@@ -251,9 +255,16 @@ export default function BuitenplantenClient() {
               onChange={(e) => setTimeTo(e.target.value)}
               className="px-2 py-1.5 border border-border rounded-md bg-background text-sm"
             />
+            <button
+              onClick={load}
+              disabled={isLoading}
+              className="px-2.5 py-1.5 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            >
+              Toepassen
+            </button>
             {(timeFrom || timeTo) && (
               <button
-                onClick={() => { setTimeFrom(''); setTimeTo('') }}
+                onClick={() => { setTimeFrom(''); setTimeTo(''); timeFromRef.current = ''; timeToRef.current = ''; load() }}
                 className="text-xs text-muted-foreground hover:text-foreground transition-colors"
               >
                 Wis
