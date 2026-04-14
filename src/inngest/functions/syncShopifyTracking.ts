@@ -83,14 +83,16 @@ export const syncShopifyTracking = inngest.createFunction(
       return { status: 'skipped', reason: 'kill_switch_off' }
     }
 
-    // Wait 3 minutes before first check so Picqer's own Shopify sync has time to
-    // push the initial fulfillment. Without this, the first attempt almost always
-    // races the Picqer → Shopify push and we'd burn retries. step.sleep is a
-    // durable pause — it doesn't count against function execution time.
-    // Skipped for backfill triggers because those orders are already shipped long ago.
+    // Wait 10 minutes before first check so Picqer's own Shopify sync has time to
+    // push the initial fulfillment. Observed in production (2026-04-14): Picqer's
+    // Shopify integration can take 10-15+ minutes after shipments are created.
+    // Waiting longer up-front is strictly better than burning retries on races.
+    // step.sleep is durable — it doesn't count against function execution time or
+    // incur compute cost. Skipped for backfill triggers since those orders are
+    // already fulfilled and just need their tracking codes merged now.
     const isBackfill = triggeredBy?.startsWith('backfill') === true
     if (!isBackfill) {
-      await step.sleep('wait-for-picqer-shopify-sync', '3m')
+      await step.sleep('wait-for-picqer-shopify-sync', '10m')
     }
 
     // Step 1: Resolve picklist → order → shipments
