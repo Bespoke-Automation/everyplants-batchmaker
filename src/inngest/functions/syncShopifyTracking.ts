@@ -56,7 +56,13 @@ export const syncShopifyTracking = inngest.createFunction(
     id: 'sync-shopify-tracking',
     name: 'Sync Shopify tracking codes (multi-shipment patch)',
     debounce: { key: 'event.data.picqerPicklistId', period: '15s' },
-    retries: 5,
+    // Retries must cover the window during which Picqer's own Shopify sync pushes
+    // the initial fulfillment. Observed in production on 2026-04-14: Picqer can
+    // take 15-30+ minutes after shipments are created before the fulfillment is
+    // visible in Shopify. With Inngest's default exponential backoff, 10 retries
+    // give a total window of ~8 hours — more than enough margin without losing
+    // events on first-attempt races.
+    retries: 10,
   },
   { event: 'shopify/tracking.sync' },
   async ({ event, step, logger }) => {
@@ -75,6 +81,16 @@ export const syncShopifyTracking = inngest.createFunction(
     if (process.env.SHOPIFY_TRACKING_SYNC_ENABLED !== 'true') {
       logger.info(`[shopify-sync] kill switch on, skipping picklist ${picqerPicklistId}`)
       return { status: 'skipped', reason: 'kill_switch_off' }
+    }
+
+    // Wait 3 minutes before first check so Picqer's own Shopify sync has time to
+    // push the initial fulfillment. Without this, the first attempt almost always
+    // races the Picqer → Shopify push and we'd burn retries. step.sleep is a
+    // durable pause — it doesn't count against function execution time.
+    // Skipped for backfill triggers because those orders are already shipped long ago.
+    const isBackfill = triggeredBy?.startsWith('backfill') === true
+    if (!isBackfill) {
+      await step.sleep('wait-for-picqer-shopify-sync', '3m')
     }
 
     // Step 1: Resolve picklist → order → shipments
