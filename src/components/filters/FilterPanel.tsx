@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Filter, Calendar, ChevronDown, X, Loader2, Search, Ban } from 'lucide-react'
+import { Filter, Calendar, ChevronDown, X, Loader2, Search, Info } from 'lucide-react'
 import { FilterState, ALL_RETAILERS } from '@/types/filters'
 import { SortOrder } from '@/hooks/useFilters'
 import { COUNTRIES, COUNTRY_NAMES, DAYS } from '@/constants'
@@ -486,9 +486,23 @@ export default function FilterPanel({
 
           {/* Tags Dropdown */}
           <div>
-            <label className="text-xs font-bold text-muted-foreground uppercase mb-1 block">
-              Tags
-            </label>
+            <div className="flex items-center gap-1 mb-1">
+              <label className="text-xs font-bold text-muted-foreground uppercase block">
+                Tags
+              </label>
+              <div className="relative group">
+                <Info className="w-3.5 h-3.5 text-muted-foreground/60 cursor-help" />
+                <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 hidden group-hover:block z-50 w-52 px-2.5 py-2 rounded-md bg-gray-900 text-white text-xs shadow-lg">
+                  <p className="font-medium mb-1">Standaard uitgesloten:</p>
+                  <ul className="space-y-0.5">
+                    {EXCLUDED_TAGS.map(tag => (
+                      <li key={tag}>• {tag}</li>
+                    ))}
+                  </ul>
+                  <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-gray-900" />
+                </div>
+              </div>
+            </div>
             <MultiSelectDropdown
               label="Tags"
               options={availableTags}
@@ -510,11 +524,6 @@ export default function FilterPanel({
                 Alleen deze tags
               </label>
             )}
-          </div>
-
-          <div className="flex items-start gap-1 text-xs text-muted-foreground">
-            <Ban className="w-3 h-3 mt-0.5 shrink-0" />
-            <span>Uitgesloten: {EXCLUDED_TAGS.join(', ')}</span>
           </div>
 
           {/* Bezorgland Dropdown */}
