@@ -125,6 +125,12 @@ export async function submitPrintJob(
         contentType: 'pdf_base64',
         content: pdfBase64,
         source: 'EveryPlants Batchmaker',
+        // fit_to_page prevents thermal-printer drivers from tiling a single A6 label
+        // across multiple physical labels when paper size doesn't match.
+        options: {
+          fit_to_page: true,
+          copies: 1,
+        },
       }),
     })
 
