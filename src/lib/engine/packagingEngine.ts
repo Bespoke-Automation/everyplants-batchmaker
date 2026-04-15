@@ -15,6 +15,7 @@ import { syncProductFromPicqer, classifyProduct, syncCompositionParts } from '@/
 import { selectCostForWeight } from './costProvider'
 import type { CostEntry } from './costProvider'
 import { coreAdvice } from './coreAdvice'
+import { isAccompanying } from './accompanying'
 
 // ── Input / Output types ──────────────────────────────────────────────────
 
@@ -228,39 +229,17 @@ export async function classifyOrderProducts(
     attrMap.set(row.picqer_product_id, row)
   }
 
-  // Pre-filter: exclude non-shippable products (accessories, flyers, logistics items)
+  // Pre-filter: exclude non-shippable products (accessories, flyers, logistics items).
   // These don't need packaging advice and shouldn't block the engine.
-  const NON_SHIPPABLE_TYPES = new Set(['accessoire'])
-  const NON_SHIPPABLE_CODES = new Set(['100000011', '100000012', '100000013']) // Platen, Deense kar, Veiling kar
+  // Criteria live in src/lib/engine/accompanying.ts — shared with the new
+  // observation-based engine (fase 1+) so both engines classify identically.
   const shippableProducts: OrderProduct[] = []
   for (const p of realProducts) {
     const attr = attrMap.get(p.picqer_product_id)
-    const productType = attr?.product_type?.toLowerCase() || ''
-
-    // Known non-shippable product types
-    if (NON_SHIPPABLE_TYPES.has(productType)) {
+    if (isAccompanying(p.productcode, attr)) {
       excludedNonShippable.push(p.productcode)
       continue
     }
-
-    // Products with type "Onbekend" and no pot/height data are likely flyers/accessories
-    if (productType === 'onbekend' && attr && attr.classification_status === 'missing_data') {
-      excludedNonShippable.push(p.productcode)
-      continue
-    }
-
-    // Short numeric codes without attributes (flyers like "1", "2")
-    if (!attr && /^[0-9]{1,3}$/.test(p.productcode)) {
-      excludedNonShippable.push(p.productcode)
-      continue
-    }
-
-    // Known logistics item codes
-    if (NON_SHIPPABLE_CODES.has(p.productcode)) {
-      excludedNonShippable.push(p.productcode)
-      continue
-    }
-
     shippableProducts.push(p)
   }
 
