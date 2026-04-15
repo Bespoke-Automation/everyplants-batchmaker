@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import {
   RefreshCw,
   ArrowLeft,
@@ -9,6 +10,8 @@ import {
   CheckCircle2,
   XCircle,
   Edit,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react'
 import type {
   AdviceConfidence,
@@ -17,6 +20,8 @@ import type {
 } from '@/lib/engine/insights'
 import { INSIGHTS_WINDOW_DAYS } from '@/lib/engine/insights'
 
+type InsightsModel = 'legacy' | 'observation'
+
 export default function FingerprintDetail({
   fingerprint,
   country,
@@ -24,16 +29,26 @@ export default function FingerprintDetail({
   fingerprint: string
   country: string | null
 }) {
+  const searchParams = useSearchParams()
+  const model: InsightsModel =
+    searchParams.get('model') === 'observation' ? 'observation' : 'legacy'
+
   const [data, setData] = useState<FingerprintDetailData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [accompanyingOpen, setAccompanyingOpen] = useState(false)
 
   useEffect(() => {
     const fetchDetail = async () => {
       setLoading(true)
       setError(null)
       try {
-        const qs = country ? `?country=${encodeURIComponent(country)}` : ''
+        const params = new URLSearchParams()
+        if (model === 'observation') params.set('model', 'observation')
+        // Country is ignored by the API in observation mode but kept for legacy
+        if (model === 'legacy' && country) params.set('country', country)
+        const qs = params.toString() ? `?${params.toString()}` : ''
+
         const res = await fetch(
           `/api/verpakking/insights/fingerprints/${encodeURIComponent(fingerprint)}${qs}`,
         )
@@ -51,7 +66,7 @@ export default function FingerprintDetail({
       }
     }
     fetchDetail()
-  }, [fingerprint, country])
+  }, [fingerprint, country, model])
 
   if (loading) {
     return (
@@ -66,11 +81,16 @@ export default function FingerprintDetail({
     )
   }
 
+  const libraryHref =
+    model === 'observation'
+      ? '/verpakkingsmodule/insights/library?model=observation'
+      : '/verpakkingsmodule/insights/library'
+
   if (error || !data) {
     return (
       <div className="max-w-5xl mx-auto py-8">
         <Link
-          href="/verpakkingsmodule/insights/library"
+          href={libraryHref}
           className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-4"
         >
           <ArrowLeft className="w-3 h-3" />
@@ -85,21 +105,27 @@ export default function FingerprintDetail({
   }
 
   const { stats, boxCombos, recentRecords } = data
+  const isV2 = model === 'observation'
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       {/* Header */}
       <div>
         <Link
-          href="/verpakkingsmodule/insights/library"
+          href={libraryHref}
           className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="w-3 h-3" />
           Terug naar library
         </Link>
         <h1 className="text-xl font-semibold mt-2 font-mono break-all">{data.fingerprint}</h1>
-        {data.country && (
+        {data.country && !isV2 && (
           <p className="text-sm text-muted-foreground mt-1">Land: {data.country}</p>
+        )}
+        {isV2 && (
+          <p className="text-[11px] text-muted-foreground mt-1">
+            Model: product-observaties (land-onafhankelijk)
+          </p>
         )}
       </div>
 
@@ -248,6 +274,43 @@ export default function FingerprintDetail({
           </table>
         </div>
       </section>
+
+      {/* Accompanying products (flyers/cards in these patterns) — V2 only */}
+      {isV2 && (
+        <section className="border border-border rounded-lg bg-card">
+          <button
+            type="button"
+            onClick={() => setAccompanyingOpen((s) => !s)}
+            aria-expanded={accompanyingOpen}
+            className="w-full flex items-center justify-between p-4 text-left hover:bg-muted/30"
+          >
+            <div>
+              <h2 className="font-semibold">Flyers &amp; kaartjes in deze patronen</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Niet meegeteld in de fingerprint, wel meeverpakt.
+              </p>
+            </div>
+            {accompanyingOpen ? (
+              <ChevronDown className="w-4 h-4 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+            )}
+          </button>
+          {accompanyingOpen && (
+            <div className="px-4 pb-4 pt-1 text-sm text-muted-foreground border-t border-border">
+              <p>
+                Accompanying-data wordt later toegevoegd — hier verschijnt een lijst met
+                flyers, giftcards en kaartjes die vaak bij dit patroon worden meegepakt,
+                gebaseerd op de sessie-producten na de accompanying-filter.
+              </p>
+              <div className="mt-3 text-[11px] font-mono text-foreground/80 break-all">
+                <span className="text-muted-foreground">Rauwe fingerprint:</span>{' '}
+                {data.fingerprint}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Action hint */}
       <div className="border border-dashed border-border rounded-lg p-4 text-center text-sm text-muted-foreground">

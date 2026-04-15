@@ -15,9 +15,11 @@ import type {
   FingerprintSuggestedAction,
 } from '@/lib/engine/insights'
 import { INSIGHTS_WINDOW_DAYS } from '@/lib/engine/insights'
+import type { ResolvedFingerprintEntry } from '@/lib/engine/fingerprintResolver'
 
 type SortKey = 'total' | 'followRate' | 'avgAdviceCost' | 'distinctBoxCombos'
 type SortDir = 'asc' | 'desc'
+type InsightsModel = 'legacy' | 'observation'
 
 const VALID_SORT_KEYS: SortKey[] = ['total', 'followRate', 'avgAdviceCost', 'distinctBoxCombos']
 
@@ -38,6 +40,41 @@ function formatCost(n: number | null): string {
 function formatPct(n: number | null): string {
   if (n === null) return '—'
   return `${n.toFixed(0)}%`
+}
+
+/**
+ * Parse a V2 fingerprint ("productcode:qty|productcode:qty") into entries.
+ * Returns empty array on malformed input.
+ */
+function parseV2Fingerprint(
+  fingerprint: string,
+): Array<{ productcode: string; quantity: number }> {
+  if (!fingerprint) return []
+  return fingerprint
+    .split('|')
+    .map((part) => {
+      const [code, qtyStr] = part.split(':')
+      const quantity = Number(qtyStr)
+      if (!code || Number.isNaN(quantity)) return null
+      return { productcode: code.trim(), quantity }
+    })
+    .filter((x): x is { productcode: string; quantity: number } => x !== null)
+}
+
+/**
+ * Render a V2 fingerprint as "1× Strelitzia + 2× Philodendron" using the
+ * resolved names where available. Falls back to the raw productcode when the
+ * name is unknown. Called only in observation-model mode.
+ */
+function renderV2Fingerprint(
+  fingerprint: string,
+  names: Map<string, string>,
+): string {
+  const entries = parseV2Fingerprint(fingerprint)
+  if (entries.length === 0) return fingerprint
+  return entries
+    .map((e) => `${e.quantity}× ${names.get(e.productcode) ?? e.productcode}`)
+    .join(' + ')
 }
 
 export default function FingerprintLibrary() {
@@ -61,6 +98,13 @@ export default function FingerprintLibrary() {
   const [sortDir, setSortDir] = useState<SortDir>(
     () => (searchParams.get('dir') === 'asc' ? 'asc' : 'desc'),
   )
+  const [model, setModel] = useState<InsightsModel>(() =>
+    searchParams.get('model') === 'observation' ? 'observation' : 'legacy',
+  )
+
+  // V2 resolved productcode → product_name lookup for fingerprint display.
+  // Loaded lazily once the observation rows arrive. Keyed by productcode.
+  const [productNames, setProductNames] = useState<Map<string, string>>(new Map())
 
   // Sync filter state → URL (replace, not push, so back button doesn't fill with noise)
   const syncUrl = useCallback(() => {
@@ -69,9 +113,10 @@ export default function FingerprintLibrary() {
     if (actionFilter) params.set('status', actionFilter)
     if (sortKey !== 'total') params.set('sort', sortKey)
     if (sortDir !== 'desc') params.set('dir', sortDir)
+    if (model !== 'legacy') params.set('model', model)
     const qs = params.toString()
     router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false })
-  }, [search, actionFilter, sortKey, sortDir, pathname, router])
+  }, [search, actionFilter, sortKey, sortDir, model, pathname, router])
 
   useEffect(() => {
     syncUrl()
@@ -82,7 +127,9 @@ export default function FingerprintLibrary() {
       setLoading(true)
       setError(null)
       try {
-        const res = await fetch('/api/verpakking/insights/fingerprints?limit=500')
+        const res = await fetch(
+          `/api/verpakking/insights/fingerprints?limit=500&model=${model}`,
+        )
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const data = await res.json()
         setRows(data.rows ?? [])
@@ -93,7 +140,46 @@ export default function FingerprintLibrary() {
       }
     }
     fetchRows()
-  }, [])
+  }, [model])
+
+  // V2: pre-load product names for all productcodes in the visible rows so the
+  // fingerprint column can show "1× Strelitzia Nicolai" instead of raw codes.
+  // Legacy model fingerprints are not productcode-based — skip.
+  useEffect(() => {
+    if (model !== 'observation' || rows.length === 0) {
+      setProductNames(new Map())
+      return
+    }
+
+    const codes = new Set<string>()
+    for (const r of rows) {
+      for (const p of parseV2Fingerprint(r.fingerprint)) codes.add(p.productcode)
+    }
+    if (codes.size === 0) return
+
+    let cancelled = false
+    const loadNames = async () => {
+      try {
+        const url = `/api/verpakking/insights/fingerprints/resolve?codes=${encodeURIComponent(Array.from(codes).join(','))}`
+        const res = await fetch(url)
+        if (!res.ok) return
+        const data = (await res.json()) as { entries: ResolvedFingerprintEntry[] }
+        if (cancelled || !Array.isArray(data.entries)) return
+
+        const map = new Map<string, string>()
+        for (const e of data.entries) {
+          if (e.product_name) map.set(e.productcode, e.product_name)
+        }
+        setProductNames(map)
+      } catch {
+        // Silently ignore — display falls back to raw productcodes.
+      }
+    }
+    loadNames()
+    return () => {
+      cancelled = true
+    }
+  }, [model, rows])
 
   const filtered = useMemo(() => {
     let result = [...rows]
@@ -143,8 +229,40 @@ export default function FingerprintLibrary() {
           <p className="text-sm text-muted-foreground">
             {loading
               ? 'Laden...'
-              : `${filtered.length} van ${rows.length} unieke shipping-unit patronen · laatste ${INSIGHTS_WINDOW_DAYS} dagen`}
+              : `${filtered.length} van ${rows.length} unieke ${
+                  model === 'observation' ? 'product-combinaties' : 'shipping-unit patronen'
+                }${model === 'legacy' ? ` · laatste ${INSIGHTS_WINDOW_DAYS} dagen` : ''}`}
           </p>
+        </div>
+
+        {/* Engine-model toggle — switches between V1 (legacy) and V2 (observations) */}
+        <div
+          role="group"
+          aria-label="Engine model"
+          className="inline-flex items-center rounded-lg border border-border overflow-hidden text-xs"
+        >
+          <button
+            type="button"
+            onClick={() => setModel('legacy')}
+            aria-pressed={model === 'legacy'}
+            className={`px-3 py-1.5 ${
+              model === 'legacy' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted/50'
+            }`}
+          >
+            Oud model (shipping units)
+          </button>
+          <button
+            type="button"
+            onClick={() => setModel('observation')}
+            aria-pressed={model === 'observation'}
+            className={`px-3 py-1.5 border-l border-border ${
+              model === 'observation'
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-background hover:bg-muted/50'
+            }`}
+          >
+            Nieuw model (productcodes)
+          </button>
         </div>
       </div>
 
@@ -241,16 +359,30 @@ export default function FingerprintLibrary() {
                   </td>
                 </tr>
               ) : (
-                filtered.map((row) => (
-                  <tr key={row.fingerprint} className="border-b border-border hover:bg-muted/30">
+                filtered.map((row) => {
+                  const detailQs =
+                    model === 'observation'
+                      ? '?model=observation'
+                      : row.country
+                        ? `?country=${row.country}`
+                        : ''
+                  const detailHref = `/verpakkingsmodule/insights/library/${encodeURIComponent(row.fingerprint)}${detailQs}`
+                  const isV2 = model === 'observation'
+                  return (
+                  <tr key={`${model}::${row.country ?? ''}::${row.fingerprint}`} className="border-b border-border hover:bg-muted/30">
                     <td className="px-3 py-2">
                       <Link
-                        href={`/verpakkingsmodule/insights/library/${encodeURIComponent(row.fingerprint)}${row.country ? `?country=${row.country}` : ''}`}
-                        className="text-primary hover:underline font-mono text-xs"
+                        href={detailHref}
+                        className={`text-primary hover:underline ${isV2 ? 'text-sm' : 'font-mono text-xs'}`}
                       >
-                        {row.fingerprint}
+                        {isV2 ? renderV2Fingerprint(row.fingerprint, productNames) : row.fingerprint}
                       </Link>
-                      {row.country && (
+                      {isV2 && (
+                        <div className="text-[10px] text-muted-foreground font-mono mt-0.5 break-all">
+                          {row.fingerprint}
+                        </div>
+                      )}
+                      {!isV2 && row.country && (
                         <span className="ml-2 text-[10px] text-muted-foreground">
                           [{row.country}]
                         </span>
@@ -295,7 +427,8 @@ export default function FingerprintLibrary() {
                       </span>
                     </td>
                   </tr>
-                ))
+                  )
+                })
               )}
             </tbody>
           </table>

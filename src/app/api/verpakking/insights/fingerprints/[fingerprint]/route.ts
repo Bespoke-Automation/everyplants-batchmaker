@@ -1,13 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getFingerprintDetail } from '@/lib/engine/insights'
+import { getFingerprintDetail, getFingerprintDetailV2 } from '@/lib/engine/insights'
 
 export const dynamic = 'force-dynamic'
 
 /**
- * GET /api/verpakking/insights/fingerprints/[fingerprint]?country=NL
- * Drill-down for a single fingerprint. The `country` query param is needed
- * to disambiguate legacy fingerprints that lack a country prefix but are
- * grouped per-country in the library view.
+ * GET /api/verpakking/insights/fingerprints/[fingerprint]
+ *   ?model=observation|legacy
+ *   &country=NL   (only meaningful for model=legacy)
+ *
+ * Drill-down for a single fingerprint.
+ *
+ * - `model=legacy` (default): reads `packaging_advice` grouped by
+ *   (shipping_unit_fingerprint, country_code). The `country` query param
+ *   disambiguates legacy fingerprints that share a shipping-unit fingerprint
+ *   across countries.
+ * - `model=observation`: reads `packing_observations`. The observation model
+ *   is land-onafhankelijk, so `country` is silently ignored. Recent activity
+ *   is derived live from completed sessions.
  */
 export async function GET(
   request: NextRequest,
@@ -16,17 +25,25 @@ export async function GET(
   try {
     const { fingerprint } = await params
     const decoded = decodeURIComponent(fingerprint)
+
+    const modelParam = request.nextUrl.searchParams.get('model')
+    const model = modelParam === 'observation' ? 'observation' : 'legacy'
+
     const country = request.nextUrl.searchParams.get('country')
-    const detail = await getFingerprintDetail(decoded, country)
+
+    const detail =
+      model === 'observation'
+        ? await getFingerprintDetailV2(decoded)
+        : await getFingerprintDetail(decoded, country)
 
     if (!detail) {
       return NextResponse.json(
-        { error: 'Fingerprint niet gevonden', fingerprint: decoded },
+        { error: 'Fingerprint niet gevonden', fingerprint: decoded, model },
         { status: 404 },
       )
     }
 
-    return NextResponse.json(detail)
+    return NextResponse.json({ ...detail, model })
   } catch (error) {
     console.error('[insights/fingerprints/[fingerprint]] error:', error)
     return NextResponse.json(
