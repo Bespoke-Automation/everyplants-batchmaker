@@ -197,6 +197,18 @@ export async function tryCompleteSession(
     console.error('[tryCompleteSession] Error recording packing pattern:', err)
   }
 
+  // Record packing observations for the new simple engine (fase 1 — data only).
+  // Non-blocking: errors are logged but never break session completion.
+  // Caller contracts: tryCompleteSession is already invoked inside `after()`
+  // from ship-all/route.ts, so this extra await only extends the background
+  // task — not the user-facing response.
+  try {
+    const { recordPackingObservations } = await import('@/lib/verpakking/recordPackingObservations')
+    await recordPackingObservations(sessionId)
+  } catch (err) {
+    console.error('[tryCompleteSession] Error recording packing observations:', err)
+  }
+
   return {
     sessionCompleted: true,
     productsIncomplete: false,

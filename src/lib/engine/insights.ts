@@ -1444,3 +1444,646 @@ export async function reactivateLearnedPattern(id: string): Promise<void> {
 
   if (updateError) throw updateError
 }
+
+// ── V2: Observation-based insights (new engine model) ────────────────────────
+//
+// Reads from `batchmaker.packing_observations` (productcode-fingerprint,
+// land-onafhankelijk). The V2 code path lives side-by-side with V1 so the
+// library UI can offer a `?model=observation|legacy` toggle while ops
+// compares behaviour during the engine-simplification migration.
+//
+// The `packing_observations` table is created by a parallel workstream.
+// Until it exists, V2 queries return empty results gracefully — we detect
+// the PostgREST "relation does not exist" error (42P01) and treat the row
+// set as empty instead of bubbling up a 500.
+
+export type FingerprintDetailResult = FingerprintDetail
+
+interface PackingObservationRow {
+  fingerprint: string
+  packaging_id: string
+  count: number
+  last_seen_at: string
+}
+
+/**
+ * True when the error indicates the `packing_observations` table does not
+ * yet exist (migration hasn't run). Returns empty data upstream so V2 can
+ * ship before the table is live.
+ */
+function isMissingObservationsTable(error: { code?: string; message?: string }): boolean {
+  if (!error) return false
+  if (error.code === '42P01') return true
+  if (error.code === 'PGRST116') return true
+  const msg = error.message ?? ''
+  return (
+    /relation\s+"?batchmaker\.packing_observations"?\s+does\s+not\s+exist/i.test(msg) ||
+    /could not find the table 'batchmaker\.packing_observations'/i.test(msg)
+  )
+}
+
+async function fetchPackingObservations(): Promise<PackingObservationRow[]> {
+  const { data, error } = await supabase
+    .schema('batchmaker')
+    .from('packing_observations')
+    .select('fingerprint, packaging_id, count, last_seen_at')
+
+  if (error) {
+    if (isMissingObservationsTable(error)) {
+      console.info(
+        '[insights V2] packing_observations not yet available — returning empty result',
+      )
+      return []
+    }
+    throw error
+  }
+
+  return (data ?? []).map((r) => ({
+    fingerprint: r.fingerprint as string,
+    packaging_id: r.packaging_id as string,
+    count: Number(r.count ?? 0),
+    last_seen_at: r.last_seen_at as string,
+  }))
+}
+
+async function fetchObservationsForFingerprint(
+  fingerprint: string,
+): Promise<PackingObservationRow[]> {
+  const { data, error } = await supabase
+    .schema('batchmaker')
+    .from('packing_observations')
+    .select('fingerprint, packaging_id, count, last_seen_at')
+    .eq('fingerprint', fingerprint)
+
+  if (error) {
+    if (isMissingObservationsTable(error)) return []
+    throw error
+  }
+
+  return (data ?? []).map((r) => ({
+    fingerprint: r.fingerprint as string,
+    packaging_id: r.packaging_id as string,
+    count: Number(r.count ?? 0),
+    last_seen_at: r.last_seen_at as string,
+  }))
+}
+
+/**
+ * Resolve packaging_id → packaging name via the local packagings table.
+ * Chunks to stay within PostgREST URL limits.
+ */
+async function fetchPackagingNames(
+  packagingIds: string[],
+): Promise<Map<string, string>> {
+  const unique = Array.from(new Set(packagingIds))
+  if (unique.length === 0) return new Map()
+
+  const CHUNK_SIZE = 150
+  const map = new Map<string, string>()
+
+  for (let i = 0; i < unique.length; i += CHUNK_SIZE) {
+    const chunk = unique.slice(i, i + CHUNK_SIZE)
+    const { data, error } = await supabase
+      .schema('batchmaker')
+      .from('packagings')
+      .select('id, name')
+      .in('id', chunk)
+
+    if (error) {
+      console.warn('[insights V2] fetchPackagingNames chunk error:', error)
+      continue
+    }
+
+    for (const row of data ?? []) {
+      if (row.id && row.name) {
+        map.set(row.id as string, row.name as string)
+      }
+    }
+  }
+
+  return map
+}
+
+/**
+ * V2 suggested-action logic — observation model.
+ *
+ *  - `healthy`       share ≥ 85% AND total ≥ 5
+ *  - `rising`        total < 3 (too few samples for consensus)
+ *  - `no_consensus`  share < 50%
+ *  - `drifting`      share 50-85% AND distinctBoxCombos ≥ 3
+ *  - otherwise       `healthy`
+ */
+function suggestActionV2(args: {
+  total: number
+  share: number
+  distinctBoxCombos: number
+}): FingerprintSuggestedAction {
+  const { total, share, distinctBoxCombos } = args
+  if (total < 3) return 'rising'
+  if (share < 0.5) return 'no_consensus'
+  if (share >= 0.85 && total >= 5) return 'healthy'
+  if (share < 0.85 && distinctBoxCombos >= 3) return 'drifting'
+  return 'healthy'
+}
+
+/**
+ * V2 fingerprint library — groups packing_observations by fingerprint,
+ * resolves packaging names, computes share/dominant combo/distinct combos.
+ *
+ * Shape matches V1 `FingerprintStatsRow` for UI compatibility. `country` is
+ * always null (observation model is land-onafhankelijk). `resolved/followed/
+ * modified/ignored` are 0 (not meaningful without advice outcomes). The
+ * followRate mirrors dominantBoxComboShare since consensus IS the signal.
+ */
+export async function getFingerprintStatsV2(limit = 200): Promise<FingerprintStatsRow[]> {
+  const observations = await fetchPackingObservations()
+  if (observations.length === 0) return []
+
+  // Group by fingerprint → per-packaging counts
+  type Group = {
+    fingerprint: string
+    total: number
+    entries: Map<string, { count: number; lastSeenAt: string }>
+    lastSeenAt: string
+  }
+
+  const groups = new Map<string, Group>()
+
+  for (const obs of observations) {
+    const g = groups.get(obs.fingerprint) ?? {
+      fingerprint: obs.fingerprint,
+      total: 0,
+      entries: new Map(),
+      lastSeenAt: obs.last_seen_at,
+    }
+
+    g.total += obs.count
+    if (obs.last_seen_at > g.lastSeenAt) g.lastSeenAt = obs.last_seen_at
+
+    const existing = g.entries.get(obs.packaging_id)
+    if (existing) {
+      existing.count += obs.count
+      if (obs.last_seen_at > existing.lastSeenAt) existing.lastSeenAt = obs.last_seen_at
+    } else {
+      g.entries.set(obs.packaging_id, { count: obs.count, lastSeenAt: obs.last_seen_at })
+    }
+
+    groups.set(obs.fingerprint, g)
+  }
+
+  // Resolve packaging names for all seen packaging_ids
+  const allPackagingIds = new Set<string>()
+  for (const g of groups.values()) {
+    for (const id of g.entries.keys()) allPackagingIds.add(id)
+  }
+  const packagingNames = await fetchPackagingNames(Array.from(allPackagingIds))
+
+  const rows: FingerprintStatsRow[] = []
+
+  for (const group of groups.values()) {
+    let dominantPackagingId: string | null = null
+    let dominantCount = 0
+    for (const [pkgId, { count }] of group.entries.entries()) {
+      if (count > dominantCount) {
+        dominantCount = count
+        dominantPackagingId = pkgId
+      }
+    }
+
+    const share = group.total === 0 ? 0 : dominantCount / group.total
+    const distinctBoxCombos = group.entries.size
+    const dominantBoxCombo =
+      dominantPackagingId === null
+        ? null
+        : packagingNames.get(dominantPackagingId) ?? `packaging ${dominantPackagingId}`
+
+    const suggestedAction = suggestActionV2({
+      total: group.total,
+      share,
+      distinctBoxCombos,
+    })
+
+    // In the observation model the followRate mirrors the dominant-combo
+    // share: consensus is the only signal, there is no advice outcome.
+    const sharePct = share * 100
+
+    rows.push({
+      fingerprint: group.fingerprint,
+      country: null,
+      total: group.total,
+      resolved: 0,
+      followed: 0,
+      modified: 0,
+      ignored: 0,
+      followRate: dominantPackagingId === null ? null : sharePct,
+      dominantBoxCombo,
+      dominantBoxComboShare: dominantPackagingId === null ? null : sharePct,
+      distinctBoxCombos,
+      avgAdviceCost: null,
+      lastSeenAt: group.lastSeenAt,
+      suggestedAction,
+    })
+  }
+
+  return rows.sort((a, b) => b.total - a.total).slice(0, limit)
+}
+
+/**
+ * V2 fingerprint detail — observation model.
+ *
+ * Uses two data sources:
+ *   1. `packing_observations` for the aggregate stats + box-combo distribution
+ *   2. `packing_sessions` + `packing_session_boxes` + `packing_session_products`
+ *      for recent activity (last 20 sessions that match the fingerprint).
+ *
+ * Country is always null in V2 (the observation model is land-onafhankelijk),
+ * but drill-down UIs can still derive country via
+ * `packing_sessions.order_id → packaging_advice.country_code` — that join is
+ * out of scope here and can be layered on later.
+ */
+export async function getFingerprintDetailV2(
+  fingerprint: string,
+): Promise<FingerprintDetailResult | null> {
+  const observations = await fetchObservationsForFingerprint(fingerprint)
+
+  // Aggregate per-packaging counts
+  const byPackaging = new Map<string, { count: number; lastSeenAt: string }>()
+  let total = 0
+  let lastSeenAt: string | null = null
+
+  for (const obs of observations) {
+    total += obs.count
+    if (lastSeenAt === null || obs.last_seen_at > lastSeenAt) lastSeenAt = obs.last_seen_at
+    const existing = byPackaging.get(obs.packaging_id)
+    if (existing) {
+      existing.count += obs.count
+      if (obs.last_seen_at > existing.lastSeenAt) existing.lastSeenAt = obs.last_seen_at
+    } else {
+      byPackaging.set(obs.packaging_id, {
+        count: obs.count,
+        lastSeenAt: obs.last_seen_at,
+      })
+    }
+  }
+
+  // Early exit when there is NO data anywhere — observations nor recent
+  // sessions. We still attempt the session fallback below because a
+  // fingerprint may be "rising" (has sessions) before observations landed.
+  const packagingNames = await fetchPackagingNames(Array.from(byPackaging.keys()))
+
+  let dominantPackagingId: string | null = null
+  let dominantCount = 0
+  for (const [pkgId, { count }] of byPackaging.entries()) {
+    if (count > dominantCount) {
+      dominantCount = count
+      dominantPackagingId = pkgId
+    }
+  }
+
+  const share = total === 0 ? 0 : dominantCount / total
+  const distinctBoxCombos = byPackaging.size
+  const dominantCombo =
+    dominantPackagingId === null
+      ? null
+      : packagingNames.get(dominantPackagingId) ?? `packaging ${dominantPackagingId}`
+
+  const boxCombos: FingerprintBoxCombo[] = Array.from(byPackaging.entries())
+    .map(([pkgId, { count }]) => ({
+      combo: packagingNames.get(pkgId) ?? `packaging ${pkgId}`,
+      count,
+      share: total === 0 ? 0 : (count / total) * 100,
+      followed: 0,
+      modified: 0,
+      ignored: 0,
+      avgAdviceCost: null,
+    }))
+    .sort((a, b) => b.count - a.count)
+
+  // Recent activity — live query over sessions that match this fingerprint.
+  // We filter client-side because building the product-fingerprint requires
+  // joining boxes+products+product_attributes which PostgREST can't do in
+  // one query. Session volumes are low enough that fetching the last 200
+  // completed sessions and filtering in-memory is cheap.
+  const recentRecords = await queryRecentSessionsForFingerprint(fingerprint)
+
+  if (total === 0 && recentRecords.length === 0) return null
+
+  const suggestedAction =
+    total === 0
+      ? 'rising'
+      : suggestActionV2({ total, share, distinctBoxCombos })
+
+  const sharePct = share * 100
+
+  return {
+    fingerprint,
+    country: null,
+    stats: {
+      fingerprint,
+      country: null,
+      total,
+      resolved: 0,
+      followed: 0,
+      modified: 0,
+      ignored: 0,
+      followRate: dominantPackagingId === null ? null : sharePct,
+      dominantBoxCombo: dominantCombo,
+      dominantBoxComboShare: dominantPackagingId === null ? null : sharePct,
+      distinctBoxCombos,
+      avgAdviceCost: null,
+      lastSeenAt,
+      suggestedAction,
+    },
+    boxCombos,
+    recentRecords,
+  }
+}
+
+/**
+ * Live-query the last 20 completed packing sessions whose packed
+ * product-fingerprint matches `fingerprint`. We can't filter the fingerprint
+ * directly in SQL (it's derived from products+classification), so we:
+ *   1. Pull the last 200 completed sessions
+ *   2. Fetch their boxes + products + accompanying-classification bits
+ *   3. Compute the fingerprint per session in-memory
+ *   4. Keep only the matching sessions (max 20)
+ *
+ * Session volumes are low (hundreds per day), so this stays well under the
+ * PostgREST URL limit and responds in tens of ms.
+ */
+async function queryRecentSessionsForFingerprint(
+  fingerprint: string,
+): Promise<FingerprintRecentRecord[]> {
+  const { data: sessions, error: sessionsError } = await supabase
+    .schema('batchmaker')
+    .from('packing_sessions')
+    .select('id, picklist_id, order_id, completed_at')
+    .eq('status', 'completed')
+    .order('completed_at', { ascending: false })
+    .limit(200)
+
+  if (sessionsError) {
+    console.warn('[insights V2] recent-sessions sessions query error:', sessionsError)
+    return []
+  }
+
+  const sessionRows = sessions ?? []
+  if (sessionRows.length === 0) return []
+
+  const sessionIds = sessionRows.map((s) => s.id as string)
+
+  // Fetch all boxes for those sessions
+  const CHUNK_SIZE = 150
+  const boxesBySession = new Map<
+    string,
+    Array<{ id: string; packaging_id: number | null; packaging_name: string | null }>
+  >()
+  const allBoxIds: string[] = []
+
+  for (let i = 0; i < sessionIds.length; i += CHUNK_SIZE) {
+    const chunk = sessionIds.slice(i, i + CHUNK_SIZE)
+    const { data: boxes, error: boxesError } = await supabase
+      .schema('batchmaker')
+      .from('packing_session_boxes')
+      .select('id, session_id, picqer_packaging_id')
+      .in('session_id', chunk)
+      .not('shipment_id', 'is', null)
+
+    if (boxesError) {
+      console.warn('[insights V2] recent-sessions boxes query error:', boxesError)
+      continue
+    }
+
+    for (const b of boxes ?? []) {
+      allBoxIds.push(b.id as string)
+      const arr =
+        boxesBySession.get(b.session_id as string) ??
+        (boxesBySession.set(b.session_id as string, []).get(b.session_id as string) as Array<{
+          id: string
+          packaging_id: number | null
+          packaging_name: string | null
+        }>)
+      arr.push({
+        id: b.id as string,
+        packaging_id: (b.picqer_packaging_id as number | null) ?? null,
+        packaging_name: null,
+      })
+    }
+  }
+
+  if (allBoxIds.length === 0) return []
+
+  // Fetch all products for those boxes
+  const productsByBox = new Map<
+    string,
+    Array<{ productcode: string; picqer_product_id: number; amount: number }>
+  >()
+
+  for (let i = 0; i < allBoxIds.length; i += CHUNK_SIZE) {
+    const chunk = allBoxIds.slice(i, i + CHUNK_SIZE)
+    const { data: products, error: productsError } = await supabase
+      .schema('batchmaker')
+      .from('packing_session_products')
+      .select('box_id, picqer_product_id, productcode, amount')
+      .in('box_id', chunk)
+
+    if (productsError) {
+      console.warn('[insights V2] recent-sessions products query error:', productsError)
+      continue
+    }
+
+    for (const p of products ?? []) {
+      const arr =
+        productsByBox.get(p.box_id as string) ??
+        (productsByBox.set(p.box_id as string, []).get(p.box_id as string) as Array<{
+          productcode: string
+          picqer_product_id: number
+          amount: number
+        }>)
+      arr.push({
+        productcode: p.productcode as string,
+        picqer_product_id: p.picqer_product_id as number,
+        amount: p.amount as number,
+      })
+    }
+  }
+
+  // Fetch product attributes for the accompanying-filter (shared across sessions)
+  const allProductIds = new Set<number>()
+  for (const arr of productsByBox.values()) {
+    for (const p of arr) allProductIds.add(p.picqer_product_id)
+  }
+
+  const productAttrs = await fetchProductAttributes(Array.from(allProductIds))
+
+  // Build a fingerprint for each session, filter accompanying products out
+  const matchingRecords: FingerprintRecentRecord[] = []
+
+  for (const s of sessionRows) {
+    const sessionBoxes = boxesBySession.get(s.id as string) ?? []
+    if (sessionBoxes.length === 0) continue
+
+    const sessionProducts: Array<{ productcode: string; picqer_product_id: number; amount: number }> = []
+    for (const box of sessionBoxes) {
+      const ps = productsByBox.get(box.id) ?? []
+      sessionProducts.push(...ps)
+    }
+
+    if (sessionProducts.length === 0) continue
+
+    const coreProducts = sessionProducts.filter(
+      (p) => !isAccompanyingProduct(p.productcode, productAttrs.get(p.picqer_product_id)),
+    )
+
+    const sessionFingerprint = buildProductFingerprintFromBoxes(coreProducts)
+    if (sessionFingerprint !== fingerprint) continue
+
+    matchingRecords.push({
+      id: s.id as string,
+      order_id: (s.order_id as number | null) ?? 0,
+      picklist_id: (s.picklist_id as number | null) ?? null,
+      confidence: 'full_match', // observation model has no confidence enum — default
+      outcome: null,
+      adviceBoxes: [],
+      actualBoxes: sessionBoxes.map((b) =>
+        b.packaging_id == null ? '?' : String(b.packaging_id),
+      ),
+      calculated_at: (s.completed_at as string | null) ?? new Date().toISOString(),
+    })
+
+    if (matchingRecords.length >= 20) break
+  }
+
+  // Resolve Picqer packaging ids → packaging names so actualBoxes are human-readable.
+  // NB: packing_session_boxes.picqer_packaging_id matches packagings.idpackaging
+  // (bigint from Picqer), not packagings.id (uuid). See patternLearner.ts:165-173.
+  const allPicqerIdsUsed = new Set<string>()
+  for (const rec of matchingRecords) {
+    for (const b of rec.actualBoxes) {
+      if (b && b !== '?') allPicqerIdsUsed.add(b)
+    }
+  }
+  const pkgNames = await fetchPackagingNamesByPicqerId(Array.from(allPicqerIdsUsed))
+
+  return matchingRecords.map((r) => ({
+    ...r,
+    actualBoxes: r.actualBoxes.map((id) => pkgNames.get(id) ?? id),
+  }))
+}
+
+/**
+ * Resolve `packagings.idpackaging` (Picqer numeric id) → `packagings.name`.
+ * Kept separate from `fetchPackagingNames` (which keys on the uuid) because
+ * session boxes store the Picqer id, not the local uuid.
+ */
+async function fetchPackagingNamesByPicqerId(
+  picqerIds: string[],
+): Promise<Map<string, string>> {
+  const unique = Array.from(
+    new Set(picqerIds.map((s) => String(s)).filter((s) => s.length > 0)),
+  )
+  if (unique.length === 0) return new Map()
+
+  const CHUNK_SIZE = 150
+  const map = new Map<string, string>()
+
+  for (let i = 0; i < unique.length; i += CHUNK_SIZE) {
+    const chunk = unique.slice(i, i + CHUNK_SIZE)
+    // `idpackaging` is bigint in the DB, so pass numeric values.
+    const numericChunk = chunk.map((s) => Number(s)).filter((n) => Number.isFinite(n))
+    if (numericChunk.length === 0) continue
+
+    const { data, error } = await supabase
+      .schema('batchmaker')
+      .from('packagings')
+      .select('idpackaging, name')
+      .in('idpackaging', numericChunk)
+
+    if (error) {
+      console.warn('[insights V2] fetchPackagingNamesByPicqerId chunk error:', error)
+      continue
+    }
+
+    for (const row of data ?? []) {
+      if (row.idpackaging && row.name) {
+        map.set(String(row.idpackaging), row.name as string)
+      }
+    }
+  }
+
+  return map
+}
+
+/**
+ * Mirrors isAccompanying() from packagingEngine / simpleAdvice POC. Kept
+ * inline so insights.ts stays self-contained and doesn't pull in the full
+ * classification module.
+ */
+const NON_SHIPPABLE_LOGISTICS_V2 = new Set(['100000011', '100000012', '100000013'])
+
+function isAccompanyingProduct(
+  productcode: string,
+  attr: { product_type: string | null; classification_status: string | null } | undefined,
+): boolean {
+  const type = attr?.product_type?.toLowerCase() ?? null
+  if (type === 'accessoire') return true
+  if (type === 'onbekend' && attr?.classification_status === 'missing_data') return true
+  if (/^[0-9]{1,3}$/.test(productcode)) return true
+  if (NON_SHIPPABLE_LOGISTICS_V2.has(productcode)) return true
+  return false
+}
+
+async function fetchProductAttributes(
+  productIds: number[],
+): Promise<
+  Map<number, { product_type: string | null; classification_status: string | null }>
+> {
+  const map = new Map<
+    number,
+    { product_type: string | null; classification_status: string | null }
+  >()
+  if (productIds.length === 0) return map
+
+  const CHUNK_SIZE = 150
+  for (let i = 0; i < productIds.length; i += CHUNK_SIZE) {
+    const chunk = productIds.slice(i, i + CHUNK_SIZE)
+    const { data, error } = await supabase
+      .schema('batchmaker')
+      .from('product_attributes')
+      .select('picqer_product_id, product_type, classification_status')
+      .in('picqer_product_id', chunk)
+
+    if (error) {
+      console.warn('[insights V2] fetchProductAttributes chunk error:', error)
+      continue
+    }
+
+    for (const row of data ?? []) {
+      map.set(row.picqer_product_id as number, {
+        product_type: (row.product_type as string | null) ?? null,
+        classification_status: (row.classification_status as string | null) ?? null,
+      })
+    }
+  }
+
+  return map
+}
+
+/**
+ * Build a deterministic `productcode:qty|productcode:qty` fingerprint for
+ * the provided core products (accompanying already filtered out). Mirrors
+ * `buildProductFingerprint` in simpleAdvice POC.
+ */
+function buildProductFingerprintFromBoxes(
+  products: Array<{ productcode: string; amount: number }>,
+): string {
+  const byCode = new Map<string, number>()
+  for (const p of products) {
+    byCode.set(p.productcode, (byCode.get(p.productcode) ?? 0) + p.amount)
+  }
+  return Array.from(byCode.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([code, qty]) => `${code}:${qty}`)
+    .join('|')
+}
+
